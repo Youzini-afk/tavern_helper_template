@@ -1,11 +1,8 @@
 <template>
-  <div class="image-hosting-settings">
-    <div class="inline-drawer">
-      <div class="inline-drawer-toggle inline-drawer-header">
-        <b>{{ `图片托管` }}</b>
-        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-      </div>
-      <div class="inline-drawer-content">
+  <div class="image-hosting-panel">
+    <div class="image-hosting_header">
+      <b><i class="fa-solid fa-images"></i> 图片托管</b>
+    </div>
         <!-- 当前角色卡名 -->
         <div class="image-hosting_block flex-container flexFlowColumn">
           <small>当前角色卡: <b>{{ characterName }}</b></small>
@@ -198,8 +195,6 @@
         </div>
 
         <hr class="sysHR" />
-      </div>
-    </div>
 
     <!-- 大图预览浮层 -->
     <Teleport to="body">
