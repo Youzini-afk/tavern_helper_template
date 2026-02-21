@@ -2,10 +2,11 @@
  * 脚本全局设置 (持久化到脚本变量)
  */
 
-/** 默认 CDN 代理模板, {url} 会被替换为原始图片 URL */
+/** 默认 CDN 代理模板, {url} 会被替换为 encodeURIComponent(原始图片URL) */
 export const DEFAULT_CDN_PROXIES = [
     'https://wsrv.nl/?url={url}',
     'https://images.weserv.nl/?url={url}',
+    'https://imageproxy.pimg.tw/resize?url={url}',
 ];
 
 const Settings = z
