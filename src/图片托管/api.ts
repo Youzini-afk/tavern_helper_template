@@ -87,7 +87,10 @@ export function generateStorageName(characterName: string, extension: string): s
   // 清除非 ASCII 字符, 用 hash 补充辨识度
   const ascii = characterName.replace(/[^a-zA-Z0-9]/g, '');
   const safeCharName = ascii || hashStr(characterName);
-  const uuid = crypto.randomUUID().slice(0, 8);
+  const uuid = (typeof crypto?.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+  ).slice(0, 8);
   const safeExt = extension.replace(/^\./, '').replace(/[^a-zA-Z0-9]/g, '') || 'png';
   return `img_${safeCharName}_${uuid}.${safeExt}`;
 }
