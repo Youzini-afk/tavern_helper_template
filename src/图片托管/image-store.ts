@@ -536,31 +536,42 @@ export const useImageStore = defineStore('image-hosting-images', () => {
     }
 
     /**
-     * 清理远程图片的本地缓存 (删除服务端文件)
-     * @param days 清理多少天前的缓存, 0 表示清理全部
+     * 清理图片缓存/文件
+     * @param days 清理多少天前的, 0 表示全部
+     * @param includeLocal 是否也清理 local 模式的图片 (不可恢复!)
      * @returns 清理的数量
      */
-    async function cleanupCache(days: number): Promise<number> {
+    async function cleanupCache(days: number, includeLocal = false): Promise<number> {
         const cutoff = days > 0 ? Date.now() - days * 24 * 60 * 60 * 1000 : Infinity;
         let cleaned = 0;
+        const toDelete: string[] = []; // 需要从注册表删除的 storageName
 
-        for (const [, meta] of Object.entries(registry.value.images)) {
-            // 只清理 remote 模式且有 server_path 的 (即缓存到本地的远程图片)
-            if (meta.storage !== 'remote' || !meta.server_path) continue;
-            if (days > 0 && meta.uploaded_at > cutoff) continue; // 还没过期
+        for (const [storageName, meta] of Object.entries(registry.value.images)) {
+            if (days > 0 && meta.uploaded_at > cutoff) continue; // 没过期
 
-            try {
-                await deleteFile(meta.server_path);
-            } catch {
-                // 文件可能已被手动删除, 忽略
+            // 远程图片的本地缓存: 删文件, 清 server_path, 保留远程 URL
+            if (meta.storage === 'remote' && meta.server_path) {
+                try { await deleteFile(meta.server_path); } catch { /* ignore */ }
+                meta.server_path = '';
+                cleaned++;
             }
-            meta.server_path = '';
-            cleaned++;
+
+            // local 模式图片: 删文件 + 删注册表条目 (不可恢复)
+            if (includeLocal && meta.storage === 'local' && meta.server_path) {
+                try { await deleteFile(meta.server_path); } catch { /* ignore */ }
+                revokeObjectUrl(storageName);
+                toDelete.push(storageName);
+                cleaned++;
+            }
+        }
+
+        // 删除 local 图片的注册表条目
+        for (const key of toDelete) {
+            delete registry.value.images[key];
         }
 
         if (cleaned > 0) {
             saveRegistry(registry.value);
-            // 同时清除内存中的解析缓存, 下次会重新走 CDN 轮询
             resolvedRemoteCache.clear();
         }
         return cleaned;

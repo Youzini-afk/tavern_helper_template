@@ -82,11 +82,11 @@
           </div>
         </label>
 
-        <!-- 缓存清理 -->
-        <div v-if="settings.remote_cache_local" class="cdn-speed-panel" style="margin-top: 8px; padding-top: 8px;">
+        <!-- 文件清理 -->
+        <div class="cdn-speed-panel" style="margin-top: 8px; padding-top: 8px;">
           <div class="cdn-speed-header">
             <div style="display: flex; align-items: center; gap: 6px;">
-              <span class="toggle-title" style="font-size: 12px">清理缓存</span>
+              <span class="toggle-title" style="font-size: 12px">清理文件</span>
               <input
                 v-model.number="cleanupDays"
                 type="number"
@@ -105,8 +105,16 @@
               <i class="fa-solid fa-broom"></i> 清理
             </button>
           </div>
+          <div style="margin-top: 6px; display: flex; align-items: center; gap: 8px;">
+            <label style="font-size: 11px; display: flex; align-items: center; gap: 4px; cursor: pointer;">
+              <input v-model="cleanupIncludeLocal" type="checkbox" style="margin: 0" />
+              <span :style="{ color: cleanupIncludeLocal ? 'var(--error-color)' : 'var(--text-muted)' }">
+                包含本地图片 <span v-if="cleanupIncludeLocal">⚠️ 不可恢复</span>
+              </span>
+            </label>
+          </div>
           <span style="font-size: 10px; color: var(--text-muted); margin-top: 4px; display: block">
-            设为 0 清理全部缓存；仅清理远程图片的本地缓存文件
+            设为 0 清理全部；远程缓存清理后会重新拉取，本地图片删除不可恢复
           </span>
         </div>
 
@@ -503,14 +511,18 @@ const remoteCount = computed(() => images.value.filter(i => i.storage === 'remot
 
 // 缓存清理
 const cleanupDays = ref(7);
+const cleanupIncludeLocal = ref(false);
 async function handleCleanupCache() {
   const label = cleanupDays.value > 0 ? `${cleanupDays.value} 天前的` : '全部';
-  if (!confirm(`确定清理${label}远程图片本地缓存？\n缓存清理后下次访问会重新从远程拉取。`)) return;
-  const count = await imageStore.cleanupCache(cleanupDays.value);
+  const localWarning = cleanupIncludeLocal.value
+    ? '\n⚠️ 包含本地图片，删除后不可恢复！'
+    : '\n远程缓存清理后会重新拉取。';
+  if (!confirm(`确定清理${label}图片文件？${localWarning}`)) return;
+  const count = await imageStore.cleanupCache(cleanupDays.value, cleanupIncludeLocal.value);
   if (count > 0) {
-    toastr.success(`已清理 ${count} 个缓存文件`);
+    toastr.success(`已清理 ${count} 个文件`);
   } else {
-    toastr.info('没有需要清理的缓存');
+    toastr.info('没有需要清理的文件');
   }
 }
 
