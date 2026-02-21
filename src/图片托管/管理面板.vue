@@ -35,7 +35,7 @@
           <div class="stat-icon"><i class="fa-solid fa-server"></i></div>
           <div class="stat-content">
             <span class="stat-label">存储分布</span>
-            <span class="stat-value">{{ localCount }} 本地 / {{ embeddedCount }} 嵌入</span>
+            <span class="stat-value">{{ localCount }} 本地 / {{ embeddedCount }} 嵌入 / {{ remoteCount }} 远程</span>
           </div>
         </div>
       </div>
@@ -47,11 +47,40 @@
           <select v-model="settings.storage_mode" class="image-hosting_select">
             <option value="local">📁 本地文件 (需额外分享)</option>
             <option value="embedded">📦 嵌入角色卡 (自动分享)</option>
+            <option value="remote">🌐 远程图床 (URL)</option>
           </select>
         </div>
         <div v-if="settings.storage_mode === 'embedded'" class="image-hosting_hint-text">
           <i class="fa-solid fa-circle-info"></i> 图片数据将使用 Base64 嵌入角色卡变量，导出卡片时自动包含。
         </div>
+        <div v-if="settings.storage_mode === 'remote'" class="image-hosting_hint-text">
+          <i class="fa-solid fa-circle-info"></i> 填入图片 URL，元数据存入角色卡。用户导入后直接从远程加载。
+        </div>
+      </div>
+
+      <!-- CDN 代理设置 (remote 模式) -->
+      <div v-if="settings.storage_mode === 'remote'" class="image-hosting_block image-hosting_glass-card">
+        <label class="image-hosting_toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-title">CDN 代理加速</span>
+            <span class="toggle-desc">原始 URL 不可用时自动通过代理加载</span>
+          </div>
+          <div class="st-checkbox-wrapper">
+            <input v-model="settings.cdn_proxy_enabled" type="checkbox" class="st-checkbox" />
+            <div class="st-checkbox-slider"></div>
+          </div>
+        </label>
+
+        <label class="image-hosting_toggle-row" style="margin-top: 10px;">
+          <div class="toggle-info">
+            <span class="toggle-title">本地缓存</span>
+            <span class="toggle-desc">首次加载后保存到本地，之后不再远程拉取</span>
+          </div>
+          <div class="st-checkbox-wrapper">
+            <input v-model="settings.remote_cache_local" type="checkbox" class="st-checkbox" />
+            <div class="st-checkbox-slider"></div>
+          </div>
+        </label>
       </div>
 
       <!-- 设置区域 -->
@@ -93,8 +122,8 @@
         </button>
       </div>
 
-      <!-- 移动端: 上传区域在左侧 -->
-      <div v-if="!isDesktop" class="image-hosting_block">
+      <!-- 移动端: 上传区域在左侧 (非 remote 模式) -->
+      <div v-if="!isDesktop && settings.storage_mode !== 'remote'" class="image-hosting_block">
         <div
           class="image-hosting_dropzone"
           :class="{ 'image-hosting_dropzone--active': isDragging, 'image-hosting_dropzone--uploading': uploading }"
@@ -109,6 +138,30 @@
           <div class="dropzone-text">
             <span class="primary-text">{{ uploading ? `正在上传 (${uploadProgress})` : '点击选择或拖拽图片到此处' }}</span>
             <span v-if="!uploading" class="secondary-text">支持 PNG, JPG, GIF, WebP</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Remote 模式: URL 输入区 (移动端在左侧) -->
+      <div v-if="!isDesktop && settings.storage_mode === 'remote'" class="image-hosting_block image-hosting_glass-card">
+        <div class="remote-url-form">
+          <div class="remote-input-row">
+            <input
+              v-model="remoteDisplayName"
+              class="search-input remote-input"
+              placeholder="显示名称"
+            />
+          </div>
+          <div class="remote-input-row">
+            <input
+              v-model="remoteUrl"
+              class="search-input remote-input"
+              placeholder="图片 URL (https://...)"
+              @keyup.enter="handleAddRemote"
+            />
+            <button class="image-hosting_btn btn-primary" style="flex: 0 0 auto; padding: 6px 14px;" @click="handleAddRemote">
+              <i class="fa-solid fa-plus"></i> 添加
+            </button>
           </div>
         </div>
       </div>
@@ -170,12 +223,34 @@
         </div>
         
         <TransitionGroup name="list" tag="div" class="image-hosting_grid">
-          <!-- 桌面端: 上传卡片融入画廊首位 -->
-          <div v-if="isDesktop" key="__upload__" class="image-hosting_card upload-card" @click="triggerFileInput">
+          <!-- 桌面端: 上传/添加卡片融入画廊首位 -->
+          <div v-if="isDesktop && settings.storage_mode !== 'remote'" key="__upload__" class="image-hosting_card upload-card" @click="triggerFileInput">
             <div class="upload-card-content">
               <i class="fa-solid" :class="uploading ? 'fa-spinner fa-spin' : 'fa-plus'" style="font-size: 24px; color: var(--primary-color)"></i>
               <span style="font-size: 13px; font-weight: 500">{{ uploading ? `上传中 (${uploadProgress})` : '添加图片' }}</span>
               <span style="font-size: 11px; color: var(--text-muted)">点击选择或拖拽到此区域</span>
+            </div>
+          </div>
+
+          <!-- 桌面端 remote 模式: URL 输入卡片 -->
+          <div v-if="isDesktop && settings.storage_mode === 'remote'" key="__remote_add__" class="image-hosting_card upload-card remote-add-card">
+            <div class="remote-url-form" style="width: 100%">
+              <input
+                v-model="remoteDisplayName"
+                class="search-input remote-input"
+                placeholder="显示名称"
+              />
+              <div class="remote-input-row">
+                <input
+                  v-model="remoteUrl"
+                  class="search-input remote-input"
+                  placeholder="图片 URL"
+                  @keyup.enter="handleAddRemote"
+                />
+                <button class="image-hosting_btn btn-primary" style="flex: 0 0 auto; padding: 5px 12px; font-size: 12px;" @click="handleAddRemote">
+                  <i class="fa-solid fa-plus"></i>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -315,6 +390,7 @@ const filteredImages = computed(() => {
 const totalSize = computed(() => _.sumBy(images.value, 'size'));
 const localCount = computed(() => images.value.filter(i => i.storage === 'local').length);
 const embeddedCount = computed(() => images.value.filter(i => i.storage === 'embedded').length);
+const remoteCount = computed(() => images.value.filter(i => i.storage === 'remote').length);
 
 // 批量选择
 const selectedSet = ref(new Set<string>());
@@ -342,6 +418,27 @@ const uploading = ref(false);
 const uploadProgress = ref('');
 const isDragging = ref(false);
 const fileInputRef = ref<HTMLInputElement>();
+
+// 远程 URL 输入
+const remoteDisplayName = ref('');
+const remoteUrl = ref('');
+
+function handleAddRemote() {
+  const url = remoteUrl.value.trim();
+  if (!url) {
+    toastr.warning('请输入图片 URL');
+    return;
+  }
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    toastr.warning('URL 必须以 http:// 或 https:// 开头');
+    return;
+  }
+  const name = remoteDisplayName.value.trim() || url.split('/').pop()?.split('?')[0] || 'remote-image';
+  imageStore.addRemote(name, url);
+  toastr.success(`已添加远程图片「${name}」`);
+  remoteDisplayName.value = '';
+  remoteUrl.value = '';
+}
 
 // 重命名状态
 const editingName = ref<string | null>(null);
@@ -1274,5 +1371,39 @@ async function handleImport() {
 .empty-hint-card:hover {
   transform: none;
   box-shadow: none;
+}
+
+/* Remote URL Form */
+.remote-url-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.remote-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.remote-input {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--text-main);
+  font-size: 12px;
+  flex: 1;
+  transition: border-color 0.2s;
+}
+.remote-input:focus {
+  border-color: var(--primary-color);
+  outline: none;
+}
+.remote-add-card {
+  min-height: 90px;
+  padding: 12px;
+  cursor: default;
+}
+.remote-add-card:hover {
+  transform: none;
 }
 </style>
