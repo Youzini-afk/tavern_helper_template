@@ -11,6 +11,15 @@
           <small>当前角色卡: <b>{{ characterName }}</b></small>
         </div>
 
+        <!-- 存储模式 -->
+        <div class="image-hosting_block flex-container" style="align-items: center; gap: 8px">
+          <label>存储模式</label>
+          <select v-model="settings.storage_mode" class="text_pole" style="height: 28px; flex: 1">
+            <option value="local">本地文件 (需额外分享压缩包)</option>
+            <option value="embedded">嵌入角色卡 (导出卡片时自动包含)</option>
+          </select>
+        </div>
+
         <!-- 上传区域 -->
         <div class="image-hosting_block">
           <div
@@ -51,10 +60,16 @@
           />
         </div>
 
-        <!-- 导入导出按钮 -->
-        <div class="image-hosting_block flex-container">
+        <!-- 导入导出按钮 (仅 local 模式) -->
+        <div v-if="settings.storage_mode === 'local'" class="image-hosting_block flex-container">
           <input class="menu_button" type="submit" value="导出图片包" @click="handleExport" />
           <input class="menu_button" type="submit" value="导入图片包" @click="handleImport" />
+        </div>
+        <div v-else class="image-hosting_block">
+          <small style="opacity: 0.6">
+            <i class="fa-solid fa-circle-info"></i>
+            嵌入模式: 图片数据跟随角色卡导出/导入，无需额外压缩包
+          </small>
         </div>
 
         <hr class="sysHR" />
@@ -64,8 +79,8 @@
           <small style="opacity: 0.6">暂无图片, 请上传</small>
         </div>
         <div v-for="image in images" :key="image.storageName" class="image-hosting_image-item">
-          <div class="image-hosting_image-preview">
-            <img :src="'/' + image.server_path" :alt="image.display_name" loading="lazy" />
+          <div class="image-hosting_image-preview" @click="openPreview(image)">
+            <img :src="image.url" :alt="image.display_name" loading="lazy" />
           </div>
           <div class="image-hosting_image-info">
             <div class="image-hosting_image-name">
@@ -97,7 +112,12 @@
                 ></i>
               </template>
             </div>
-            <small style="opacity: 0.6">{{ formatSize(image.size) }} · {{ image.mime_type }}</small>
+            <small style="opacity: 0.6">
+              {{ formatSize(image.size) }} · {{ image.mime_type }}
+              <span v-if="image.storage === 'embedded'" style="color: var(--SmartThemeQuoteColor, #3498db)">
+                · 嵌入
+              </span>
+            </small>
             <div class="image-hosting_image-actions">
               <i
                 class="fa-solid fa-copy image-hosting_icon-btn"
@@ -117,13 +137,27 @@
         <hr class="sysHR" />
       </div>
     </div>
+
+    <!-- 大图预览浮层 -->
+    <Teleport to="body">
+      <div v-if="previewImage" class="image-hosting_overlay" @click.self="closePreview">
+        <div class="image-hosting_preview-container">
+          <img :src="previewImage.url" :alt="previewImage.display_name" />
+          <div class="image-hosting_preview-info">
+            <span>{{ previewImage.display_name }}</span>
+            <small>{{ formatSize(previewImage.size) }} · {{ previewImage.mime_type }}</small>
+          </div>
+          <i class="fa-solid fa-xmark image-hosting_preview-close" @click="closePreview"></i>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
 import { storeToRefs } from 'pinia';
 import { useSettingsStore } from './settings';
-import { useImageStore } from './image-store';
+import { useImageStore, type ImageMeta } from './image-store';
 import { exportImages, importImages } from './export-import';
 
 const { settings } = storeToRefs(useSettingsStore());
@@ -142,7 +176,10 @@ const fileInputRef = ref<HTMLInputElement>();
 const editingName = ref<string | null>(null);
 const editNameValue = ref('');
 
-// 监听角色卡切换，重新加载图片列表
+// 大图预览状态
+const previewImage = ref<({ storageName: string; url: string } & ImageMeta) | null>(null);
+
+// 监听角色卡切换
 eventOn(tavern_events.CHAT_CHANGED, () => {
   characterName.value = substitudeMacros('{{char}}') || '未选择';
   imageStore.reload();
@@ -235,6 +272,15 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// 大图预览
+function openPreview(image: { storageName: string; url: string } & ImageMeta) {
+  previewImage.value = image;
+}
+
+function closePreview() {
+  previewImage.value = null;
+}
+
 async function handleExport() {
   await exportImages();
 }
@@ -287,6 +333,12 @@ async function handleImport() {
   flex-shrink: 0;
   border-radius: 4px;
   overflow: hidden;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.image-hosting_image-preview:hover {
+  opacity: 0.8;
 }
 
 .image-hosting_image-preview img {
@@ -330,5 +382,65 @@ async function handleImport() {
 
 .image-hosting_icon-btn:hover {
   opacity: 1;
+}
+
+/* 大图预览浮层 */
+.image-hosting_overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.image-hosting_preview-container {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  cursor: default;
+}
+
+.image-hosting_preview-container img {
+  max-width: 90vw;
+  max-height: 85vh;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+}
+
+.image-hosting_preview-info {
+  text-align: center;
+  margin-top: 8px;
+  color: #ccc;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.image-hosting_preview-close {
+  position: absolute;
+  top: -12px;
+  right: -12px;
+  font-size: 20px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.image-hosting_preview-close:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 </style>

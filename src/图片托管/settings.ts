@@ -3,6 +3,8 @@
  */
 const Settings = z
     .object({
+        /** 存储模式: 'local' 服务端文件 | 'embedded' 嵌入角色卡 */
+        storage_mode: z.enum(['local', 'embedded']).default('local'),
         /** 是否启用上传时自动压缩/转 WebP */
         auto_compress: z.boolean().default(false),
         /** 压缩质量 (0-1) */

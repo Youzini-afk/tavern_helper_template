@@ -1,7 +1,9 @@
 /**
  * 图片元数据管理 (持久化到角色卡变量)
  *
- * 每张角色卡拥有独立的图片注册表，实现角色卡级别的隔离
+ * 支持两种存储模式:
+ * - local: 图片存储在 SillyTavern 服务端文件系统
+ * - embedded: 图片以 base64 嵌入角色卡变量 (导出角色卡时自动携带)
  */
 import { uploadFile, deleteFile, verifyFiles, fileToBase64, generateStorageName } from './api';
 import { compressImage } from './compress';
@@ -14,7 +16,12 @@ const ImageMeta = z.object({
     mime_type: z.string(),
     size: z.coerce.number(),
     uploaded_at: z.coerce.number(),
-    server_path: z.string(),
+    /** 服务端文件路径 (local 模式) */
+    server_path: z.string().default(''),
+    /** base64 图片数据 (embedded 模式) */
+    base64_data: z.string().default(''),
+    /** 存储模式 */
+    storage: z.enum(['local', 'embedded']).default('local'),
 });
 export type ImageMeta = z.infer<typeof ImageMeta>;
 
@@ -46,6 +53,34 @@ function saveRegistry(registry: ImageRegistry): void {
     );
 }
 
+/** Object URL 缓存 (embedded 模式用) */
+const objectUrlCache = new Map<string, string>();
+
+/** 从 base64 创建 Object URL 并缓存 */
+function getOrCreateObjectUrl(storageName: string, base64Data: string, mimeType: string): string {
+    const cached = objectUrlCache.get(storageName);
+    if (cached) return cached;
+
+    const binaryString = atob(base64Data);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    objectUrlCache.set(storageName, url);
+    return url;
+}
+
+/** 清除某个 Object URL 缓存 */
+function revokeObjectUrl(storageName: string): void {
+    const url = objectUrlCache.get(storageName);
+    if (url) {
+        URL.revokeObjectURL(url);
+        objectUrlCache.delete(storageName);
+    }
+}
+
 export const useImageStore = defineStore('image-hosting-images', () => {
     const registry = ref(loadRegistry());
     const settingsStore = useSettingsStore();
@@ -69,7 +104,17 @@ export const useImageStore = defineStore('image-hosting-images', () => {
         }
 
         const storageName = generateStorageName(getCharacterName(), extension);
-        const serverPath = await uploadFile(storageName, base64);
+        const mode = settingsStore.settings.storage_mode;
+
+        let serverPath = '';
+        let base64Data = '';
+
+        if (mode === 'local') {
+            serverPath = await uploadFile(storageName, base64);
+        } else {
+            // embedded: 直接存到角色卡变量
+            base64Data = base64;
+        }
 
         const meta: ImageMeta = {
             display_name: file.name.replace(/\.[^.]+$/, ''),
@@ -78,6 +123,8 @@ export const useImageStore = defineStore('image-hosting-images', () => {
             size: fileSize,
             uploaded_at: Date.now(),
             server_path: serverPath,
+            base64_data: base64Data,
+            storage: mode,
         };
 
         registry.value.images[storageName] = meta;
@@ -90,12 +137,15 @@ export const useImageStore = defineStore('image-hosting-images', () => {
         const meta = registry.value.images[storageName];
         if (!meta) return;
 
-        try {
-            await deleteFile(meta.server_path);
-        } catch (err) {
-            console.warn(`删除服务端文件失败, 仅从注册表移除: ${err}`);
+        if (meta.storage === 'local' && meta.server_path) {
+            try {
+                await deleteFile(meta.server_path);
+            } catch (err) {
+                console.warn(`删除服务端文件失败, 仅从注册表移除: ${err}`);
+            }
         }
 
+        revokeObjectUrl(storageName);
         delete registry.value.images[storageName];
         saveRegistry(registry.value);
     }
@@ -108,37 +158,56 @@ export const useImageStore = defineStore('image-hosting-images', () => {
         saveRegistry(registry.value);
     }
 
+    /** 获取图片的可用 URL (自动处理两种模式) */
+    function resolveUrl(storageName: string, meta: ImageMeta): string {
+        if (meta.storage === 'embedded' && meta.base64_data) {
+            return getOrCreateObjectUrl(storageName, meta.base64_data, meta.mime_type);
+        }
+        return `/${meta.server_path}`;
+    }
+
     /** 通过显示名称获取图片 URL */
     function getUrlByDisplayName(displayName: string): string | null {
-        const entry = _.find(registry.value.images, (meta) => meta.display_name === displayName);
-        if (!entry) return null;
-        return `/${entry.server_path}`;
+        for (const [storageName, meta] of Object.entries(registry.value.images)) {
+            if (meta.display_name === displayName) {
+                return resolveUrl(storageName, meta);
+            }
+        }
+        return null;
     }
 
     /** 通过存储名称获取图片 URL */
     function getUrlByStorageName(storageName: string): string | null {
         const meta = registry.value.images[storageName];
         if (!meta) return null;
-        return `/${meta.server_path}`;
+        return resolveUrl(storageName, meta);
     }
 
     /** 获取所有图片列表 */
-    function getAllImages(): Array<{ storageName: string } & ImageMeta> {
+    function getAllImages(): Array<{ storageName: string; url: string } & ImageMeta> {
         return _.map(registry.value.images, (meta, storageName) => ({
             storageName,
+            url: resolveUrl(storageName, meta),
             ...meta,
         }));
     }
 
-    /** 验证所有图片文件的完整性 */
+    /** 验证所有本地模式图片的完整性 */
     async function verify(): Promise<Record<string, boolean>> {
-        const urls = _.map(registry.value.images, meta => meta.server_path);
-        if (urls.length === 0) return {};
-        return verifyFiles(urls);
+        const localImages = _.filter(
+            _.map(registry.value.images, (meta, name) => ({ name, meta })),
+            item => item.meta.storage === 'local' && item.meta.server_path,
+        );
+        if (localImages.length === 0) return {};
+        return verifyFiles(localImages.map(i => i.meta.server_path));
     }
 
     /** 重新从角色卡变量加载注册表 */
     function reload(): void {
+        // 清除旧的 Object URL 缓存
+        for (const key of objectUrlCache.keys()) {
+            revokeObjectUrl(key);
+        }
         registry.value = loadRegistry();
     }
 
@@ -158,6 +227,7 @@ export const useImageStore = defineStore('image-hosting-images', () => {
         upload,
         remove,
         rename,
+        resolveUrl,
         getUrlByDisplayName,
         getUrlByStorageName,
         getAllImages,
