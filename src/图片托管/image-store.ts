@@ -159,15 +159,48 @@ export function githubToJsdelivr(url: string): string | null {
 }
 
 /**
+ * 检测 URL 是否已经来自已知 CDN / 代理
+ * 如果是, 不应再套代理 (避免 CDN 嵌套)
+ */
+const KNOWN_CDN_DOMAINS = [
+    'cdn.jsdelivr.net',
+    'fastly.jsdelivr.net',
+    'wsrv.nl',
+    'images.weserv.nl',
+    'i0.wp.com',
+    'i1.wp.com',
+    'i2.wp.com',
+    'imageproxy.pimg.tw',
+];
+
+function isKnownCdnUrl(url: string): boolean {
+    try {
+        const hostname = new URL(url).hostname;
+        return KNOWN_CDN_DOMAINS.includes(hostname);
+    } catch {
+        return false;
+    }
+}
+
+/**
  * 通过 CDN 代理列表轮询, 找到第一个可用 URL
  * 如果有首选代理 (测速锚定), 优先使用
  * 如果是 GitHub URL, 自动尝试 jsdelivr CDN
+ * 如果 URL 已经是 CDN, 直接返回 (防止嵌套)
  */
 async function resolveWithCdn(
     originalUrl: string,
     proxyTemplates: string[],
     preferredProxy: string,
 ): Promise<string> {
+    // 0. 如果 URL 已经是已知 CDN, 直接返回不套代理
+    if (isKnownCdnUrl(originalUrl)) {
+        const latency = await probeImageUrl(originalUrl, 4000);
+        if (latency >= 0) return originalUrl;
+        // CDN 本身也不通, 返回原始 URL 让浏览器自行处理
+        return originalUrl;
+    }
+
     // 1. 如果有锚定的首选代理, 最先尝试
     if (preferredProxy) {
         const proxyUrl = applyProxyTemplate(preferredProxy, originalUrl);
