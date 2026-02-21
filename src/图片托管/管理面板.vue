@@ -1,227 +1,258 @@
 <template>
-  <div class="image-hosting-panel">
-    <div class="image-hosting_header">
-      <b><i class="fa-solid fa-images"></i> 图片托管</b>
-    </div>
-    
-    <!-- 当前角色卡名 -->
-    <div class="image-hosting_block flex-container flexFlowColumn" style="margin-bottom: 15px;">
-      <small style="opacity:0.7; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase;">当前角色卡</small>
-      <div class="image-hosting_character-badge">
-        <i class="fa-solid fa-user-astronaut"></i>
-        <b>{{ characterName }}</b>
+  <div class="image-hosting-panel" :class="{ 'is-desktop': isDesktop }">
+    <!-- ======== 左侧面板: 设置/统计/导入导出 ======== -->
+    <div class="panel-left">
+      <div class="image-hosting_header">
+        <b><i class="fa-solid fa-images"></i> 图片托管</b>
       </div>
-    </div>
 
-    <!-- 使用统计 -->
-    <div v-if="images.length > 0" class="image-hosting_stats">
-      <div class="image-hosting_stat-item">
-        <div class="stat-icon"><i class="fa-solid fa-images"></i></div>
-        <div class="stat-content">
-          <span class="stat-label">总图片</span>
-          <span class="stat-value">{{ images.length }}</span>
+      <!-- 当前角色卡名 -->
+      <div class="image-hosting_block flex-container flexFlowColumn" style="margin-bottom: 15px;">
+        <small style="opacity:0.7; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase;">当前角色卡</small>
+        <div class="image-hosting_character-badge">
+          <i class="fa-solid fa-user-astronaut"></i>
+          <b>{{ characterName }}</b>
         </div>
       </div>
-      <div class="image-hosting_stat-item">
-        <div class="stat-icon"><i class="fa-solid fa-hard-drive"></i></div>
-        <div class="stat-content">
-          <span class="stat-label">总占用</span>
-          <span class="stat-value">{{ formatSize(totalSize) }}</span>
-        </div>
-      </div>
-      <div class="image-hosting_stat-item">
-        <div class="stat-icon"><i class="fa-solid fa-server"></i></div>
-        <div class="stat-content">
-          <span class="stat-label">存储分布</span>
-          <span class="stat-value">{{ localCount }} 本地 / {{ embeddedCount }} 嵌入</span>
-        </div>
-      </div>
-    </div>
 
-    <!-- 存储模式 -->
-    <div class="image-hosting_block image-hosting_glass-card">
-      <div class="flex-container" style="align-items: center; justify-content: space-between;">
-        <label style="font-weight: 600; font-size: 13px;">存储模式</label>
-        <select v-model="settings.storage_mode" class="image-hosting_select">
-          <option value="local">📁 本地文件 (需额外分享)</option>
-          <option value="embedded">📦 嵌入角色卡 (自动分享)</option>
-        </select>
-      </div>
-      <div v-if="settings.storage_mode === 'embedded'" class="image-hosting_hint-text">
-        <i class="fa-solid fa-circle-info"></i> 图片数据将使用 Base64 嵌入角色卡变量，导出卡片时自动包含。
-      </div>
-    </div>
-
-    <!-- 设置区域 -->
-    <div class="image-hosting_block image-hosting_glass-card">
-      <label class="image-hosting_toggle-row">
-        <div class="toggle-info">
-          <span class="toggle-title">开启上传压缩</span>
-          <span class="toggle-desc">自动将图片压缩并转换为 WebP 格式</span>
+      <!-- 使用统计 -->
+      <div v-if="images.length > 0" class="image-hosting_stats">
+        <div class="image-hosting_stat-item">
+          <div class="stat-icon"><i class="fa-solid fa-images"></i></div>
+          <div class="stat-content">
+            <span class="stat-label">总图片</span>
+            <span class="stat-value">{{ images.length }}</span>
+          </div>
         </div>
-        <div class="st-checkbox-wrapper">
-          <input v-model="settings.auto_compress" type="checkbox" class="st-checkbox" />
-          <div class="st-checkbox-slider"></div>
+        <div class="image-hosting_stat-item">
+          <div class="stat-icon"><i class="fa-solid fa-hard-drive"></i></div>
+          <div class="stat-content">
+            <span class="stat-label">总占用</span>
+            <span class="stat-value">{{ formatSize(totalSize) }}</span>
+          </div>
         </div>
-      </label>
-      
-      <div v-if="settings.auto_compress" class="image-hosting_quality-slider">
-        <div class="slider-header">
-          <label>压缩质量</label>
-          <span class="quality-badge">{{ Math.round(settings.compress_quality * 100) }}%</span>
-        </div>
-        <input
-          v-model.number="settings.compress_quality"
-          type="range"
-          min="0.1"
-          max="1"
-          step="0.05"
-          class="image-hosting_range"
-        />
-      </div>
-    </div>
-
-    <!-- 导入导出按钮 (仅 local 模式) -->
-    <div v-if="settings.storage_mode === 'local'" class="image-hosting_block flex-container" style="gap: 10px;">
-      <button class="image-hosting_btn btn-primary" @click="handleExport">
-        <i class="fa-solid fa-file-export"></i> 导出图片包
-      </button>
-      <button class="image-hosting_btn btn-secondary" @click="handleImport">
-        <i class="fa-solid fa-file-import"></i> 导入图片包
-      </button>
-    </div>
-
-    <!-- 上传区域 -->
-    <div class="image-hosting_block">
-      <div
-        class="image-hosting_dropzone"
-        :class="{ 'image-hosting_dropzone--active': isDragging, 'image-hosting_dropzone--uploading': uploading }"
-        @dragover.prevent="isDragging = true"
-        @dragleave.prevent="isDragging = false"
-        @drop.prevent="handleDrop"
-        @click="triggerFileInput"
-      >
-        <div class="dropzone-icon">
-          <i class="fa-solid" :class="uploading ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'"></i>
-        </div>
-        <div class="dropzone-text">
-          <span class="primary-text">{{ uploading ? `正在上传 (${uploadProgress})` : '点击选择或拖拽图片到此处' }}</span>
-          <span v-if="!uploading" class="secondary-text">支持 PNG, JPG, GIF, WebP</span>
+        <div class="image-hosting_stat-item">
+          <div class="stat-icon"><i class="fa-solid fa-server"></i></div>
+          <div class="stat-content">
+            <span class="stat-label">存储分布</span>
+            <span class="stat-value">{{ localCount }} 本地 / {{ embeddedCount }} 嵌入</span>
+          </div>
         </div>
       </div>
-      <input
-        ref="fileInputRef"
-        type="file"
-        accept="image/*"
-        multiple
-        style="display: none"
-        @change="handleFileSelect"
-      />
-    </div>
 
-    <div class="image-hosting_divider"></div>
-
-    <!-- 搜索栏 + 批量操作 -->
-    <div v-if="images.length > 0" class="image-hosting_toolbar">
-      <div class="image-hosting_search-box">
-        <i class="fa-solid fa-magnifying-glass search-icon"></i>
-        <input
-          v-model="searchQuery"
-          class="search-input"
-          placeholder="搜索图片名称..."
-        />
-        <i
-          v-if="searchQuery"
-          class="fa-solid fa-circle-xmark clear-icon"
-          @click="searchQuery = ''"
-        ></i>
+      <!-- 存储模式 -->
+      <div class="image-hosting_block image-hosting_glass-card">
+        <div class="flex-container" style="align-items: center; justify-content: space-between;">
+          <label style="font-weight: 600; font-size: 13px;">存储模式</label>
+          <select v-model="settings.storage_mode" class="image-hosting_select">
+            <option value="local">📁 本地文件 (需额外分享)</option>
+            <option value="embedded">📦 嵌入角色卡 (自动分享)</option>
+          </select>
+        </div>
+        <div v-if="settings.storage_mode === 'embedded'" class="image-hosting_hint-text">
+          <i class="fa-solid fa-circle-info"></i> 图片数据将使用 Base64 嵌入角色卡变量，导出卡片时自动包含。
+        </div>
       </div>
-      
-      <div class="image-hosting_batch-bar">
-        <label class="batch-checkbox">
-          <input type="checkbox" :checked="isAllSelected" @change="toggleSelectAll" />
-          <span>{{ isAllSelected ? '取消全选' : '全选' }}</span>
+
+      <!-- 设置区域 -->
+      <div class="image-hosting_block image-hosting_glass-card">
+        <label class="image-hosting_toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-title">开启上传压缩</span>
+            <span class="toggle-desc">自动将图片压缩并转换为 WebP 格式</span>
+          </div>
+          <div class="st-checkbox-wrapper">
+            <input v-model="settings.auto_compress" type="checkbox" class="st-checkbox" />
+            <div class="st-checkbox-slider"></div>
+          </div>
         </label>
         
-        <div class="batch-actions" :class="{ 'batch-actions--active': selectedSet.size > 0 }">
-          <span class="selected-count">{{ selectedSet.size }} 项</span>
-          <button class="icon-action-btn copy-btn" title="批量复制调用代码" @click="handleBatchCopyCode">
-            <i class="fa-solid fa-copy"></i>
-          </button>
-          <button class="icon-action-btn delete-btn" title="批量删除" @click="handleBatchDelete">
-            <i class="fa-solid fa-trash-can"></i>
-          </button>
+        <div v-if="settings.auto_compress" class="image-hosting_quality-slider">
+          <div class="slider-header">
+            <label>压缩质量</label>
+            <span class="quality-badge">{{ Math.round(settings.compress_quality * 100) }}%</span>
+          </div>
+          <input
+            v-model.number="settings.compress_quality"
+            type="range"
+            min="0.1"
+            max="1"
+            step="0.05"
+            class="image-hosting_range"
+          />
+        </div>
+      </div>
+
+      <!-- 导入导出按钮 (仅 local 模式) -->
+      <div v-if="settings.storage_mode === 'local'" class="image-hosting_block flex-container" style="gap: 10px;">
+        <button class="image-hosting_btn btn-primary" @click="handleExport">
+          <i class="fa-solid fa-file-export"></i> 导出图片包
+        </button>
+        <button class="image-hosting_btn btn-secondary" @click="handleImport">
+          <i class="fa-solid fa-file-import"></i> 导入图片包
+        </button>
+      </div>
+
+      <!-- 移动端: 上传区域在左侧 -->
+      <div v-if="!isDesktop" class="image-hosting_block">
+        <div
+          class="image-hosting_dropzone"
+          :class="{ 'image-hosting_dropzone--active': isDragging, 'image-hosting_dropzone--uploading': uploading }"
+          @dragover.prevent="isDragging = true"
+          @dragleave.prevent="isDragging = false"
+          @drop.prevent="handleDrop"
+          @click="triggerFileInput"
+        >
+          <div class="dropzone-icon">
+            <i class="fa-solid" :class="uploading ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'"></i>
+          </div>
+          <div class="dropzone-text">
+            <span class="primary-text">{{ uploading ? `正在上传 (${uploadProgress})` : '点击选择或拖拽图片到此处' }}</span>
+            <span v-if="!uploading" class="secondary-text">支持 PNG, JPG, GIF, WebP</span>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- 图片列表 -->
-    <div class="image-hosting_list-container">
-      <div v-if="images.length === 0" class="image-hosting_empty-state">
-        <div class="empty-icon"><i class="fa-regular fa-images"></i></div>
-        <span>暂无图片，请在上方上传</span>
-      </div>
-      <div v-else-if="filteredImages.length === 0" class="image-hosting_empty-state">
-        <div class="empty-icon"><i class="fa-solid fa-search"></i></div>
-        <span>没有找到匹配的图片</span>
-      </div>
-      
-      <TransitionGroup name="list" tag="div" class="image-hosting_grid">
-        <div v-for="image in filteredImages" :key="image.storageName" 
-             class="image-hosting_card"
-             :class="{ 'is-selected': selectedSet.has(image.storageName) }">
+    <!-- ======== 右侧面板: 搜索/上传/图片画廊 ======== -->
+    <div class="panel-right"
+         @dragover.prevent="isDesktop && (isDragging = true)"
+         @dragleave.prevent="isDesktop && (isDragging = false)"
+         @drop.prevent="isDesktop && handleDrop($event)"
+         :class="{ 'panel-right--dragover': isDesktop && isDragging }">
+
+      <!-- 移动端: 分隔线 -->
+      <div v-if="!isDesktop" class="image-hosting_divider"></div>
+
+      <!-- 搜索栏 + 批量操作 -->
+      <div v-if="images.length > 0" class="image-hosting_toolbar">
+        <div class="image-hosting_search-box">
+          <i class="fa-solid fa-magnifying-glass search-icon"></i>
+          <input
+            v-model="searchQuery"
+            class="search-input"
+            placeholder="搜索图片名称..."
+          />
+          <i
+            v-if="searchQuery"
+            class="fa-solid fa-circle-xmark clear-icon"
+            @click="searchQuery = ''"
+          ></i>
+        </div>
+        
+        <div class="image-hosting_batch-bar">
+          <label class="batch-checkbox">
+            <input type="checkbox" :checked="isAllSelected" @change="toggleSelectAll" />
+            <span>{{ isAllSelected ? '取消全选' : '全选' }}</span>
+          </label>
           
-          <div class="card-select">
-            <input type="checkbox" :checked="selectedSet.has(image.storageName)" @change="toggleSelect(image.storageName)" />
-          </div>
-          
-          <div class="card-preview" @click="openPreview(image)">
-            <img :src="image.url" :alt="image.display_name" loading="lazy" />
-            <div class="preview-overlay"><i class="fa-solid fa-expand"></i></div>
-            <div v-if="image.storage === 'embedded'" class="embedded-badge" title="嵌入模式">
-              <i class="fa-solid fa-box-archive"></i>
-            </div>
-          </div>
-          
-          <div class="card-info">
-            <div class="card-name-row">
-              <template v-if="editingName !== image.storageName">
-                <span class="card-name" :title="image.display_name">{{ image.display_name }}</span>
-                <button class="small-icon-btn" title="重命名" @click="startRename(image.storageName, image.display_name)">
-                  <i class="fa-solid fa-pen"></i>
-                </button>
-              </template>
-              <template v-else>
-                <input
-                  v-model="editNameValue"
-                  class="name-edit-input"
-                  v-focus
-                  @keyup.enter="confirmRename(image.storageName)"
-                  @keyup.escape="cancelRename"
-                />
-                <button class="small-icon-btn success" @click="confirmRename(image.storageName)"><i class="fa-solid fa-check"></i></button>
-                <button class="small-icon-btn danger" @click="cancelRename"><i class="fa-solid fa-xmark"></i></button>
-              </template>
-            </div>
-            
-            <div class="card-meta">
-              <span>{{ formatSize(image.size) }}</span>
-              <span class="meta-dot">•</span>
-              <span class="meta-type">{{ image.mime_type.split('/')[1]?.toUpperCase() || 'IMG' }}</span>
-            </div>
-            
-            <div class="card-actions">
-              <button class="action-btn" @click="copyCode(image.display_name)">
-                <i class="fa-regular fa-copy"></i> 复制调用代码
-              </button>
-              <button class="action-btn danger-icon" title="删除" @click="handleDelete(image.storageName, image.display_name)">
-                <i class="fa-regular fa-trash-can"></i>
-              </button>
-            </div>
+          <div class="batch-actions" :class="{ 'batch-actions--active': selectedSet.size > 0 }">
+            <span class="selected-count">{{ selectedSet.size }} 项</span>
+            <button class="icon-action-btn copy-btn" title="批量复制调用代码" @click="handleBatchCopyCode">
+              <i class="fa-solid fa-copy"></i>
+            </button>
+            <button class="icon-action-btn delete-btn" title="批量删除" @click="handleBatchDelete">
+              <i class="fa-solid fa-trash-can"></i>
+            </button>
           </div>
         </div>
-      </TransitionGroup>
+      </div>
+
+      <!-- 图片画廊 -->
+      <div class="image-hosting_list-container">
+        <div v-if="images.length === 0 && !isDesktop" class="image-hosting_empty-state">
+          <div class="empty-icon"><i class="fa-regular fa-images"></i></div>
+          <span>暂无图片，请在上方上传</span>
+        </div>
+        <div v-else-if="filteredImages.length === 0 && images.length > 0" class="image-hosting_empty-state">
+          <div class="empty-icon"><i class="fa-solid fa-search"></i></div>
+          <span>没有找到匹配的图片</span>
+        </div>
+        
+        <TransitionGroup name="list" tag="div" class="image-hosting_grid">
+          <!-- 桌面端: 上传卡片融入画廊首位 -->
+          <div v-if="isDesktop" key="__upload__" class="image-hosting_card upload-card" @click="triggerFileInput">
+            <div class="upload-card-content">
+              <i class="fa-solid" :class="uploading ? 'fa-spinner fa-spin' : 'fa-plus'" style="font-size: 24px; color: var(--primary-color)"></i>
+              <span style="font-size: 13px; font-weight: 500">{{ uploading ? `上传中 (${uploadProgress})` : '添加图片' }}</span>
+              <span style="font-size: 11px; color: var(--text-muted)">点击选择或拖拽到此区域</span>
+            </div>
+          </div>
+
+          <!-- 桌面端空状态提示 (在上传卡片之后) -->
+          <div v-if="isDesktop && images.length === 0" key="__empty__" class="image-hosting_card empty-hint-card">
+            <div class="upload-card-content">
+              <i class="fa-regular fa-images" style="font-size: 20px; opacity: 0.3"></i>
+              <span style="font-size: 12px; color: var(--text-muted)">暂无图片</span>
+            </div>
+          </div>
+
+          <div v-for="image in filteredImages" :key="image.storageName" 
+               class="image-hosting_card"
+               :class="{ 'is-selected': selectedSet.has(image.storageName) }">
+            
+            <div class="card-select">
+              <input type="checkbox" :checked="selectedSet.has(image.storageName)" @change="toggleSelect(image.storageName)" />
+            </div>
+            
+            <div class="card-preview" @click="openPreview(image)">
+              <img :src="image.url" :alt="image.display_name" loading="lazy" />
+              <div class="preview-overlay"><i class="fa-solid fa-expand"></i></div>
+              <div v-if="image.storage === 'embedded'" class="embedded-badge" title="嵌入模式">
+                <i class="fa-solid fa-box-archive"></i>
+              </div>
+            </div>
+            
+            <div class="card-info">
+              <div class="card-name-row">
+                <template v-if="editingName !== image.storageName">
+                  <span class="card-name" :title="image.display_name">{{ image.display_name }}</span>
+                  <button class="small-icon-btn" title="重命名" @click="startRename(image.storageName, image.display_name)">
+                    <i class="fa-solid fa-pen"></i>
+                  </button>
+                </template>
+                <template v-else>
+                  <input
+                    v-model="editNameValue"
+                    class="name-edit-input"
+                    v-focus
+                    @keyup.enter="confirmRename(image.storageName)"
+                    @keyup.escape="cancelRename"
+                  />
+                  <button class="small-icon-btn success" @click="confirmRename(image.storageName)"><i class="fa-solid fa-check"></i></button>
+                  <button class="small-icon-btn danger" @click="cancelRename"><i class="fa-solid fa-xmark"></i></button>
+                </template>
+              </div>
+              
+              <div class="card-meta">
+                <span>{{ formatSize(image.size) }}</span>
+                <span class="meta-dot">•</span>
+                <span class="meta-type">{{ image.mime_type.split('/')[1]?.toUpperCase() || 'IMG' }}</span>
+              </div>
+              
+              <div class="card-actions">
+                <button class="action-btn" @click="copyCode(image.display_name)">
+                  <i class="fa-regular fa-copy"></i> 复制调用代码
+                </button>
+                <button class="action-btn danger-icon" title="删除" @click="handleDelete(image.storageName, image.display_name)">
+                  <i class="fa-regular fa-trash-can"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </TransitionGroup>
+      </div>
     </div>
+
+    <!-- 隐藏的文件输入 -->
+    <input
+      ref="fileInputRef"
+      type="file"
+      accept="image/*"
+      multiple
+      style="display: none"
+      @change="handleFileSelect"
+    />
 
     <!-- 大图预览浮层 -->
     <Teleport to="body">
@@ -318,6 +349,14 @@ const editNameValue = ref('');
 
 // 大图预览状态
 const previewImage = ref<ImageItem | null>(null);
+
+// 横竖屏检测: 横屏=桌面端, 竖屏=移动端
+const isDesktop = ref(window.innerWidth > window.innerHeight);
+function updateOrientation() {
+  isDesktop.value = window.innerWidth > window.innerHeight;
+}
+window.addEventListener('resize', updateOrientation);
+onUnmounted(() => window.removeEventListener('resize', updateOrientation));
 
 // 注: reloadOnChatChange() 会在聊天切换时重载整个脚本 iframe,
 // 因此无需在 Vue 组件内单独监听 CHAT_CHANGED
@@ -1157,5 +1196,82 @@ async function handleImport() {
   padding: 2px 8px;
   border-radius: 12px;
   font-size: 11px;
+}
+
+/* ======== Desktop Split Layout ======== */
+.image-hosting-panel.is-desktop {
+  flex-direction: row;
+  gap: 0;
+}
+
+.image-hosting-panel.is-desktop .panel-left {
+  width: 280px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-color);
+  padding-right: 16px;
+  overflow-y: auto;
+  max-height: 100%;
+}
+
+.image-hosting-panel.is-desktop .panel-right {
+  flex: 1;
+  padding-left: 16px;
+  overflow-y: auto;
+  max-height: 100%;
+  min-width: 0;
+  transition: background 0.2s, border-color 0.2s;
+  border-radius: 8px;
+}
+
+.image-hosting-panel.is-desktop .panel-right.panel-right--dragover {
+  background: rgba(52, 152, 219, 0.04);
+  border: 2px dashed var(--primary-color);
+}
+
+/* 桌面端: 统计卡片竖排 */
+.image-hosting-panel.is-desktop .image-hosting_stats {
+  grid-template-columns: 1fr;
+}
+
+/* 桌面端: 工具栏竖排 */
+.image-hosting-panel.is-desktop .image-hosting_toolbar {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/* 桌面端: 上传卡片融入画廊 */
+.upload-card {
+  cursor: pointer;
+  border: 2px dashed rgba(255,255,255,0.15);
+  background: transparent;
+  min-height: 100px;
+  justify-content: center;
+  transition: all 0.25s ease;
+}
+.upload-card:hover {
+  border-color: var(--primary-color);
+  background: rgba(52, 152, 219, 0.05);
+}
+.upload-card-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  width: 100%;
+}
+
+.empty-hint-card {
+  border-style: dashed;
+  border-color: rgba(255,255,255,0.08);
+  min-height: 100px;
+  justify-content: center;
+  cursor: default;
+  pointer-events: none;
+}
+.empty-hint-card:hover {
+  transform: none;
+  box-shadow: none;
 }
 </style>

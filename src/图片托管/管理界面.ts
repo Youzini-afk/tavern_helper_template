@@ -34,13 +34,14 @@ function openPanel() {
             if (e.target === $overlay![0]) closePanel();
         });
 
-    // 创建面板容器
+    // 创建面板容器 (桌面端更宽)
+    const isDesktop = window.innerWidth > window.innerHeight;
     const $panel = $('<div>')
         .css({
             background: 'var(--SmartThemeBlurTintColor, #1a1a2e)',
             borderRadius: '12px',
             border: '1px solid var(--SmartThemeBorderColor, #444)',
-            width: 'min(500px, 90vw)',
+            width: isDesktop ? 'min(900px, 95vw)' : 'min(500px, 90vw)',
             maxHeight: '85vh',
             overflow: 'auto',
             padding: '15px',
