@@ -2,7 +2,7 @@
  * 导出/导入压缩包
  *
  * 使用 JSZip 打包图片资源 + manifest.json 供分享
- * 支持 local 和 embedded 两种存储模式
+ * 支持 local、embedded 和已缓存的 remote 存储模式
  */
 import JSZip from 'jszip';
 import { uploadFile, generateStorageName } from './api';

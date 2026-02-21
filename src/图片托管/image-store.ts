@@ -394,7 +394,7 @@ export const useImageStore = defineStore('image-hosting-images', () => {
     function rename(storageName: string, newDisplayName: string): void {
         const meta = registry.value.images[storageName];
         if (!meta) return;
-        meta.display_name = newDisplayName;
+        meta.display_name = deduplicateDisplayName(newDisplayName);
         saveRegistry(registry.value);
     }
 
@@ -411,7 +411,7 @@ export const useImageStore = defineStore('image-hosting-images', () => {
             // 同步返回: 先返回缓存或原始 URL, 异步 CDN 轮询在 resolveUrlAsync 中处理
             return resolvedRemoteCache.get(storageName) ?? meta.remote_url;
         }
-        return `/${meta.server_path}`;
+        return meta.server_path ? `/${meta.server_path}` : '';
     }
 
     /**
@@ -465,6 +465,7 @@ export const useImageStore = defineStore('image-hosting-images', () => {
 
         try {
             const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const blob = await response.blob();
             const reader = new FileReader();
             const base64 = await new Promise<string>((resolve, reject) => {
