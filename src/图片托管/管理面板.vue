@@ -466,29 +466,27 @@
     />
 
     <!-- 大图预览浮层 -->
-    <Teleport to="body">
-      <Transition name="fade">
-        <div v-if="previewImage" class="image-hosting_overlay" @click.self="closePreview">
-          <div class="image-hosting_preview-container">
-            <button class="preview-close-btn" @click="closePreview">
-              <i class="fa-solid fa-xmark"></i>
-            </button>
-            <img :src="previewImage.url" :alt="previewImage.display_name" />
-            <div class="preview-footer">
-              <div class="preview-title">{{ previewImage.display_name }}</div>
-              <div class="preview-meta">
-                <span><i class="fa-solid fa-hard-drive"></i> {{ formatSize(previewImage.size) }}</span>
-                <span class="divider">|</span>
-                <span><i class="fa-solid fa-file-code"></i> {{ previewImage.mime_type }}</span>
-                <span v-if="previewImage.storage === 'embedded'" class="embedded-tag">
-                  <i class="fa-solid fa-box-archive"></i> 嵌入存储
-                </span>
-              </div>
+    <Transition name="fade">
+      <div v-if="previewImage" class="image-hosting_overlay" @click.self="closePreview">
+        <div class="image-hosting_preview-container">
+          <button class="preview-close-btn" @click="closePreview">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+          <img :src="previewImage.url" :alt="previewImage.display_name" />
+          <div class="preview-footer">
+            <div class="preview-title">{{ previewImage.display_name }}</div>
+            <div class="preview-meta">
+              <span><i class="fa-solid fa-hard-drive"></i> {{ formatSize(previewImage.size) }}</span>
+              <span class="divider">|</span>
+              <span><i class="fa-solid fa-file-code"></i> {{ previewImage.mime_type }}</span>
+              <span v-if="previewImage.storage === 'embedded'" class="embedded-tag">
+                <i class="fa-solid fa-box-archive"></i> 嵌入存储
+              </span>
             </div>
           </div>
         </div>
-      </Transition>
-    </Teleport>
+      </div>
+    </Transition>
   </div>
 </template>
 
