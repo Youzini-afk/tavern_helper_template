@@ -106,6 +106,18 @@ export function probeImageUrl(url: string, timeoutMs = 5000): Promise<number> {
 }
 
 /**
+ * 将代理模板应用到原始 URL 上
+ * 支持两种占位符:
+ *   {url} = encodeURIComponent(originalUrl) — 用于 ?url= 查询参数型代理
+ *   {raw} = 原始 URL 去掉协议头      — 用于路径拼接型代理 (如 i0.wp.com/)
+ */
+export function applyProxyTemplate(template: string, originalUrl: string): string {
+    return template
+        .replace('{url}', encodeURIComponent(originalUrl))
+        .replace('{raw}', originalUrl.replace(/^https?:\/\//, ''));
+}
+
+/**
  * 测量一个代理模板对指定测试 URL 的延迟
  */
 export function measureProxyLatency(
@@ -113,7 +125,7 @@ export function measureProxyLatency(
     testImageUrl: string,
     timeoutMs = 5000,
 ): Promise<number> {
-    const proxyUrl = proxyTemplate.replace('{url}', encodeURIComponent(testImageUrl));
+    const proxyUrl = applyProxyTemplate(proxyTemplate, testImageUrl);
     return probeImageUrl(proxyUrl, timeoutMs);
 }
 
@@ -128,7 +140,7 @@ async function resolveWithCdn(
 ): Promise<string> {
     // 1. 如果有锚定的首选代理, 最先尝试
     if (preferredProxy) {
-        const proxyUrl = preferredProxy.replace('{url}', encodeURIComponent(originalUrl));
+        const proxyUrl = applyProxyTemplate(preferredProxy, originalUrl);
         const latency = await probeImageUrl(proxyUrl, 4000);
         if (latency >= 0) return proxyUrl;
     }
@@ -140,7 +152,7 @@ async function resolveWithCdn(
     // 3. 依次尝试代理
     for (const template of proxyTemplates) {
         if (template === preferredProxy) continue; // 已测过
-        const proxyUrl = template.replace('{url}', encodeURIComponent(originalUrl));
+        const proxyUrl = applyProxyTemplate(template, originalUrl);
         const latency = await probeImageUrl(proxyUrl);
         if (latency >= 0) return proxyUrl;
     }

@@ -2,11 +2,19 @@
  * 脚本全局设置 (持久化到脚本变量)
  */
 
-/** 默认 CDN 代理模板, {url} 会被替换为 encodeURIComponent(原始图片URL) */
+/**
+ * 默认 CDN 代理模板
+ * 占位符:
+ *   {url} = encodeURIComponent(原始URL) — 用于查询参数型
+ *   {raw} = 原始URL去协议头             — 用于路径拼接型
+ */
 export const DEFAULT_CDN_PROXIES = [
     'https://wsrv.nl/?url={url}',
     'https://images.weserv.nl/?url={url}',
-    'https://imageproxy.pimg.tw/resize?url={url}',
+    'https://i0.wp.com/{raw}',
+    'https://i1.wp.com/{raw}',
+    'https://i2.wp.com/{raw}',
+    'https://image.baidu.com/search/down?url={url}',
 ];
 
 const Settings = z

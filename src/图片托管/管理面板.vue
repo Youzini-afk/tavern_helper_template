@@ -141,7 +141,7 @@
               <input
                 v-model="newProxyTemplate"
                 class="search-input remote-input"
-                placeholder="代理模板 URL（用 {url} 代替原始链接）"
+                placeholder="模板 URL（{url}=编码 / {raw}=去协议头）"
                 style="font-size: 11px"
                 @keyup.enter="addProxy"
               />
@@ -600,8 +600,8 @@ const newProxyTemplate = ref('');
 function addProxy() {
   const tpl = newProxyTemplate.value.trim();
   if (!tpl) return;
-  if (!tpl.includes('{url}')) {
-    toastr.warning('模板必须包含 {url} 占位符');
+  if (!tpl.includes('{url}') && !tpl.includes('{raw}')) {
+    toastr.warning('模板必须包含 {url} 或 {raw} 占位符');
     return;
   }
   if (settings.value.cdn_proxy_list.includes(tpl)) {
