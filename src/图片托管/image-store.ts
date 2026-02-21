@@ -85,6 +85,11 @@ function revokeObjectUrl(storageName: string): void {
     }
 }
 
+/** 将 server_path 转为浏览器可用的本地路径 (避免双斜杠) */
+function toLocalPath(serverPath: string): string {
+    return serverPath.startsWith('/') ? serverPath : `/${serverPath}`;
+}
+
 // ===== CDN 代理轮询 =====
 
 /** 已解析的 CDN URL 缓存 (避免每次重新轮询) */
@@ -406,12 +411,12 @@ export const useImageStore = defineStore('image-hosting-images', () => {
         if (meta.storage === 'remote' && meta.remote_url) {
             // remote: 如果已有服务端缓存, 使用本地文件
             if (meta.server_path) {
-                return `/${meta.server_path}`;
+                return toLocalPath(meta.server_path);
             }
             // 同步返回: 先返回缓存或原始 URL, 异步 CDN 轮询在 resolveUrlAsync 中处理
             return resolvedRemoteCache.get(storageName) ?? meta.remote_url;
         }
-        return meta.server_path ? `/${meta.server_path}` : '';
+        return meta.server_path ? toLocalPath(meta.server_path) : '';
     }
 
     /**
@@ -426,7 +431,7 @@ export const useImageStore = defineStore('image-hosting-images', () => {
 
         // 已有服务端缓存
         if (meta.server_path) {
-            return `/${meta.server_path}`;
+            return toLocalPath(meta.server_path);
         }
 
         // 已有轮询结果缓存
