@@ -122,9 +122,19 @@
               </span>
             </label>
           </div>
-          <span style="font-size: 10px; color: var(--text-muted); margin-top: 4px; display: block">
-            设为 0 清理全部；远程缓存清理后会重新拉取，本地图片删除不可恢复
-          </span>
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px;">
+            <span style="font-size: 10px; color: var(--text-muted)">
+              设为 0 清理全部；远程缓存清理后会重新拉取，本地图片删除不可恢复
+            </span>
+            <button
+              class="image-hosting_btn btn-secondary"
+              style="padding: 2px 8px; font-size: 10px; white-space: nowrap"
+              title="检测文件缺失: 删除失效的本地条目, 重置失效的远程缓存"
+              @click="handleRepair"
+            >
+              <i class="fa-solid fa-wrench"></i> 修复
+            </button>
+          </div>
         </div>
 
         <label class="image-hosting_toggle-row" style="margin-top: 10px;">
@@ -553,6 +563,17 @@ async function handleRefreshCache() {
   }
 }
 
+async function handleRepair() {
+  const { removed, cleared } = await imageStore.repairRegistry();
+  if (removed === 0 && cleared === 0) {
+    toastr.success('所有文件完整，无需修复');
+  } else {
+    const parts: string[] = [];
+    if (removed > 0) parts.push(`删除 ${removed} 个失效本地条目`);
+    if (cleared > 0) parts.push(`重置 ${cleared} 个失效远程缓存`);
+    toastr.success(`修复完成: ${parts.join(', ')}`);
+  }
+}
 // 批量选择
 const selectedSet = ref(new Set<string>());
 const isAllSelected = computed(() =>

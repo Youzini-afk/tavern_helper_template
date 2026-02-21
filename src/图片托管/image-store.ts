@@ -505,13 +505,53 @@ export const useImageStore = defineStore('image-hosting-images', () => {
         }));
     }
 
-    /** 验证所有本地模式图片的完整性 */
+    /** 验证所有带 server_path 的图片的文件完整性 */
     async function verify(): Promise<Record<string, boolean>> {
-        const localImages = Object.entries(registry.value.images)
-            .filter(([, meta]) => meta.storage === 'local' && meta.server_path)
+        const pathEntries = Object.entries(registry.value.images)
+            .filter(([, meta]) => meta.server_path)
             .map(([, meta]) => meta.server_path);
-        if (localImages.length === 0) return {};
-        return verifyFiles(localImages);
+        if (pathEntries.length === 0) return {};
+        return verifyFiles(pathEntries);
+    }
+
+    /**
+     * 修复注册表: 检测文件缺失并处理
+     * - local 模式缺失: 从注册表中删除该条目
+     * - remote 缓存缺失: 清除 server_path (下次重新拉取)
+     * @returns { removed: 删除的 local 条目数, cleared: 清除的 remote 缓存数 }
+     */
+    async function repairRegistry(): Promise<{ removed: number; cleared: number }> {
+        const result = await verify();
+        let removed = 0;
+        let cleared = 0;
+        const toDelete: string[] = [];
+
+        for (const [storageName, meta] of Object.entries(registry.value.images)) {
+            if (!meta.server_path) continue;
+            const exists = result[meta.server_path];
+            if (exists !== false) continue; // 文件存在或不在检查范围
+
+            if (meta.storage === 'local') {
+                // local 模式: 文件丢了, 从注册表删除
+                revokeObjectUrl(storageName);
+                toDelete.push(storageName);
+                removed++;
+            } else if (meta.storage === 'remote') {
+                // remote 缓存: 文件丢了, 清除 server_path, 下次重新拉取
+                meta.server_path = '';
+                cleared++;
+            }
+        }
+
+        for (const key of toDelete) {
+            delete registry.value.images[key];
+        }
+
+        if (removed > 0 || cleared > 0) {
+            saveRegistry(registry.value);
+            resolvedRemoteCache.clear();
+        }
+        return { removed, cleared };
     }
 
     /** 重新从角色卡变量加载注册表 */
@@ -637,5 +677,6 @@ export const useImageStore = defineStore('image-hosting-images', () => {
         mergeRegistry,
         cleanupCache,
         refreshCache,
+        repairRegistry,
     };
 });
