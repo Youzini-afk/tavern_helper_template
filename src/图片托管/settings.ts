@@ -21,6 +21,8 @@ const Settings = z
         cdn_proxy_enabled: z.boolean().default(false),
         /** CDN 代理模板列表 */
         cdn_proxy_list: z.array(z.string()).default(DEFAULT_CDN_PROXIES),
+        /** 锚定的首选 CDN 代理 (测速后自动设置, 空表示未锚定) */
+        cdn_preferred_proxy: z.string().default(''),
         /** 远程图片是否缓存到本地 (拉取一次后缓存, 之后不再重复拉取) */
         remote_cache_local: z.boolean().default(false),
     })

@@ -91,36 +91,61 @@ function revokeObjectUrl(storageName: string): void {
 const resolvedRemoteCache = new Map<string, string>();
 
 /**
- * 检测 URL 是否可加载 (通过 <img> onload/onerror 检测)
- * @returns Promise<boolean>
+ * 检测图片 URL 是否可加载, 并返回延迟 (ms)
+ * @returns Promise<number> 延迟毫秒, -1 表示失败
  */
-function probeImageUrl(url: string, timeoutMs = 5000): Promise<boolean> {
+export function probeImageUrl(url: string, timeoutMs = 5000): Promise<number> {
     return new Promise((resolve) => {
         const img = new Image();
-        const timer = setTimeout(() => { img.src = ''; resolve(false); }, timeoutMs);
-        img.onload = () => { clearTimeout(timer); resolve(true); };
-        img.onerror = () => { clearTimeout(timer); resolve(false); };
+        const start = performance.now();
+        const timer = setTimeout(() => { img.src = ''; resolve(-1); }, timeoutMs);
+        img.onload = () => { clearTimeout(timer); resolve(Math.round(performance.now() - start)); };
+        img.onerror = () => { clearTimeout(timer); resolve(-1); };
         img.src = url;
     });
 }
 
 /**
- * 通过 CDN 代理列表轮询, 找到第一个可用 URL
- * @param originalUrl 原始远程 URL
- * @param proxyTemplates CDN 代理模板列表
- * @returns 可用的 URL (原始或代理)
+ * 测量一个代理模板对指定测试 URL 的延迟
  */
-async function resolveWithCdn(originalUrl: string, proxyTemplates: string[]): Promise<string> {
-    // 先测原始 URL
-    if (await probeImageUrl(originalUrl)) return originalUrl;
+export function measureProxyLatency(
+    proxyTemplate: string,
+    testImageUrl: string,
+    timeoutMs = 5000,
+): Promise<number> {
+    const proxyUrl = proxyTemplate.replace('{url}', encodeURIComponent(testImageUrl));
+    return probeImageUrl(proxyUrl, timeoutMs);
+}
 
-    // 依次尝试代理
-    for (const template of proxyTemplates) {
-        const proxyUrl = template.replace('{url}', encodeURIComponent(originalUrl));
-        if (await probeImageUrl(proxyUrl)) return proxyUrl;
+/**
+ * 通过 CDN 代理列表轮询, 找到第一个可用 URL
+ * 如果有首选代理 (测速锚定), 优先使用
+ */
+async function resolveWithCdn(
+    originalUrl: string,
+    proxyTemplates: string[],
+    preferredProxy: string,
+): Promise<string> {
+    // 1. 如果有锚定的首选代理, 最先尝试
+    if (preferredProxy) {
+        const proxyUrl = preferredProxy.replace('{url}', encodeURIComponent(originalUrl));
+        const latency = await probeImageUrl(proxyUrl, 4000);
+        if (latency >= 0) return proxyUrl;
     }
 
-    // 全部失败, 返回原始 URL (让浏览器自己处理)
+    // 2. 测试原始 URL
+    const origLatency = await probeImageUrl(originalUrl, 4000);
+    if (origLatency >= 0) return originalUrl;
+
+    // 3. 依次尝试代理
+    for (const template of proxyTemplates) {
+        if (template === preferredProxy) continue; // 已测过
+        const proxyUrl = template.replace('{url}', encodeURIComponent(originalUrl));
+        const latency = await probeImageUrl(proxyUrl);
+        if (latency >= 0) return proxyUrl;
+    }
+
+    // 全部失败, 返回原始 URL
     return originalUrl;
 }
 
@@ -267,6 +292,7 @@ export const useImageStore = defineStore('image-hosting-images', () => {
             resolvedUrl = await resolveWithCdn(
                 meta.remote_url,
                 settingsStore.settings.cdn_proxy_list,
+                settingsStore.settings.cdn_preferred_proxy,
             );
         } else {
             resolvedUrl = meta.remote_url;

@@ -81,6 +81,59 @@
             <div class="st-checkbox-slider"></div>
           </div>
         </label>
+
+        <!-- CDN 测速面板 -->
+        <div v-if="settings.cdn_proxy_enabled" class="cdn-speed-panel">
+          <div class="cdn-speed-header">
+            <span class="toggle-title" style="font-size: 12px">代理测速</span>
+            <div style="display: flex; gap: 6px; align-items: center">
+              <button
+                class="image-hosting_btn btn-secondary"
+                style="padding: 3px 10px; font-size: 11px"
+                :disabled="speedTesting"
+                @click="runSpeedTest"
+              >
+                <i class="fa-solid" :class="speedTesting ? 'fa-spinner fa-spin' : 'fa-gauge-high'"></i>
+                {{ speedTesting ? '测速中...' : '测速' }}
+              </button>
+              <button
+                v-if="settings.cdn_preferred_proxy"
+                class="image-hosting_btn btn-secondary"
+                style="padding: 3px 8px; font-size: 11px"
+                title="清除锚定"
+                @click="settings.cdn_preferred_proxy = ''"
+              >
+                <i class="fa-solid fa-rotate-left"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="cdn-proxy-list">
+            <!-- 直连 -->
+            <div class="cdn-proxy-item" :class="{ 'is-preferred': !settings.cdn_preferred_proxy }">
+              <span class="proxy-name">🔗 直连 (原始 URL)</span>
+              <span v-if="speedResults['__direct__'] !== undefined" class="proxy-latency" :class="latencyClass(speedResults['__direct__'])">
+                {{ speedResults['__direct__'] >= 0 ? speedResults['__direct__'] + 'ms' : '超时' }}
+              </span>
+            </div>
+            <!-- 代理列表 -->
+            <div
+              v-for="(proxy, idx) in settings.cdn_proxy_list"
+              :key="idx"
+              class="cdn-proxy-item"
+              :class="{ 'is-preferred': settings.cdn_preferred_proxy === proxy }"
+              @click="settings.cdn_preferred_proxy = proxy"
+            >
+              <span class="proxy-name">{{ proxyDisplayName(proxy) }}</span>
+              <div style="display: flex; align-items: center; gap: 6px">
+                <span v-if="speedResults[proxy] !== undefined" class="proxy-latency" :class="latencyClass(speedResults[proxy])">
+                  {{ speedResults[proxy] >= 0 ? speedResults[proxy] + 'ms' : '超时' }}
+                </span>
+                <i v-if="settings.cdn_preferred_proxy === proxy" class="fa-solid fa-anchor" style="font-size: 10px; color: var(--primary-color)" title="已锚定"></i>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- 设置区域 -->
@@ -359,7 +412,7 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia';
 import { useSettingsStore } from './settings';
-import { useImageStore, type ImageMeta } from './image-store';
+import { useImageStore, type ImageMeta, probeImageUrl, measureProxyLatency } from './image-store';
 import { exportImages, importImages } from './export-import';
 
 // Custom directive for auto focus
@@ -418,6 +471,66 @@ const uploading = ref(false);
 const uploadProgress = ref('');
 const isDragging = ref(false);
 const fileInputRef = ref<HTMLInputElement>();
+
+// CDN 测速
+const speedTesting = ref(false);
+const speedResults = ref<Record<string, number>>({});
+// 测速用图片 URL (1x1 transparent gif)
+const SPEED_TEST_IMAGE = 'https://www.google.com/images/branding/googlelogo/1x/googlelogo_color_272x92dp.png';
+
+function proxyDisplayName(template: string): string {
+  try {
+    const url = new URL(template.replace('{url}', 'test'));
+    return url.hostname;
+  } catch {
+    return template.slice(0, 30);
+  }
+}
+
+function latencyClass(ms: number): string {
+  if (ms < 0) return 'latency-timeout';
+  if (ms < 500) return 'latency-fast';
+  if (ms < 1500) return 'latency-medium';
+  return 'latency-slow';
+}
+
+async function runSpeedTest() {
+  speedTesting.value = true;
+  speedResults.value = {};
+
+  // 测试直连
+  const directLatency = await probeImageUrl(SPEED_TEST_IMAGE, 5000);
+  speedResults.value['__direct__'] = directLatency;
+
+  // 测试每个代理
+  for (const proxy of settings.value.cdn_proxy_list) {
+    const latency = await measureProxyLatency(proxy, SPEED_TEST_IMAGE, 5000);
+    speedResults.value = { ...speedResults.value, [proxy]: latency };
+  }
+
+  // 自动锚定最快的
+  let bestProxy = '';
+  let bestLatency = directLatency;
+
+  for (const proxy of settings.value.cdn_proxy_list) {
+    const lat = speedResults.value[proxy];
+    if (lat >= 0 && (bestLatency < 0 || lat < bestLatency)) {
+      bestLatency = lat;
+      bestProxy = proxy;
+    }
+  }
+
+  settings.value.cdn_preferred_proxy = bestProxy;
+  speedTesting.value = false;
+
+  if (bestProxy) {
+    toastr.success(`已自动锚定最快代理: ${proxyDisplayName(bestProxy)} (${bestLatency}ms)`);
+  } else if (directLatency >= 0) {
+    toastr.success(`直连最快 (${directLatency}ms)，无需代理`);
+  } else {
+    toastr.warning('所有代理均超时');
+  }
+}
 
 // 远程 URL 输入
 const remoteDisplayName = ref('');
@@ -1406,4 +1519,59 @@ async function handleImport() {
 .remote-add-card:hover {
   transform: none;
 }
+
+/* CDN Speed Test Panel */
+.cdn-speed-panel {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color);
+}
+.cdn-speed-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.cdn-proxy-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cdn-proxy-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.2);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-size: 12px;
+}
+.cdn-proxy-item:hover {
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.1);
+}
+.cdn-proxy-item.is-preferred {
+  border-color: var(--primary-color);
+  background: rgba(52, 152, 219, 0.08);
+}
+.proxy-name {
+  color: var(--text-main);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.proxy-latency {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+.latency-fast { background: rgba(46,204,113,0.15); color: #2ecc71; }
+.latency-medium { background: rgba(241,196,15,0.15); color: #f1c40f; }
+.latency-slow { background: rgba(231,76,60,0.15); color: #e74c3c; }
+.latency-timeout { background: rgba(255,255,255,0.05); color: var(--text-muted); }
 </style>
