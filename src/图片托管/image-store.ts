@@ -535,6 +535,37 @@ export const useImageStore = defineStore('image-hosting-images', () => {
         saveRegistry(registry.value);
     }
 
+    /**
+     * 清理远程图片的本地缓存 (删除服务端文件)
+     * @param days 清理多少天前的缓存, 0 表示清理全部
+     * @returns 清理的数量
+     */
+    async function cleanupCache(days: number): Promise<number> {
+        const cutoff = days > 0 ? Date.now() - days * 24 * 60 * 60 * 1000 : Infinity;
+        let cleaned = 0;
+
+        for (const [, meta] of Object.entries(registry.value.images)) {
+            // 只清理 remote 模式且有 server_path 的 (即缓存到本地的远程图片)
+            if (meta.storage !== 'remote' || !meta.server_path) continue;
+            if (days > 0 && meta.uploaded_at > cutoff) continue; // 还没过期
+
+            try {
+                await deleteFile(meta.server_path);
+            } catch {
+                // 文件可能已被手动删除, 忽略
+            }
+            meta.server_path = '';
+            cleaned++;
+        }
+
+        if (cleaned > 0) {
+            saveRegistry(registry.value);
+            // 同时清除内存中的解析缓存, 下次会重新走 CDN 轮询
+            resolvedRemoteCache.clear();
+        }
+        return cleaned;
+    }
+
     return {
         registry,
         upload,
@@ -551,5 +582,6 @@ export const useImageStore = defineStore('image-hosting-images', () => {
         reload,
         getRegistryData,
         mergeRegistry,
+        cleanupCache,
     };
 });

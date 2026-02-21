@@ -82,6 +82,34 @@
           </div>
         </label>
 
+        <!-- 缓存清理 -->
+        <div v-if="settings.remote_cache_local" class="cdn-speed-panel" style="margin-top: 8px; padding-top: 8px;">
+          <div class="cdn-speed-header">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span class="toggle-title" style="font-size: 12px">清理缓存</span>
+              <input
+                v-model.number="cleanupDays"
+                type="number"
+                min="0"
+                class="search-input"
+                style="width: 50px; font-size: 11px; padding: 2px 6px; text-align: center"
+                placeholder="天"
+              />
+              <span style="font-size: 11px; color: var(--text-muted)">天前</span>
+            </div>
+            <button
+              class="image-hosting_btn btn-secondary"
+              style="padding: 3px 10px; font-size: 11px"
+              @click="handleCleanupCache"
+            >
+              <i class="fa-solid fa-broom"></i> 清理
+            </button>
+          </div>
+          <span style="font-size: 10px; color: var(--text-muted); margin-top: 4px; display: block">
+            设为 0 清理全部缓存；仅清理远程图片的本地缓存文件
+          </span>
+        </div>
+
         <label class="image-hosting_toggle-row" style="margin-top: 10px;">
           <div class="toggle-info">
             <span class="toggle-title">去 CDN</span>
@@ -472,6 +500,19 @@ const totalSize = computed(() => _.sumBy(images.value, 'size'));
 const localCount = computed(() => images.value.filter(i => i.storage === 'local').length);
 const embeddedCount = computed(() => images.value.filter(i => i.storage === 'embedded').length);
 const remoteCount = computed(() => images.value.filter(i => i.storage === 'remote').length);
+
+// 缓存清理
+const cleanupDays = ref(7);
+async function handleCleanupCache() {
+  const label = cleanupDays.value > 0 ? `${cleanupDays.value} 天前的` : '全部';
+  if (!confirm(`确定清理${label}远程图片本地缓存？\n缓存清理后下次访问会重新从远程拉取。`)) return;
+  const count = await imageStore.cleanupCache(cleanupDays.value);
+  if (count > 0) {
+    toastr.success(`已清理 ${count} 个缓存文件`);
+  } else {
+    toastr.info('没有需要清理的缓存');
+  }
+}
 
 // 批量选择
 const selectedSet = ref(new Set<string>());
