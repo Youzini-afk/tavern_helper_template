@@ -5868,6 +5868,12 @@ onMounted(() => {
 
     const syncHeight = () => {
       if (!el) return;
+      // Skip height recalculation when virtual keyboard is open
+      // (keyboard triggers resize, but we don't want to shrink the panel)
+      const focused = document.activeElement as HTMLElement | null;
+      if (focused && (focused.tagName === 'INPUT' || focused.tagName === 'TEXTAREA' || focused.isContentEditable)) {
+        return;
+      }
       const rect = el.getBoundingClientRect();
       const vh = hostWin.innerHeight || window.innerHeight || 0;
       const available = vh - rect.top;
