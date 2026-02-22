@@ -6103,7 +6103,7 @@ watch(hasUnsavedChanges, (val) => {
   border: 1px solid transparent;
   border-radius: 8px;
   padding: 8px 10px;
-  background: var(--wb-input-bg);
+  background: var(--wb-bg-panel);
   color: var(--wb-text-main);
   display: flex;
   align-items: center;
@@ -6556,28 +6556,36 @@ watch(hasUnsavedChanges, (val) => {
   gap: 8px;
   background: transparent;
   min-height: 0;
+  overflow: hidden;
 }
 
 .list-search {
   display: grid;
   gap: 6px;
   padding: 0 8px;
+  flex-shrink: 0;
+}
+
+.list-search .text-input {
+  background: var(--wb-bg-panel);
+  border-color: var(--wb-border-main);
 }
 
 .list-summary {
   color: var(--wb-text-muted);
   font-size: 12px;
   padding: 0 8px;
+  flex-shrink: 0;
 }
 
 .list-scroll {
-  flex: 1 1 auto;
-  min-height: 210px;
-  max-height: calc(70vh - 210px);
-  overflow: auto;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  position: relative;
 }
 
 .entry-item {
