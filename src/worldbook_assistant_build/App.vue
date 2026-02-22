@@ -310,6 +310,7 @@
                   <div class="ai-chat-empty-icon">🤖</div>
                   <div class="ai-chat-empty-text">新建一个对话开始生成</div>
                   <button class="btn" type="button" @click="aiCreateSession">+ 新建对话</button>
+                  <button class="btn" type="button" @click="extractFromChat" style="margin-top:6px;">📥 从聊天提取世界书</button>
                 </div>
                 <template v-else>
                   <div class="ai-chat-messages" ref="aiChatMessagesRef">
@@ -536,6 +537,13 @@
                 @click="aiToggleMode"
               >
                 🤖 AI 生成
+              </button>
+              <button
+                class="btn history-btn utility-btn"
+                type="button"
+                @click="extractFromChat"
+              >
+                📥 从聊天提取
               </button>
               <button
                 class="btn history-btn utility-btn"
@@ -3401,6 +3409,44 @@ function aiExtractTags(text: string): ExtractedTag[] {
     });
   }
   return results;
+}
+
+function extractFromChat(): void {
+  try {
+    const lastId = getLastMessageId();
+    if (lastId < 0) {
+      toastr.warning('当前没有聊天记录');
+      return;
+    }
+    const messages = getChatMessages(`0-${lastId}`);
+    const allTags: ExtractedTag[] = [];
+    for (const msg of messages) {
+      const tags = aiExtractTags(msg.message || '');
+      allTags.push(...tags);
+    }
+
+    if (allTags.length === 0) {
+      toastr.info('聊天记录中未找到 <tag>content</tag> 格式的条目');
+      return;
+    }
+
+    // Deduplicate by tag + content
+    const seen = new Set<string>();
+    const unique = allTags.filter(t => {
+      const key = `${t.tag}::${t.content}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    aiExtractedTags.value = unique;
+    aiTargetWorldbook.value = selectedWorldbookName.value || '';
+    aiShowTagReview.value = true;
+    toastr.success(`从聊天记录中提取到 ${unique.length} 个条目`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    toastr.error(`提取失败: ${message}`);
+  }
 }
 
 async function aiCreateSelectedEntries(): Promise<void> {
