@@ -818,7 +818,7 @@
               <div class="ai-tag-review-target">
                 <label class="field">
                   <span>目标世界书</span>
-                  <select v-model="aiTargetWorldbook" class="text-input">
+                  <select v-model="aiTargetWorldbook" class="text-input" @change="markDuplicatesInTags">
                     <option value="">请选择目标世界书</option>
                     <option v-for="name in worldbookNames" :key="`ai-wb-${name}`" :value="name">{{ name }}</option>
                   </select>
@@ -840,10 +840,11 @@
                   v-for="(tag, idx) in aiExtractedTags"
                   :key="`tag-${idx}`"
                   class="ai-tag-item"
+                  :class="{ 'ai-tag-duplicate': tag.duplicate }"
                 >
                   <input v-model="tag.selected" type="checkbox" />
                   <div class="ai-tag-info">
-                    <span class="ai-tag-name">{{ tag.tag }}</span>
+                    <span class="ai-tag-name">{{ tag.tag }}<span v-if="tag.duplicate" style="color:#f59e0b;font-size:0.85em;margin-left:6px;">⚠️ 已存在</span></span>
                     <span class="ai-tag-preview">{{ tag.content.slice(0, 120) }}{{ tag.content.length > 120 ? '...' : '' }}</span>
                   </div>
                 </label>
@@ -1821,6 +1822,7 @@ interface ExtractedTag {
   tag: string;
   content: string;
   selected: boolean;
+  duplicate?: boolean;
 }
 
 interface WorldbookTagDefinition {
@@ -3447,7 +3449,34 @@ function updateIgnoreTags(raw: string): void {
   });
 }
 
-function extractFromChat(): void {
+async function markDuplicatesInTags(): Promise<void> {
+  const targetName = aiTargetWorldbook.value;
+  if (!targetName || aiExtractedTags.value.length === 0) {
+    // No target selected — clear all duplicate marks
+    for (const tag of aiExtractedTags.value) {
+      tag.duplicate = false;
+    }
+    return;
+  }
+  try {
+    const existing = await getWorldbook(targetName);
+    const existingNames = new Set(existing.map(e => e.name.toLowerCase()));
+    for (const tag of aiExtractedTags.value) {
+      const isDup = existingNames.has(tag.tag.toLowerCase());
+      tag.duplicate = isDup;
+      if (isDup) {
+        tag.selected = false;
+      }
+    }
+  } catch {
+    // Worldbook might not exist yet — treat all as non-duplicate
+    for (const tag of aiExtractedTags.value) {
+      tag.duplicate = false;
+    }
+  }
+}
+
+async function extractFromChat(): Promise<void> {
   try {
     const lastId = getLastMessageId();
     if (lastId < 0) {
@@ -3479,6 +3508,7 @@ function extractFromChat(): void {
     aiExtractedTags.value = unique;
     aiTargetWorldbook.value = selectedWorldbookName.value || '';
     aiShowTagReview.value = true;
+    await markDuplicatesInTags();
     toastr.success(`从聊天记录中提取到 ${unique.length} 个条目`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
