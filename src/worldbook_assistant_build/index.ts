@@ -18,10 +18,7 @@ let destroyTeleport: (() => void) | null = null;
 let menuObserver: MutationObserver | null = null;
 let menuRetryTimer: number | null = null;
 let isPanelVisible = false;
-let focusinHandler: ((e: Event) => void) | null = null;
-let focusoutHandler: ((e: Event) => void) | null = null;
-let orientationHandler: (() => void) | null = null;
-let mobileFullHeight = 0;
+let viewportResizeHandler: (() => void) | null = null;
 
 function getHostWindow(): Window {
   return window.parent || window;
@@ -270,6 +267,9 @@ function ensurePanelStyle(): void {
     flex: 1;
     min-height: 0;
     overflow: hidden;
+    /* Push content above virtual keyboard using CSS env variable */
+    padding-bottom: env(keyboard-inset-height, 0px);
+    transition: padding-bottom 0.15s ease;
   }
 
   #${PANEL_BODY_ID} > div {
@@ -833,88 +833,58 @@ function init(): void {
     console.warn('[WB-FAB] createFab error:', e);
   }
 
-  // Mobile keyboard handling: lock panel height when keyboard opens
-  const hostWin = getHostWindow();
-  // Capture the full viewport height now (before any keyboard opens)
-  mobileFullHeight = hostWin.innerHeight;
+  // ── Mobile keyboard handling ──
+  // Strategy 1: VirtualKeyboard API (Chrome Android 94+)
+  // Tells browser to NOT resize viewport when keyboard opens.
+  // Combined with CSS `env(keyboard-inset-height)` on the panel body
+  // to push content above the keyboard.
+  if ('virtualKeyboard' in navigator) {
+    (navigator as any).virtualKeyboard.overlaysContent = true;
+  }
 
-  // Re-capture on orientation change (height changes between portrait/landscape)
-  orientationHandler = () => {
-    setTimeout(() => {
-      // Only update if no input is focused (keyboard not open)
-      if (!doc.activeElement || (doc.activeElement.tagName !== 'INPUT' && doc.activeElement.tagName !== 'TEXTAREA' && !(doc.activeElement as HTMLElement).isContentEditable)) {
-        mobileFullHeight = hostWin.innerHeight;
+  // Strategy 2: VisualViewport fallback (for non-Chrome browsers)
+  // Detects keyboard by comparing visualViewport.height to window.innerHeight
+  // and adds padding-bottom to the panel body dynamically.
+  const vv = window.visualViewport;
+  if (vv) {
+    viewportResizeHandler = () => {
+      if (!isPanelVisible) return;
+      if (!window.matchMedia('(orientation: portrait)').matches) return;
+      // If VirtualKeyboard API is active, env() handles it — skip JS fallback
+      if ('virtualKeyboard' in navigator && (navigator as any).virtualKeyboard.overlaysContent) return;
+
+      const panelBody = doc.getElementById(PANEL_BODY_ID) as HTMLElement | null;
+      if (!panelBody) return;
+
+      const kbHeight = window.innerHeight - vv.height;
+      if (kbHeight > 50) {
+        // Keyboard is open — add padding to push content above it
+        panelBody.style.paddingBottom = `${kbHeight}px`;
+      } else {
+        // Keyboard closed — remove padding
+        panelBody.style.paddingBottom = '';
       }
-    }, 500);
-  };
-  hostWin.addEventListener('orientationchange', orientationHandler);
-
-  // On focusin: lock panel to saved pixel height so it extends behind keyboard
-  focusinHandler = (e: Event) => {
-    const target = e.target as HTMLElement;
-    if (!target || !isPanelVisible) return;
-    if (!hostWin.matchMedia('(orientation: portrait)').matches) return;
-    const tag = target.tagName;
-    if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !target.isContentEditable) return;
-
-    const panel = doc.getElementById(PANEL_ID) as HTMLDivElement | null;
-    if (!panel) return;
-
-    // Lock height to saved full height (extends behind keyboard)
-    // Must use setProperty with 'important' to override CSS `height: 100vh !important`
-    panel.style.setProperty('height', `${mobileFullHeight}px`, 'important');
-
-    // Scroll input into view after keyboard animation
-    setTimeout(() => {
-      target.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    }, 350);
-  };
-  doc.addEventListener('focusin', focusinHandler, true);
-
-  // On focusout: reset height back to CSS-driven 100vh
-  focusoutHandler = () => {
-    if (!isPanelVisible) return;
-    if (!hostWin.matchMedia('(orientation: portrait)').matches) return;
-
-    const panel = doc.getElementById(PANEL_ID) as HTMLDivElement | null;
-    if (!panel) return;
-
-    // Delay to avoid flickering if user taps another input immediately
-    setTimeout(() => {
-      // Check if a new input is focused 
-      const active = doc.activeElement as HTMLElement | null;
-      if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
-        return; // Don't reset, another input took focus
-      }
-      // Remove the important override, let CSS take over again
-      panel.style.removeProperty('height');
-    }, 100);
-  };
-  doc.addEventListener('focusout', focusoutHandler, true);
+    };
+    vv.addEventListener('resize', viewportResizeHandler);
+  }
 
   toastr.success('世界书助手已挂载到魔法棒菜单', 'Worldbook Assistant');
 }
 
 function cleanup(): void {
   const doc = getHostDocument();
-  const hostWin = getHostWindow();
   stopMenuRetry();
   stopMenuObserver();
   $(doc).off(EVENT_NS);
   doc.removeEventListener('pointerdown', closeThemeDropdownOnOutside, true);
 
-  // Clean up mobile keyboard handlers
-  if (focusinHandler) {
-    doc.removeEventListener('focusin', focusinHandler, true);
-    focusinHandler = null;
+  // Clean up keyboard handling
+  if ('virtualKeyboard' in navigator) {
+    (navigator as any).virtualKeyboard.overlaysContent = false;
   }
-  if (focusoutHandler) {
-    doc.removeEventListener('focusout', focusoutHandler, true);
-    focusoutHandler = null;
-  }
-  if (orientationHandler) {
-    hostWin.removeEventListener('orientationchange', orientationHandler);
-    orientationHandler = null;
+  if (viewportResizeHandler && window.visualViewport) {
+    window.visualViewport.removeEventListener('resize', viewportResizeHandler);
+    viewportResizeHandler = null;
   }
 
   $(`#${MENU_ID}`, doc).remove();
