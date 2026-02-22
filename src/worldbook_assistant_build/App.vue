@@ -173,11 +173,11 @@
               <section class="editor-grid two-cols editor-keyword-grid">
                 <label class="field">
                   <span>主要关键词 (KEYS)</span>
-                  <textarea v-model="selectedKeysText" class="text-area compact"></textarea>
+                  <textarea :value="selectedKeysRaw" @input="selectedKeysRaw = ($event.target as HTMLTextAreaElement).value" @blur="commitKeysFromRaw" class="text-area compact"></textarea>
                 </label>
                 <label class="field">
                   <span>次要关键词 (SECONDARY)</span>
-                  <textarea v-model="selectedSecondaryKeysText" class="text-area compact"></textarea>
+                  <textarea :value="selectedSecondaryKeysRaw" @input="selectedSecondaryKeysRaw = ($event.target as HTMLTextAreaElement).value" @blur="commitSecondaryKeysFromRaw" class="text-area compact"></textarea>
                 </label>
               </section>
               <section class="editor-content-block" ref="editorContentBlockRef">
@@ -841,11 +841,11 @@
                     <section class="editor-grid two-cols editor-keyword-grid">
                       <label class="field">
                         <span>主要关键词 (KEYS)</span>
-                        <textarea v-model="selectedKeysText" class="text-area compact"></textarea>
+                        <textarea :value="selectedKeysRaw" @input="selectedKeysRaw = ($event.target as HTMLTextAreaElement).value" @blur="commitKeysFromRaw" class="text-area compact"></textarea>
                       </label>
                       <label class="field">
                         <span>次要关键词 (SECONDARY)</span>
-                        <textarea v-model="selectedSecondaryKeysText" class="text-area compact"></textarea>
+                        <textarea :value="selectedSecondaryKeysRaw" @input="selectedSecondaryKeysRaw = ($event.target as HTMLTextAreaElement).value" @blur="commitSecondaryKeysFromRaw" class="text-area compact"></textarea>
                       </label>
                     </section>
 
@@ -1733,6 +1733,10 @@ const searchText = ref('');
 const onlyEnabled = ref(false);
 const importFileInput = ref<HTMLInputElement | null>(null);
 const selectedExtraText = ref('');
+const selectedKeysRaw = ref('');
+const selectedSecondaryKeysRaw = ref('');
+let keysDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let secondaryKeysDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 const globalAddSearchText = ref('');
 const globalFilterText = ref('');
 const roleBindSearchText = ref('');
@@ -2107,35 +2111,33 @@ const worldbookHistoryDiff = computed(() => {
   );
 });
 
-const selectedKeysText = computed({
-  get: () => {
-    if (!selectedEntry.value) {
-      return '';
-    }
-    return selectedEntry.value.strategy.keys.map(stringifyKeyword).join(', ');
-  },
-  set: (value: string) => {
-    if (!selectedEntry.value) {
-      return;
-    }
-    selectedEntry.value.strategy.keys = parseKeywordsFromText(value);
-  },
+const selectedKeysText = computed(() => {
+  if (!selectedEntry.value) {
+    return '';
+  }
+  return selectedEntry.value.strategy.keys.map(stringifyKeyword).join(', ');
 });
 
-const selectedSecondaryKeysText = computed({
-  get: () => {
-    if (!selectedEntry.value) {
-      return '';
-    }
-    return selectedEntry.value.strategy.keys_secondary.keys.map(stringifyKeyword).join(', ');
-  },
-  set: (value: string) => {
-    if (!selectedEntry.value) {
-      return;
-    }
-    selectedEntry.value.strategy.keys_secondary.keys = parseKeywordsFromText(value);
-  },
+const selectedSecondaryKeysText = computed(() => {
+  if (!selectedEntry.value) {
+    return '';
+  }
+  return selectedEntry.value.strategy.keys_secondary.keys.map(stringifyKeyword).join(', ');
 });
+
+function commitKeysFromRaw(): void {
+  if (keysDebounceTimer) { clearTimeout(keysDebounceTimer); keysDebounceTimer = null; }
+  if (!selectedEntry.value) return;
+  selectedEntry.value.strategy.keys = parseKeywordsFromText(selectedKeysRaw.value);
+  selectedKeysRaw.value = selectedEntry.value.strategy.keys.map(stringifyKeyword).join(', ');
+}
+
+function commitSecondaryKeysFromRaw(): void {
+  if (secondaryKeysDebounceTimer) { clearTimeout(secondaryKeysDebounceTimer); secondaryKeysDebounceTimer = null; }
+  if (!selectedEntry.value) return;
+  selectedEntry.value.strategy.keys_secondary.keys = parseKeywordsFromText(selectedSecondaryKeysRaw.value);
+  selectedSecondaryKeysRaw.value = selectedEntry.value.strategy.keys_secondary.keys.map(stringifyKeyword).join(', ');
+}
 
 const selectedScanDepthText = computed({
   get: () => {
@@ -2223,8 +2225,22 @@ watch(
   () => selectedEntryUid.value,
   () => {
     syncExtraTextWithSelection();
+    // Sync raw keyword text when entry selection changes
+    selectedKeysRaw.value = selectedKeysText.value;
+    selectedSecondaryKeysRaw.value = selectedSecondaryKeysText.value;
   },
 );
+
+// Debounced watcher: parse keywords 600ms after user stops typing
+watch(selectedKeysRaw, () => {
+  if (keysDebounceTimer) clearTimeout(keysDebounceTimer);
+  keysDebounceTimer = setTimeout(commitKeysFromRaw, 600);
+});
+
+watch(selectedSecondaryKeysRaw, () => {
+  if (secondaryKeysDebounceTimer) clearTimeout(secondaryKeysDebounceTimer);
+  secondaryKeysDebounceTimer = setTimeout(commitSecondaryKeysFromRaw, 600);
+});
 
 watch(
   [
@@ -5069,6 +5085,13 @@ async function hardRefresh(): Promise<void> {
   persistedState.value = readPersistedState();
   syncSelectedGlobalPresetFromState();
   await reloadWorldbookNames(selectedWorldbookName.value || undefined);
+  // Always re-fetch current worldbook data so external changes are synced
+  if (selectedWorldbookName.value) {
+    await loadWorldbook(selectedWorldbookName.value);
+    // Sync raw keyword refs after reload
+    selectedKeysRaw.value = selectedKeysText.value;
+    selectedSecondaryKeysRaw.value = selectedSecondaryKeysText.value;
+  }
   await refreshBindings();
   refreshRoleBindingCandidates();
   refreshCurrentRoleContext();
