@@ -553,6 +553,13 @@
               >
                 🏷️ 标签管理
               </button>
+              <button
+                class="btn history-btn utility-btn"
+                type="button"
+                @click="showApiSettings = true"
+              >
+                ⚙️ API设置
+              </button>
             </div>
             <div v-if="globalWorldbookMode" class="global-mode-panel">
               <div class="global-mode-head">
@@ -809,6 +816,73 @@
           </section>
 
           <!-- ═══ Tag Review Modal ═══ -->
+          <!-- API设置弹窗 -->
+          <div v-if="showApiSettings" class="ai-tag-review-overlay" @click.self="showApiSettings = false">
+            <div class="ai-tag-review-modal" style="max-width:520px;">
+              <div class="ai-tag-review-head">
+                <span class="ai-tag-review-title">⚙️ API 设置</span>
+                <button class="ai-tag-review-close" type="button" @click="showApiSettings = false">×</button>
+              </div>
+              <div style="padding:16px;display:flex;flex-direction:column;gap:12px;overflow-y:auto;max-height:60vh;">
+                <div style="display:flex;gap:12px;align-items:center;">
+                  <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+                    <input type="radio" value="custom" :checked="persistedState.ai_api_config.mode === 'custom'" @change="updateApiConfig({ mode: 'custom', use_main_api: false })" />
+                    <span>自定义API</span>
+                  </label>
+                  <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+                    <input type="radio" value="tavern" :checked="persistedState.ai_api_config.mode === 'tavern'" @change="updateApiConfig({ mode: 'tavern' })" />
+                    <span>使用酒馆连接预设</span>
+                  </label>
+                </div>
+                <template v-if="persistedState.ai_api_config.mode === 'custom'">
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                    <input type="checkbox" :checked="persistedState.ai_api_config.use_main_api" @change="updateApiConfig({ use_main_api: ($event.target as HTMLInputElement).checked })" />
+                    <span>使用主API（直接使用酒馆当前API和模型）</span>
+                  </label>
+                  <template v-if="!persistedState.ai_api_config.use_main_api">
+                    <div style="font-size:11px;color:#f59e0b;">⚠️ API密钥将保存在脚本本地存储中。</div>
+                    <label class="field">
+                      <span>API基础URL</span>
+                      <input class="text-input" type="text" :value="persistedState.ai_api_config.apiurl" @change="updateApiConfig({ apiurl: ($event.target as HTMLInputElement).value })" placeholder="https://api.openai.com/v1" />
+                    </label>
+                    <label class="field">
+                      <span>API密钥（可选）</span>
+                      <input class="text-input" type="password" :value="persistedState.ai_api_config.key" @change="updateApiConfig({ key: ($event.target as HTMLInputElement).value })" placeholder="sk-..." />
+                    </label>
+                    <div style="display:flex;gap:10px;">
+                      <label class="field" style="flex:1;">
+                        <span>最大Tokens</span>
+                        <input class="text-input" type="number" :value="persistedState.ai_api_config.max_tokens" @change="updateApiConfig({ max_tokens: Number(($event.target as HTMLInputElement).value) || 4096 })" />
+                      </label>
+                      <label class="field" style="flex:1;">
+                        <span>温度</span>
+                        <input class="text-input" type="number" step="0.1" min="0" max="2" :value="persistedState.ai_api_config.temperature" @change="updateApiConfig({ temperature: Number(($event.target as HTMLInputElement).value) || 1 })" />
+                      </label>
+                    </div>
+                    <button class="btn" type="button" :disabled="apiModelLoading || !persistedState.ai_api_config.apiurl" @click="loadModelList" style="width:100%;">
+                      {{ apiModelLoading ? '加载中...' : '加载模型列表' }}
+                    </button>
+                    <label class="field" v-if="apiModelList.length > 0">
+                      <span>选择模型</span>
+                      <select class="text-input" :value="persistedState.ai_api_config.model" @change="updateApiConfig({ model: ($event.target as HTMLSelectElement).value })">
+                        <option value="">请选择模型</option>
+                        <option v-for="m in apiModelList" :key="m" :value="m">{{ m }}</option>
+                      </select>
+                    </label>
+                    <label class="field" v-else>
+                      <span>模型名称（手动输入）</span>
+                      <input class="text-input" type="text" :value="persistedState.ai_api_config.model" @change="updateApiConfig({ model: ($event.target as HTMLInputElement).value })" placeholder="gpt-4o" />
+                    </label>
+                  </template>
+                </template>
+                <div v-if="persistedState.ai_api_config.mode === 'tavern'" style="font-size:12px;color:var(--wb-text-muted);padding:8px 0;">
+                  将直接使用酒馆当前启用的预设和API配置进行生成。
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 标签审查 -->
           <div v-if="aiShowTagReview" class="ai-tag-review-overlay" @click.self="aiShowTagReview = false">
             <div class="ai-tag-review-modal">
               <div class="ai-tag-review-head">
@@ -1837,6 +1911,16 @@ interface WorldbookTagState {
   assignments: Record<string, string[]>;
 }
 
+interface AIApiConfig {
+  mode: 'custom' | 'tavern';
+  use_main_api: boolean;
+  apiurl: string;
+  key: string;
+  model: string;
+  max_tokens: number;
+  temperature: number;
+}
+
 interface PersistedState {
   last_worldbook: string;
   history: Record<string, WorldbookSnapshot[]>;
@@ -1848,6 +1932,7 @@ interface PersistedState {
   ai_chat: AIGeneratorState;
   worldbook_tags: WorldbookTagState;
   extract_ignore_tags: string[];
+  ai_api_config: AIApiConfig;
 }
 
 interface ActivationLog {
@@ -1930,6 +2015,9 @@ const aiTargetWorldbook = ref('');
 const aiChatInputText = ref('');
 const aiUseContext = ref(true);
 const aiChatMessagesRef = ref<HTMLDivElement | null>(null);
+const showApiSettings = ref(false);
+const apiModelList = ref<string[]>([]);
+const apiModelLoading = ref(false);
 
 const AI_CHAT_SESSION_LIMIT = 50;
 const AI_CHAT_MESSAGE_LIMIT = 200;
@@ -3057,6 +3145,15 @@ function createDefaultPersistedState(): PersistedState {
     ai_chat: { sessions: [], activeSessionId: null },
     worldbook_tags: { definitions: [], assignments: {} },
     extract_ignore_tags: ['thinking', 'recap', 'content', 'details', 'summary'],
+    ai_api_config: {
+      mode: 'tavern',
+      use_main_api: true,
+      apiurl: '',
+      key: '',
+      model: '',
+      max_tokens: 4096,
+      temperature: 1,
+    },
   };
 }
 
@@ -3227,6 +3324,19 @@ function normalizePersistedState(input: unknown): PersistedState {
     extract_ignore_tags: Array.isArray(root.extract_ignore_tags)
       ? root.extract_ignore_tags.map((t: unknown) => toStringSafe(t).trim().toLowerCase()).filter(Boolean)
       : ['thinking', 'recap', 'content', 'details', 'summary'],
+    ai_api_config: (() => {
+      const raw = asRecord(root.ai_api_config);
+      if (!raw) return createDefaultPersistedState().ai_api_config;
+      return {
+        mode: raw.mode === 'custom' ? 'custom' : 'tavern',
+        use_main_api: raw.use_main_api !== false,
+        apiurl: toStringSafe(raw.apiurl),
+        key: toStringSafe(raw.key),
+        model: toStringSafe(raw.model),
+        max_tokens: toNumberSafe(raw.max_tokens, 4096),
+        temperature: toNumberSafe(raw.temperature, 1),
+      } as AIApiConfig;
+    })(),
   };
 }
 
@@ -3329,6 +3439,54 @@ function aiAddMessage(role: 'user' | 'assistant', content: string): void {
   });
 }
 
+// ── AI: API config helpers ──────────────────────────────────────────
+function updateApiConfig(partial: Partial<AIApiConfig>): void {
+  updatePersistedState(state => {
+    Object.assign(state.ai_api_config, partial);
+  });
+}
+
+async function loadModelList(): Promise<void> {
+  const cfg = persistedState.value.ai_api_config;
+  if (!cfg.apiurl) {
+    toastr.warning('请先填写 API 基础 URL');
+    return;
+  }
+  apiModelLoading.value = true;
+  try {
+    const models = await getModelList({ apiurl: cfg.apiurl, key: cfg.key || undefined });
+    apiModelList.value = models;
+    if (models.length === 0) {
+      toastr.info('未获取到模型列表');
+    } else {
+      toastr.success(`加载到 ${models.length} 个模型`);
+    }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    toastr.error(`加载模型列表失败: ${msg}`);
+    apiModelList.value = [];
+  } finally {
+    apiModelLoading.value = false;
+  }
+}
+
+function buildCustomApiForGenerate(): { custom_api?: CustomApiConfig } {
+  const cfg = persistedState.value.ai_api_config;
+  if (cfg.mode === 'tavern' || cfg.use_main_api) {
+    return {};
+  }
+  return {
+    custom_api: {
+      apiurl: cfg.apiurl,
+      key: cfg.key || undefined,
+      model: cfg.model,
+      source: 'openai',
+      max_tokens: cfg.max_tokens || undefined,
+      temperature: cfg.temperature,
+    },
+  };
+}
+
 // ── AI Chat: generate ──────────────────────────────────────────────
 let aiStreamSubscription: { stop: () => void } | null = null;
 
@@ -3376,6 +3534,7 @@ async function aiSendMessage(): Promise<void> {
       user_input: text,
       should_stream: true,
       should_silence: true,
+      ...buildCustomApiForGenerate(),
     };
 
     if (!aiUseContext.value) {
