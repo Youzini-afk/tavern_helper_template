@@ -3625,7 +3625,7 @@ function buildConfigSystemPrompt(entries: WorldbookEntry[], forceDefault = false
   if (!forceDefault && aiConfigCustomPrompt.value.trim()) {
     return aiConfigCustomPrompt.value;
   }
-  const names = entries.map(e => `"${e.name}"`).join(', ');
+  const names = [...new Set(entries.map(e => e.name))].map(n => `"${n}"`).join(', ');
 
   return `你是世界书条目配置助手。根据用户的自然语言指令，输出对应的JSON配置。
 
