@@ -1704,6 +1704,28 @@ const THEMES: Record<ThemeKey, { name: string; label: string; colors: Record<str
       '--wb-scrollbar-thumb': '#a1a1aa',
     },
   },
+  midnight: {
+    name: 'Midnight',
+    label: '黑黄',
+    colors: {
+      '--wb-bg-root': '#0d0d0d',
+      '--wb-bg-panel': '#1a1a1a',
+      '--wb-text-main': '#f5f5f5',
+      '--wb-text-muted': '#d4a017',
+      '--wb-primary': '#f5a623',
+      '--wb-primary-light': '#f7c948',
+      '--wb-primary-hover': 'rgba(245, 166, 35, 0.15)',
+      '--wb-primary-soft': 'rgba(212, 160, 23, 0.15)',
+      '--wb-primary-glow': 'rgba(245, 166, 35, 0.4)',
+      '--wb-input-bg': 'rgba(255, 255, 255, 0.06)',
+      '--wb-input-bg-hover': 'rgba(255, 255, 255, 0.1)',
+      '--wb-input-bg-focus': 'rgba(255, 255, 255, 0.14)',
+      '--wb-border-subtle': 'rgba(245, 166, 35, 0.12)',
+      '--wb-border-main': 'rgba(245, 166, 35, 0.22)',
+      '--wb-shadow-main': '0 12px 28px rgba(0, 0, 0, 0.6)',
+      '--wb-scrollbar-thumb': 'rgba(245, 166, 35, 0.3)',
+    },
+  },
 };
 
 interface WorldbookSnapshot {
