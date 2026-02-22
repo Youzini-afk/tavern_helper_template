@@ -152,6 +152,7 @@
               </button>
               <div v-if="!filteredEntries.length" class="empty-note">暂无条目</div>
             </div>
+            </div>
           </Transition>
 
           <!-- Tab: 编辑 -->
