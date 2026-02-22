@@ -3627,6 +3627,7 @@ ${entrySummary || '（空）'}
 可用字段说明：
 {
   "name": "条目名（必填，用于匹配现有条目）",
+  "new_name": "新条目名（可选，如果需要重命名条目）",
   "enabled": true/false,
   "strategy_type": "constant"（蓝灯常驻）| "selective"（绿灯关键词）,
   "keys": ["主要关键词1", "关键词2"],
@@ -3757,6 +3758,10 @@ async function aiConfigGenerate(): Promise<void> {
 
       if (cfg.prevent_outgoing !== undefined && cfg.prevent_outgoing !== entry.recursion.prevent_outgoing) {
         changes.push({ name, field: 'prevent_outgoing', label: '防止进一步递归', oldValue: entry.recursion.prevent_outgoing ? '是' : '否', newValue: cfg.prevent_outgoing ? '是' : '否', selected: true, apply: e => { e.recursion.prevent_outgoing = cfg.prevent_outgoing; } });
+      }
+
+      if (cfg.new_name !== undefined && cfg.new_name !== entry.name) {
+        changes.push({ name, field: 'new_name', label: '条目名称', oldValue: entry.name, newValue: cfg.new_name, selected: true, apply: e => { e.name = cfg.new_name; } });
       }
 
       if (cfg.enabled !== undefined && cfg.enabled !== entry.enabled) {
