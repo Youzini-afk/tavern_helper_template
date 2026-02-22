@@ -560,6 +560,13 @@
               >
                 ⚙️ API设置
               </button>
+              <button
+                class="btn history-btn utility-btn"
+                type="button"
+                @click="aiConfigPreview = false; aiConfigChanges = []; aiConfigTargetWorldbook = selectedWorldbookName || ''"
+              >
+                🔧 AI配置
+              </button>
             </div>
             <div v-if="globalWorldbookMode" class="global-mode-panel">
               <div class="global-mode-head">
@@ -878,6 +885,89 @@
                 <div v-if="persistedState.ai_api_config.mode === 'tavern'" style="font-size:12px;color:var(--wb-text-muted);padding:8px 0;">
                   将直接使用酒馆当前启用的预设和API配置进行生成。
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- AI 配置世界书 -->
+          <div v-if="aiConfigInput !== undefined && !aiConfigPreview" class="ai-tag-review-overlay" style="display:none;"></div>
+
+          <!-- AI 配置输入弹窗 (通过 toolbar 按钮触发) -->
+          <div v-if="aiConfigTargetWorldbook && !aiConfigPreview && !aiConfigGenerating" class="ai-tag-review-overlay" @click.self="aiConfigTargetWorldbook = ''">
+            <div class="ai-tag-review-modal" style="max-width:600px;">
+              <div class="ai-tag-review-head">
+                <span class="ai-tag-review-title">🔧 AI 配置世界书</span>
+                <button class="ai-tag-review-close" type="button" @click="aiConfigTargetWorldbook = ''">×</button>
+              </div>
+              <div style="padding:16px;display:flex;flex-direction:column;gap:12px;overflow-y:auto;max-height:60vh;">
+                <label class="field">
+                  <span>目标世界书</span>
+                  <select v-model="aiConfigTargetWorldbook" class="text-input">
+                    <option value="">请选择</option>
+                    <option v-for="name in worldbookNames" :key="`cfg-wb-${name}`" :value="name">{{ name }}</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>配置指令（自然语言描述）</span>
+                  <textarea v-model="aiConfigInput" class="text-input" rows="8" placeholder="例如：
+将以下条目设为蓝灯常驻，位置设为角色定义前：
+- 世界观设定（顺序1）
+- 角色速览（顺序2）
+
+所有条目启用不可递归和防止进一步递归"></textarea>
+                </label>
+                <button class="btn primary" type="button" :disabled="!aiConfigInput.trim() || !aiConfigTargetWorldbook || aiConfigGenerating" @click="aiConfigGenerate" style="width:100%;">
+                  {{ aiConfigGenerating ? '⏳ AI 分析中...' : '🤖 发送给 AI 分析' }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- AI 配置生成中遮罩 -->
+          <div v-if="aiConfigGenerating" class="ai-tag-review-overlay">
+            <div class="ai-tag-review-modal" style="max-width:400px;text-align:center;padding:40px;">
+              <div style="font-size:24px;margin-bottom:12px;">⏳</div>
+              <div style="color:var(--wb-text-main);">AI 正在分析配置指令...</div>
+            </div>
+          </div>
+
+          <!-- AI 配置预览弹窗 -->
+          <div v-if="aiConfigPreview" class="ai-tag-review-overlay" @click.self="aiConfigPreview = false">
+            <div class="ai-tag-review-modal" style="max-width:700px;">
+              <div class="ai-tag-review-head">
+                <span class="ai-tag-review-title">📋 配置变更预览</span>
+                <button class="ai-tag-review-close" type="button" @click="aiConfigPreview = false">×</button>
+              </div>
+              <div style="padding:16px;overflow-y:auto;max-height:55vh;">
+                <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                  <thead>
+                    <tr style="border-bottom:1px solid var(--wb-border);">
+                      <th style="width:30px;padding:6px;"></th>
+                      <th style="text-align:left;padding:6px;">条目</th>
+                      <th style="text-align:left;padding:6px;">设置项</th>
+                      <th style="text-align:left;padding:6px;">旧值</th>
+                      <th style="text-align:center;padding:6px;">→</th>
+                      <th style="text-align:left;padding:6px;">新值</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(c, i) in aiConfigChanges" :key="i" style="border-bottom:1px solid var(--wb-border);" :style="{ opacity: c.selected ? 1 : 0.4 }">
+                      <td style="padding:6px;"><input v-model="c.selected" type="checkbox" /></td>
+                      <td style="padding:6px;font-weight:600;">{{ c.name }}</td>
+                      <td style="padding:6px;">{{ c.label }}</td>
+                      <td style="padding:6px;color:#ef4444;">{{ c.oldValue }}</td>
+                      <td style="padding:6px;text-align:center;">→</td>
+                      <td style="padding:6px;color:#22c55e;">{{ c.newValue }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="ai-tag-review-actions">
+                <button class="btn" type="button" @click="aiConfigChanges.forEach(c => c.selected = true)">全选</button>
+                <button class="btn" type="button" @click="aiConfigChanges.forEach(c => c.selected = false)">全不选</button>
+                <button class="btn primary" type="button" :disabled="!aiConfigChanges.some(c => c.selected)" @click="aiConfigApply">
+                  应用选中变更（{{ aiConfigChanges.filter(c => c.selected).length }}）
+                </button>
               </div>
             </div>
           </div>
@@ -2018,6 +2108,22 @@ const aiChatMessagesRef = ref<HTMLDivElement | null>(null);
 const showApiSettings = ref(false);
 const apiModelList = ref<string[]>([]);
 const apiModelLoading = ref(false);
+
+// AI worldbook config state
+interface ConfigChange {
+  name: string;
+  field: string;
+  label: string;
+  oldValue: string;
+  newValue: string;
+  selected: boolean;
+  apply: (entry: WorldbookEntry) => void;
+}
+const aiConfigInput = ref('');
+const aiConfigChanges = ref<ConfigChange[]>([]);
+const aiConfigPreview = ref(false);
+const aiConfigGenerating = ref(false);
+const aiConfigTargetWorldbook = ref('');
 
 const AI_CHAT_SESSION_LIMIT = 50;
 const AI_CHAT_MESSAGE_LIMIT = 200;
@@ -3485,6 +3591,230 @@ function buildCustomApiForGenerate(): { custom_api?: CustomApiConfig } {
       temperature: cfg.temperature,
     },
   };
+}
+
+// ── AI: Worldbook Config ────────────────────────────────────────────
+const POSITION_TYPE_LABELS: Record<string, string> = {
+  before_character_definition: '角色定义前',
+  after_character_definition: '角色定义后',
+  before_example_messages: '示例消息前',
+  after_example_messages: '示例消息后',
+  before_author_note: '作者注释前',
+  after_author_note: '作者注释后',
+  at_depth: '指定深度',
+};
+
+const STRATEGY_TYPE_LABELS: Record<string, string> = {
+  constant: '蓝灯（常驻）',
+  selective: '绿灯（关键词）',
+  vectorized: '向量化',
+};
+
+function buildConfigSystemPrompt(entries: WorldbookEntry[]): string {
+  const entrySummary = entries.map(e => {
+    const strat = STRATEGY_TYPE_LABELS[e.strategy.type] || e.strategy.type;
+    const pos = POSITION_TYPE_LABELS[e.position.type] || e.position.type;
+    return `  - "${e.name}": ${strat}, ${pos}, 顺序=${e.position.order}`;
+  }).join('\n');
+
+  return `你是世界书配置助手。用户会用自然语言描述如何配置世界书条目，你需要将其转换为结构化的 JSON 配置。
+
+当前世界书中的条目：
+${entrySummary || '（空）'}
+
+请返回一个 JSON 数组，每个元素是一个要修改的条目配置。只包含需要修改的字段（name 必填）。
+
+可用字段说明：
+{
+  "name": "条目名（必填，用于匹配现有条目）",
+  "enabled": true/false,
+  "strategy_type": "constant"（蓝灯常驻）| "selective"（绿灯关键词）,
+  "keys": ["主要关键词1", "关键词2"],
+  "keys_secondary_logic": "and_any" | "and_all" | "not_all" | "not_any",
+  "keys_secondary": ["次要关键词1"],
+  "scan_depth": 数字 或 "same_as_global",
+  "position_type": "before_character_definition"（角色定义前）| "after_character_definition"（角色定义后）| "before_example_messages"（示例消息前）| "after_example_messages"（示例消息后）| "before_author_note"（作者注释前）| "after_author_note"（作者注释后）| "at_depth"（指定深度）,
+  "position_order": 数字（排序顺序）,
+  "position_depth": 数字（仅 at_depth 时有效）,
+  "position_role": "system" | "assistant" | "user"（仅 at_depth 时有效）,
+  "prevent_incoming": true/false（不可递归：禁止其他条目递归激活本条目）,
+  "prevent_outgoing": true/false（防止进一步递归：禁止本条目递归激活其他条目）,
+  "probability": 0-100（激活概率%）,
+  "sticky": null 或 数字（黏性：激活后保持 n 条消息）,
+  "cooldown": null 或 数字（冷却：激活后 n 条消息内不再激活）
+}
+
+注意：
+- name 必须与现有条目名完全匹配
+- 只返回需要修改的字段，不需要修改的字段不要包含
+- 用户说的"蓝灯"="constant"，"绿灯"="selective"
+- 用户说的"角色定义前"="before_character_definition"
+
+请将结果包裹在 <worldbook_config> 和 </worldbook_config> 标签中。例如：
+<worldbook_config>
+[
+  {"name": "世界观设定", "strategy_type": "constant", "position_type": "before_character_definition", "position_order": 1, "prevent_incoming": true, "prevent_outgoing": true}
+]
+</worldbook_config>`;
+}
+
+async function aiConfigGenerate(): Promise<void> {
+  const input = aiConfigInput.value.trim();
+  const targetName = aiConfigTargetWorldbook.value;
+  if (!input || !targetName) {
+    toastr.warning('请输入配置指令并选择目标世界书');
+    return;
+  }
+  aiConfigGenerating.value = true;
+  try {
+    const existingEntries = await getWorldbook(targetName);
+
+    const systemPrompt = buildConfigSystemPrompt(existingEntries);
+
+    const result = await generate({
+      user_input: input,
+      should_silence: true,
+      injects: [{ role: 'system', content: systemPrompt, position: 'in_chat', depth: 0, should_scan: false }],
+      overrides: { chat_history: { prompts: [] } },
+      max_chat_history: 0,
+      ...buildCustomApiForGenerate(),
+    });
+
+    // Parse <worldbook_config> tag
+    const match = result.match(/<worldbook_config>\s*([\s\S]*?)\s*<\/worldbook_config>/);
+    if (!match) {
+      toastr.error('AI 返回中未找到 <worldbook_config> 标签');
+      return;
+    }
+    let configs: any[];
+    try {
+      configs = JSON.parse(match[1]);
+    } catch {
+      toastr.error('JSON 解析失败');
+      return;
+    }
+    if (!Array.isArray(configs) || configs.length === 0) {
+      toastr.warning('AI 未返回任何配置变更');
+      return;
+    }
+
+    // Build ConfigChange[] by diffing against existing entries
+    const changes: ConfigChange[] = [];
+
+    for (const cfg of configs) {
+      const name = cfg.name;
+      if (!name) continue;
+      const entry = existingEntries.find(e => e.name === name);
+      if (!entry) {
+        toastr.warning(`条目 "${name}" 在世界书中不存在，已跳过`);
+        continue;
+      }
+
+      // Check each settable field
+      if (cfg.strategy_type !== undefined && cfg.strategy_type !== entry.strategy.type) {
+        const oldLabel = STRATEGY_TYPE_LABELS[entry.strategy.type] || entry.strategy.type;
+        const newLabel = STRATEGY_TYPE_LABELS[cfg.strategy_type] || cfg.strategy_type;
+        changes.push({ name, field: 'strategy_type', label: '激活策略', oldValue: oldLabel, newValue: newLabel, selected: true, apply: e => { e.strategy.type = cfg.strategy_type; } });
+      }
+
+      if (cfg.keys !== undefined) {
+        const oldKeys = entry.strategy.keys.map(k => String(k)).join(', ') || '（无）';
+        const newKeys = cfg.keys.join(', ') || '（无）';
+        if (oldKeys !== newKeys) {
+          changes.push({ name, field: 'keys', label: '主要关键词', oldValue: oldKeys, newValue: newKeys, selected: true, apply: e => { e.strategy.keys = cfg.keys; } });
+        }
+      }
+
+      if (cfg.scan_depth !== undefined) {
+        const oldSd = String(entry.strategy.scan_depth);
+        const newSd = String(cfg.scan_depth);
+        if (oldSd !== newSd) {
+          changes.push({ name, field: 'scan_depth', label: '扫描深度', oldValue: oldSd, newValue: newSd, selected: true, apply: e => { e.strategy.scan_depth = cfg.scan_depth === 'same_as_global' ? 'same_as_global' : Number(cfg.scan_depth); } });
+        }
+      }
+
+      if (cfg.position_type !== undefined && cfg.position_type !== entry.position.type) {
+        const oldLabel = POSITION_TYPE_LABELS[entry.position.type] || entry.position.type;
+        const newLabel = POSITION_TYPE_LABELS[cfg.position_type] || cfg.position_type;
+        changes.push({ name, field: 'position_type', label: '插入位置', oldValue: oldLabel, newValue: newLabel, selected: true, apply: e => { e.position.type = cfg.position_type; } });
+      }
+
+      if (cfg.position_order !== undefined && cfg.position_order !== entry.position.order) {
+        changes.push({ name, field: 'position_order', label: '顺序', oldValue: String(entry.position.order), newValue: String(cfg.position_order), selected: true, apply: e => { e.position.order = cfg.position_order; } });
+      }
+
+      if (cfg.position_depth !== undefined && cfg.position_depth !== entry.position.depth) {
+        changes.push({ name, field: 'position_depth', label: '深度', oldValue: String(entry.position.depth), newValue: String(cfg.position_depth), selected: true, apply: e => { e.position.depth = cfg.position_depth; } });
+      }
+
+      if (cfg.position_role !== undefined && cfg.position_role !== entry.position.role) {
+        changes.push({ name, field: 'position_role', label: '角色', oldValue: entry.position.role, newValue: cfg.position_role, selected: true, apply: e => { e.position.role = cfg.position_role; } });
+      }
+
+      if (cfg.prevent_incoming !== undefined && cfg.prevent_incoming !== entry.recursion.prevent_incoming) {
+        changes.push({ name, field: 'prevent_incoming', label: '不可递归', oldValue: entry.recursion.prevent_incoming ? '是' : '否', newValue: cfg.prevent_incoming ? '是' : '否', selected: true, apply: e => { e.recursion.prevent_incoming = cfg.prevent_incoming; } });
+      }
+
+      if (cfg.prevent_outgoing !== undefined && cfg.prevent_outgoing !== entry.recursion.prevent_outgoing) {
+        changes.push({ name, field: 'prevent_outgoing', label: '防止进一步递归', oldValue: entry.recursion.prevent_outgoing ? '是' : '否', newValue: cfg.prevent_outgoing ? '是' : '否', selected: true, apply: e => { e.recursion.prevent_outgoing = cfg.prevent_outgoing; } });
+      }
+
+      if (cfg.enabled !== undefined && cfg.enabled !== entry.enabled) {
+        changes.push({ name, field: 'enabled', label: '启用', oldValue: entry.enabled ? '是' : '否', newValue: cfg.enabled ? '是' : '否', selected: true, apply: e => { e.enabled = cfg.enabled; } });
+      }
+
+      if (cfg.probability !== undefined && cfg.probability !== entry.probability) {
+        changes.push({ name, field: 'probability', label: '激活概率%', oldValue: String(entry.probability), newValue: String(cfg.probability), selected: true, apply: e => { e.probability = cfg.probability; } });
+      }
+
+      if (cfg.sticky !== undefined && cfg.sticky !== entry.effect.sticky) {
+        changes.push({ name, field: 'sticky', label: '黏性', oldValue: String(entry.effect.sticky ?? '无'), newValue: String(cfg.sticky ?? '无'), selected: true, apply: e => { e.effect.sticky = cfg.sticky; } });
+      }
+
+      if (cfg.cooldown !== undefined && cfg.cooldown !== entry.effect.cooldown) {
+        changes.push({ name, field: 'cooldown', label: '冷却', oldValue: String(entry.effect.cooldown ?? '无'), newValue: String(cfg.cooldown ?? '无'), selected: true, apply: e => { e.effect.cooldown = cfg.cooldown; } });
+      }
+    }
+
+    if (changes.length === 0) {
+      toastr.info('AI 返回的配置与当前一致，无需变更');
+      return;
+    }
+
+    aiConfigChanges.value = changes;
+    aiConfigPreview.value = true;
+    toastr.success(`解析到 ${changes.length} 项变更`);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    toastr.error(`AI 配置生成失败: ${msg}`);
+  } finally {
+    aiConfigGenerating.value = false;
+  }
+}
+
+async function aiConfigApply(): Promise<void> {
+  const targetName = aiConfigTargetWorldbook.value;
+  const selected = aiConfigChanges.value.filter(c => c.selected);
+  if (!targetName || selected.length === 0) return;
+
+  try {
+    await updateWorldbookWith(targetName, entries => {
+      for (const change of selected) {
+        const entry = entries.find(e => e.name === change.name);
+        if (entry) {
+          change.apply(entry);
+        }
+      }
+      return entries;
+    });
+    aiConfigPreview.value = false;
+    aiConfigChanges.value = [];
+    toastr.success(`已应用 ${selected.length} 项配置变更`);
+    await loadWorldbook(targetName);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    toastr.error(`应用配置失败: ${msg}`);
+  }
 }
 
 // ── AI Chat: generate ──────────────────────────────────────────────
