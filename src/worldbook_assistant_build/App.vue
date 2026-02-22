@@ -3695,13 +3695,20 @@ async function aiConfigGenerate(): Promise<void> {
     if (match) {
       jsonStr = match[1];
     } else {
-      // Fallback: try to find a JSON array in the result
-      const arrayMatch = result.match(/\[\s*\{[\s\S]*?\}\s*\]/);
-      if (arrayMatch) {
-        jsonStr = arrayMatch[0];
+      // Fallback 1: look for JSON array inside markdown code block
+      const codeBlockMatch = result.match(/```(?:json)?\s*(\[[\s\S]*?\])\s*```/);
+      if (codeBlockMatch) {
+        jsonStr = codeBlockMatch[1];
       } else {
-        toastr.error('AI 返回中未找到配置 JSON');
-        return;
+        // Fallback 2: find a JSON array that contains "name" (to avoid false matches)
+        const arrayMatch = result.match(/\[\s*\{[^[\]]*"name"[^[\]]*\}(?:\s*,\s*\{[^[\]]*\})*\s*\]/);
+        if (arrayMatch) {
+          jsonStr = arrayMatch[0];
+        } else {
+          console.error('[AI Config] No JSON found in response:\n', result);
+          toastr.error('AI 返回中未找到配置 JSON，请重试');
+          return;
+        }
       }
     }
     // Clean up common AI formatting issues
@@ -3715,7 +3722,7 @@ async function aiConfigGenerate(): Promise<void> {
     try {
       configs = JSON.parse(jsonStr);
     } catch (parseErr) {
-      console.error('[AI Config] JSON parse error:', parseErr, '\nRaw JSON:', jsonStr);
+      console.error('[AI Config] JSON parse error:', parseErr, '\nCleaned JSON:', jsonStr, '\nFull response:\n', result);
       toastr.error(`JSON 解析失败: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`);
       return;
     }
