@@ -61,7 +61,7 @@ function ensurePanelStyle(): void {
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
   overflow: hidden;
   resize: both;
-  transition: opacity 0.2s cubic-bezier(0.4, 0, 1, 1), transform 0.2s cubic-bezier(0.4, 0, 1, 1), visibility 0.2s;
+  transition: opacity 0.25s cubic-bezier(0.19, 1, 0.22, 1), transform 0.25s cubic-bezier(0.19, 1, 0.22, 1), visibility 0.25s;
   will-change: transform, opacity;
 }
 
@@ -70,7 +70,7 @@ function ensurePanelStyle(): void {
   visibility: visible;
   pointer-events: auto;
   --wb-scale: 1;
-  transition: opacity 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transition: opacity 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 #${PANEL_ID} .wb-assistant-header {
@@ -109,7 +109,7 @@ function ensurePanelStyle(): void {
   align-items: center;
   justify-content: center;
   font-size: 14px;
-  transition: all 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 #${PANEL_ID} .wb-assistant-tool:hover {
@@ -151,7 +151,7 @@ function ensurePanelStyle(): void {
   background: var(--wb-host-tool-bg, #1f2937);
   color: var(--wb-host-text, #e2e8f0);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 #${PANEL_ID} .wb-assistant-close:hover {
@@ -207,6 +207,7 @@ function ensurePanelStyle(): void {
   opacity: 1;
   transform: translateY(0) scale(1);
   pointer-events: auto;
+  transition: opacity 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 #${PANEL_ID} .wb-theme-dropdown button {
@@ -298,6 +299,25 @@ function ensurePanelStyle(): void {
   cursor: pointer;
   box-shadow: 0 0 0 1.5px rgba(96, 165, 250, 0.3), 0 4px 16px rgba(0,0,0,0.35);
   touch-action: none;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+}
+
+#${FAB_ID}:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.5), 0 8px 24px rgba(0,0,0,0.5);
+}
+
+#${FAB_ID}:active {
+  transform: translateY(1px) scale(0.92);
+  box-shadow: 0 0 0 1.5px rgba(96, 165, 250, 0.4), 0 2px 8px rgba(0,0,0,0.4);
+}
+
+#${FAB_ID}.dragging {
+  transition: none !important;
+  transform: scale(1.05);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.6), 0 12px 32px rgba(0,0,0,0.6);
+  opacity: 0.9;
+}
   user-select: none;
   transition: box-shadow 0.2s, transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
   transform: translateZ(0);
@@ -772,6 +792,7 @@ function createFab(): void {
     const rect = fab.getBoundingClientRect();
     fabStartX = rect.left;
     fabStartY = rect.top;
+    fab.classList.add('dragging');
     fab.setPointerCapture(e.pointerId);
     e.preventDefault();
   });
@@ -794,6 +815,7 @@ function createFab(): void {
   fab.addEventListener('pointerup', () => {
     if (!dragging) return;
     dragging = false;
+    fab.classList.remove('dragging');
     try {
       const rect = fab.getBoundingClientRect();
       localStorage.setItem(FAB_POS_KEY, JSON.stringify({ x: rect.left, y: rect.top }));

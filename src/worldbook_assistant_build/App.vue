@@ -667,7 +667,7 @@
                       @keydown.enter.prevent="addFirstGlobalCandidate"
                     />
                   </label>
-                  <div class="global-mode-list">
+                  <TransitionGroup name="list" tag="div" class="global-mode-list">
                     <button
                       v-for="name in globalAddCandidates"
                       :key="`add-${name}`"
@@ -678,8 +678,8 @@
                       <span class="global-mode-item-name">{{ name }}</span>
                       <span class="global-mode-item-action">添加</span>
                     </button>
-                    <div v-if="!globalAddCandidates.length" class="empty-note">没有可添加的世界书</div>
-                  </div>
+                    <div v-if="!globalAddCandidates.length" key="empty" class="empty-note">没有可添加的世界书</div>
+                  </TransitionGroup>
                 </div>
                 <div class="global-mode-column">
                   <label class="field">
@@ -691,7 +691,7 @@
                       placeholder="筛选常驻世界书..."
                     />
                   </label>
-                  <div class="global-mode-list">
+                  <TransitionGroup name="list" tag="div" class="global-mode-list">
                     <button
                       v-for="name in filteredGlobalWorldbooks"
                       :key="`global-${name}`"
@@ -702,10 +702,10 @@
                       <span class="global-mode-item-name">{{ name }}</span>
                       <span class="global-mode-item-action">移除</span>
                     </button>
-                    <div v-if="!filteredGlobalWorldbooks.length" class="empty-note">
+                    <div v-if="!filteredGlobalWorldbooks.length" key="empty" class="empty-note">
                       {{ bindings.global.length ? '没有匹配结果' : '暂无常驻世界书' }}
                     </div>
-                  </div>
+                  </TransitionGroup>
                 </div>
               </div>
               <div class="global-mode-actions">
@@ -853,7 +853,7 @@
             <div v-if="tagDefinitions.length" style="display:flex;gap:24px;flex-wrap:wrap;">
               <div style="flex:0 0 auto;min-width:240px;max-width:360px;">
                 <div style="font-size:14px;font-weight:600;margin-bottom:8px;">已建标签</div>
-                <div style="display:flex;flex-direction:column;gap:6px;">
+                <TransitionGroup name="list" tag="div" style="display:flex;flex-direction:column;gap:6px;">
                   <div v-for="tag in tagDefinitions" :key="tag.id" class="tag-editor-item" :style="{ '--tag-color': tag.color }">
                     <span class="tag-editor-dot" :style="{ background: tag.color }"></span>
                     <input
@@ -874,7 +874,7 @@
                     </div>
                     <button class="tag-delete-btn" type="button" @click="tagDelete(tag.id)">×</button>
                   </div>
-                </div>
+                </TransitionGroup>
               </div>
               <div style="flex:1;min-width:300px;">
                 <div style="font-size:14px;font-weight:600;margin-bottom:8px;">世界书分配</div>
@@ -911,7 +911,7 @@
               <div class="list-summary">
                 条目 {{ filteredEntries.length }} / {{ draftEntries.length }} | 启用 {{ enabledEntryCount }}
               </div>
-              <div class="list-scroll">
+              <TransitionGroup name="list" tag="div" class="list-scroll">
                 <button
                   v-for="entry in filteredEntries"
                   :key="entry.uid"
@@ -939,7 +939,7 @@
                   </div>
                   <div class="entry-item-preview">{{ getEntryKeyPreview(entry) }}</div>
                 </button>
-              </div>
+              </TransitionGroup>
               <div class="list-actions">
                 <button class="btn" type="button" :disabled="!selectedWorldbookName" @click="addEntry">新增</button>
                 <button class="btn" type="button" :disabled="!selectedEntry" @click="duplicateSelectedEntry">
@@ -6462,7 +6462,7 @@ watch(hasUnsavedChanges, (val) => {
 /* View Transitions */
 .mobile-tab-enter-active,
 .mobile-tab-leave-active {
-  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
   width: 100%;
@@ -6477,9 +6477,19 @@ watch(hasUnsavedChanges, (val) => {
   transform: translateX(-15px);
 }
 
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+  transform: translateY(4px) scale(0.98);
+}
+
 .desktop-content-enter-active,
 .desktop-content-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .desktop-content-enter-from {
   opacity: 0;
@@ -6488,6 +6498,23 @@ watch(hasUnsavedChanges, (val) => {
 .desktop-content-leave-to {
   opacity: 0;
   transform: translateY(-6px);
+}
+
+/* List Transitions for TransitionGroup */
+.list-move,
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.list-enter-from,
+.list-leave-to {
+  opacity: 0;
+  transform: scaleY(0.8) translateY(-10px);
+}
+
+.list-leave-active {
+  position: absolute;
 }
 
 .global-mode-actions {
@@ -7328,13 +7355,22 @@ watch(hasUnsavedChanges, (val) => {
 }
 
 .btn {
-  border: 1px solid var(--wb-border-main);
-  background: var(--wb-bg-panel);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--wb-input-bg);
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: 6px;
   color: var(--wb-text-main);
-  border-radius: 7px;
-  padding: 5px 10px;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  white-space: nowrap;
+  user-select: none;
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform: translateZ(0);
 }
 
 @keyframes wb-btn-pulse {
@@ -7351,7 +7387,15 @@ watch(hasUnsavedChanges, (val) => {
 }
 
 .btn:hover:not(:disabled) {
-  border-color: var(--wb-primary-light);
+  background: var(--wb-input-bg-hover);
+  border-color: var(--wb-primary);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px) scale(0.96);
+  box-shadow: none;
 }
 
 .btn:disabled {
