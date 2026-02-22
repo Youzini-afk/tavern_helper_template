@@ -20,6 +20,16 @@
                     <span class="worldbook-picker-arrow">▾</span>
                   </button>
                   <div v-if="worldbookPickerOpen" class="worldbook-picker-dropdown">
+                    <div v-if="tagDefinitions.length" class="worldbook-picker-tags">
+                      <button
+                        v-for="tag in tagDefinitions" :key="tag.id"
+                        class="tag-filter-chip"
+                        :class="{ active: activeTagFilter === tag.id }"
+                        :style="{ '--tag-color': tag.color }"
+                        type="button"
+                        @click="activeTagFilter = activeTagFilter === tag.id ? '' : tag.id"
+                      >{{ tag.name }}</button>
+                    </div>
                     <input
                       v-model="worldbookPickerSearchText"
                       type="text"
@@ -333,6 +343,66 @@
 
         </div>
       </div>
+
+          <!-- Tab: 标签 -->
+          <Transition name="mobile-tab">
+          <div v-show="mobileTab === 'tags'" class="mobile-pane">
+            <section class="tag-editor-panel" style="padding:12px;">
+              <div style="font-size:16px;font-weight:700;margin-bottom:12px;">🏷️ 标签管理</div>
+              <div style="display:flex;gap:6px;margin-bottom:12px;">
+                <input v-model="tagNewName" type="text" class="text-input" placeholder="新标签名称" @keydown.enter.prevent="tagCreate" style="flex:1;" />
+                <button class="btn" type="button" @click="tagCreate">创建</button>
+                <button class="btn danger" type="button" @click="tagResetAll" :disabled="!tagDefinitions.length">清除全部</button>
+              </div>
+              <div v-if="tagDefinitions.length" style="margin-bottom:16px;">
+                <div style="font-size:13px;font-weight:600;margin-bottom:6px;">已建标签</div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                  <div v-for="tag in tagDefinitions" :key="tag.id" class="tag-editor-item" :style="{ '--tag-color': tag.color }">
+                    <span class="tag-editor-dot" :style="{ background: tag.color }"></span>
+                    <input
+                      :value="tag.name"
+                      class="tag-editor-name-input"
+                      @blur="tagRename(tag.id, ($event.target as HTMLInputElement).value)"
+                      @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+                    />
+                    <div class="tag-color-picker">
+                      <button
+                        v-for="c in TAG_COLORS" :key="c"
+                        class="tag-color-dot"
+                        :class="{ active: tag.color === c }"
+                        :style="{ background: c }"
+                        type="button"
+                        @click="tagSetColor(tag.id, c)"
+                      ></button>
+                    </div>
+                    <button class="tag-delete-btn" type="button" @click="tagDelete(tag.id)">×</button>
+                  </div>
+                </div>
+              </div>
+              <div v-if="tagDefinitions.length">
+                <div style="font-size:13px;font-weight:600;margin-bottom:6px;">世界书分配</div>
+                <input v-model="tagAssignSearch" type="text" class="text-input" placeholder="搜索世界书..." style="margin-bottom:8px;" />
+                <div class="tag-assign-list">
+                  <div v-for="name in tagAssignWorldbooks" :key="name" class="tag-assign-row">
+                    <span class="tag-assign-name" :title="name">{{ name }}</span>
+                    <div class="tag-assign-chips">
+                      <button
+                        v-for="tag in tagDefinitions" :key="tag.id"
+                        class="tag-assign-chip"
+                        :class="{ active: (tagAssignments[name] ?? []).includes(tag.id) }"
+                        :style="{ '--tag-color': tag.color }"
+                        type="button"
+                        @click="tagToggleAssignment(name, tag.id)"
+                      >{{ tag.name }}</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-else class="empty-note" style="margin-top:16px;">暂无标签，请先创建</div>
+            </section>
+          </div>
+          </Transition>
+
       <!-- Tab Bar: bottom, direct child of wb-assistant-root via fragment -->
       <div style="display:flex !important;flex-shrink:0;height:52px;background:#1e293b;border-top:1px solid #334155;z-index:99999;">
         <button @click="mobileTab = 'list'" :style="{ flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',border:'none',borderTop: mobileTab==='list' ? '2px solid #60a5fa' : '2px solid transparent',background:'transparent',color: mobileTab==='list' ? '#e2e8f0' : '#94a3b8',fontSize:'10px',padding:'4px 0',gap:'2px' }">
@@ -346,6 +416,9 @@
         </button>
         <button @click="mobileTab = 'ai'" :style="{ flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',border:'none',borderTop: mobileTab==='ai' ? '2px solid #60a5fa' : '2px solid transparent',background:'transparent',color: mobileTab==='ai' ? '#e2e8f0' : '#94a3b8',fontSize:'10px',padding:'4px 0',gap:'2px' }">
           <span style="font-size:20px;">🤖</span><span>AI</span>
+        </button>
+        <button @click="mobileTab = 'tags'" :style="{ flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',border:'none',borderTop: mobileTab==='tags' ? '2px solid #60a5fa' : '2px solid transparent',background:'transparent',color: mobileTab==='tags' ? '#e2e8f0' : '#94a3b8',fontSize:'10px',padding:'4px 0',gap:'2px' }">
+          <span style="font-size:20px;">🏷️</span><span>标签</span>
         </button>
       </div>
     </template>
@@ -363,6 +436,16 @@
                   <span class="worldbook-picker-trigger-arrow">{{ worldbookPickerOpen ? '▴' : '▾' }}</span>
                 </button>
                 <div v-if="worldbookPickerOpen" class="worldbook-picker-dropdown">
+                  <div v-if="tagDefinitions.length" class="worldbook-picker-tags">
+                    <button
+                      v-for="tag in tagDefinitions" :key="tag.id"
+                      class="tag-filter-chip"
+                      :class="{ active: activeTagFilter === tag.id }"
+                      :style="{ '--tag-color': tag.color }"
+                      type="button"
+                      @click="activeTagFilter = activeTagFilter === tag.id ? '' : tag.id"
+                    >{{ tag.name }}</button>
+                  </div>
                   <input
                     ref="worldbookPickerSearchInputRef"
                     v-model="worldbookPickerSearchText"
@@ -453,6 +536,14 @@
                 @click="aiToggleMode"
               >
                 🤖 AI 生成
+              </button>
+              <button
+                class="btn history-btn utility-btn"
+                type="button"
+                :class="{ active: tagEditorMode }"
+                @click="tagToggleMode"
+              >
+                🏷️ 标签管理
               </button>
             </div>
             <div v-if="globalWorldbookMode" class="global-mode-panel">
@@ -751,7 +842,64 @@
             </div>
           </div>
 
-          <section v-show="!aiGeneratorMode" ref="mainLayoutRef" class="wb-main-layout" :style="mainLayoutStyle">
+          <!-- 标签编辑模式 -->
+          <section v-if="tagEditorMode" class="tag-editor-panel" style="padding:16px;">
+            <div style="font-size:18px;font-weight:700;margin-bottom:14px;">🏷️ 标签管理</div>
+            <div style="display:flex;gap:8px;margin-bottom:14px;">
+              <input v-model="tagNewName" type="text" class="text-input" placeholder="新标签名称" @keydown.enter.prevent="tagCreate" style="flex:1;max-width:260px;" />
+              <button class="btn" type="button" @click="tagCreate">创建</button>
+              <button class="btn danger" type="button" @click="tagResetAll" :disabled="!tagDefinitions.length">清除全部</button>
+            </div>
+            <div v-if="tagDefinitions.length" style="display:flex;gap:24px;flex-wrap:wrap;">
+              <div style="flex:0 0 auto;min-width:240px;max-width:360px;">
+                <div style="font-size:14px;font-weight:600;margin-bottom:8px;">已建标签</div>
+                <div style="display:flex;flex-direction:column;gap:6px;">
+                  <div v-for="tag in tagDefinitions" :key="tag.id" class="tag-editor-item" :style="{ '--tag-color': tag.color }">
+                    <span class="tag-editor-dot" :style="{ background: tag.color }"></span>
+                    <input
+                      :value="tag.name"
+                      class="tag-editor-name-input"
+                      @blur="tagRename(tag.id, ($event.target as HTMLInputElement).value)"
+                      @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+                    />
+                    <div class="tag-color-picker">
+                      <button
+                        v-for="c in TAG_COLORS" :key="c"
+                        class="tag-color-dot"
+                        :class="{ active: tag.color === c }"
+                        :style="{ background: c }"
+                        type="button"
+                        @click="tagSetColor(tag.id, c)"
+                      ></button>
+                    </div>
+                    <button class="tag-delete-btn" type="button" @click="tagDelete(tag.id)">×</button>
+                  </div>
+                </div>
+              </div>
+              <div style="flex:1;min-width:300px;">
+                <div style="font-size:14px;font-weight:600;margin-bottom:8px;">世界书分配</div>
+                <input v-model="tagAssignSearch" type="text" class="text-input" placeholder="搜索世界书..." style="margin-bottom:8px;" />
+                <div class="tag-assign-list">
+                  <div v-for="name in tagAssignWorldbooks" :key="name" class="tag-assign-row">
+                    <span class="tag-assign-name" :title="name">{{ name }}</span>
+                    <div class="tag-assign-chips">
+                      <button
+                        v-for="tag in tagDefinitions" :key="tag.id"
+                        class="tag-assign-chip"
+                        :class="{ active: (tagAssignments[name] ?? []).includes(tag.id) }"
+                        :style="{ '--tag-color': tag.color }"
+                        type="button"
+                        @click="tagToggleAssignment(name, tag.id)"
+                      >{{ tag.name }}</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="empty-note" style="margin-top:20px;">暂无标签，请先创建</div>
+          </section>
+
+          <section v-show="!aiGeneratorMode && !tagEditorMode" ref="mainLayoutRef" class="wb-main-layout" :style="mainLayoutStyle">
             <aside v-show="!showMobileEditor" class="wb-entry-list">
               <div class="list-search">
                 <input v-model="searchText" type="text" class="text-input" placeholder="搜索名称 / 内容 / 关键词" />
@@ -1634,6 +1782,17 @@ interface ExtractedTag {
   selected: boolean;
 }
 
+interface WorldbookTagDefinition {
+  id: string;
+  name: string;
+  color: string;
+}
+
+interface WorldbookTagState {
+  definitions: WorldbookTagDefinition[];
+  assignments: Record<string, string[]>;
+}
+
 interface PersistedState {
   last_worldbook: string;
   history: Record<string, WorldbookSnapshot[]>;
@@ -1643,6 +1802,7 @@ interface PersistedState {
   role_override_baseline: { preset_id: string; worldbooks: string[] } | null;
   theme: ThemeKey;
   ai_chat: AIGeneratorState;
+  worldbook_tags: WorldbookTagState;
 }
 
 interface ActivationLog {
@@ -1684,6 +1844,12 @@ const MAIN_EDITOR_MIN = 540;
 const EDITOR_SIDE_MIN = 280;
 const EDITOR_CENTER_MIN = 420;
 const GLOBAL_PRESET_LIMIT = 64;
+const TAG_LIMIT = 32;
+const TAG_COLORS = [
+  '#3b82f6', '#8b5cf6', '#ec4899', '#ef4444',
+  '#f97316', '#eab308', '#22c55e', '#06b6d4',
+  '#6366f1', '#14b8a6', '#f43f5e', '#a855f7',
+];
 
 const strategyTypeOptions: StrategyType[] = ['constant', 'selective', 'vectorized'];
 const secondaryLogicOptions: SecondaryLogic[] = ['and_any', 'and_all', 'not_all', 'not_any'];
@@ -1805,7 +1971,11 @@ if (typeof window !== 'undefined') {
   };
 }
 const showMobileEditor = computed(() => isMobile.value && selectedEntryUid.value !== null);
-const mobileTab = ref<'list' | 'edit' | 'settings' | 'ai'>('list');
+const mobileTab = ref<'list' | 'edit' | 'settings' | 'ai' | 'tags'>('list');
+const tagEditorMode = ref(false);
+const activeTagFilter = ref('');
+const tagNewName = ref('');
+const tagAssignSearch = ref('');
 
 const bindings = reactive({
   global: [] as string[],
@@ -1934,12 +2104,36 @@ const roleBindingCandidates = computed<RoleBindingCandidate[]>(() => {
   }));
 });
 
+const tagDefinitions = computed(() => persistedState.value.worldbook_tags.definitions);
+const tagAssignments = computed(() => persistedState.value.worldbook_tags.assignments);
+
+function getWorldbookTags(worldbookName: string): WorldbookTagDefinition[] {
+  const ids = tagAssignments.value[worldbookName] ?? [];
+  return tagDefinitions.value.filter(d => ids.includes(d.id));
+}
+
 const filteredSelectableWorldbookNames = computed(() => {
-  const keyword = worldbookPickerSearchText.value.trim().toLowerCase();
-  if (!keyword) {
-    return selectableWorldbookNames.value;
+  let names = selectableWorldbookNames.value;
+  // 标签筛选
+  if (activeTagFilter.value) {
+    names = names.filter(name => {
+      const ids = tagAssignments.value[name] ?? [];
+      return ids.includes(activeTagFilter.value);
+    });
   }
-  return selectableWorldbookNames.value.filter(name => name.toLowerCase().includes(keyword));
+  // 搜索筛选
+  const keyword = worldbookPickerSearchText.value.trim().toLowerCase();
+  if (keyword) {
+    names = names.filter(name => name.toLowerCase().includes(keyword));
+  }
+  return names;
+});
+
+const tagAssignWorldbooks = computed(() => {
+  const keyword = tagAssignSearch.value.trim().toLowerCase();
+  const names = worldbookNames.value;
+  if (!keyword) return names;
+  return names.filter(name => name.toLowerCase().includes(keyword));
 });
 
 const globalAddCandidates = computed(() => {
@@ -2816,6 +3010,7 @@ function createDefaultPersistedState(): PersistedState {
     role_override_baseline: null,
     theme: 'ocean',
     ai_chat: { sessions: [], activeSessionId: null },
+    worldbook_tags: { definitions: [], assignments: {} },
   };
 }
 
@@ -2950,6 +3145,29 @@ function normalizePersistedState(input: unknown): PersistedState {
     }
   }
 
+  // 标签数据规范化
+  const rawTags = asRecord(root.worldbook_tags);
+  const tagDefs: WorldbookTagDefinition[] = [];
+  if (rawTags && Array.isArray(rawTags.definitions)) {
+    for (const d of rawTags.definitions) {
+      const dr = asRecord(d);
+      if (!dr) continue;
+      const id = toStringSafe(dr.id).trim();
+      const name = toStringSafe(dr.name).trim();
+      if (!id || !name) continue;
+      tagDefs.push({ id, name, color: toStringSafe(dr.color, TAG_COLORS[0]) });
+    }
+  }
+  const tagAssignmentsRaw = asRecord(rawTags?.assignments);
+  const tagAssignmentsNorm: Record<string, string[]> = {};
+  if (tagAssignmentsRaw) {
+    for (const [wbName, ids] of Object.entries(tagAssignmentsRaw)) {
+      if (Array.isArray(ids)) {
+        tagAssignmentsNorm[wbName] = ids.map(id => toStringSafe(id)).filter(Boolean);
+      }
+    }
+  }
+
   return {
     last_worldbook: toStringSafe(root.last_worldbook),
     history,
@@ -2959,6 +3177,7 @@ function normalizePersistedState(input: unknown): PersistedState {
     role_override_baseline: roleOverrideBaseline,
     theme: (toStringSafe(root.theme) as ThemeKey) || 'ocean',
     ai_chat: aiChat,
+    worldbook_tags: { definitions: tagDefs.slice(0, TAG_LIMIT), assignments: tagAssignmentsNorm },
   };
 }
 
@@ -3196,7 +3415,83 @@ function aiToggleMode(): void {
   aiGeneratorMode.value = !aiGeneratorMode.value;
   if (aiGeneratorMode.value) {
     globalWorldbookMode.value = false;
+    tagEditorMode.value = false;
   }
+}
+
+function tagToggleMode(): void {
+  tagEditorMode.value = !tagEditorMode.value;
+  if (tagEditorMode.value) {
+    aiGeneratorMode.value = false;
+    globalWorldbookMode.value = false;
+  }
+}
+
+function tagCreate(): void {
+  const name = tagNewName.value.trim();
+  if (!name) return;
+  updatePersistedState(state => {
+    if (state.worldbook_tags.definitions.length >= TAG_LIMIT) return;
+    if (state.worldbook_tags.definitions.some(d => d.name === name)) return;
+    const colorIndex = state.worldbook_tags.definitions.length % TAG_COLORS.length;
+    state.worldbook_tags.definitions.push({
+      id: createId('wbtag'),
+      name,
+      color: TAG_COLORS[colorIndex],
+    });
+  });
+  tagNewName.value = '';
+}
+
+function tagDelete(tagId: string): void {
+  updatePersistedState(state => {
+    state.worldbook_tags.definitions = state.worldbook_tags.definitions.filter(d => d.id !== tagId);
+    for (const key of Object.keys(state.worldbook_tags.assignments)) {
+      state.worldbook_tags.assignments[key] = state.worldbook_tags.assignments[key].filter(id => id !== tagId);
+      if (!state.worldbook_tags.assignments[key].length) {
+        delete state.worldbook_tags.assignments[key];
+      }
+    }
+  });
+  if (activeTagFilter.value === tagId) activeTagFilter.value = '';
+}
+
+function tagRename(tagId: string, newName: string): void {
+  const trimmed = newName.trim();
+  if (!trimmed) return;
+  updatePersistedState(state => {
+    const def = state.worldbook_tags.definitions.find(d => d.id === tagId);
+    if (def) def.name = trimmed;
+  });
+}
+
+function tagSetColor(tagId: string, color: string): void {
+  updatePersistedState(state => {
+    const def = state.worldbook_tags.definitions.find(d => d.id === tagId);
+    if (def) def.color = color;
+  });
+}
+
+function tagToggleAssignment(worldbookName: string, tagId: string): void {
+  updatePersistedState(state => {
+    const current = state.worldbook_tags.assignments[worldbookName] ?? [];
+    if (current.includes(tagId)) {
+      state.worldbook_tags.assignments[worldbookName] = current.filter(id => id !== tagId);
+      if (!state.worldbook_tags.assignments[worldbookName].length) {
+        delete state.worldbook_tags.assignments[worldbookName];
+      }
+    } else {
+      state.worldbook_tags.assignments[worldbookName] = [...current, tagId];
+    }
+  });
+}
+
+function tagResetAll(): void {
+  if (!confirm('确定要清除所有标签和分配吗？')) return;
+  updatePersistedState(state => {
+    state.worldbook_tags = { definitions: [], assignments: {} };
+  });
+  activeTagFilter.value = '';
 }
 
 function setStatus(message: string): void {
@@ -8232,6 +8527,149 @@ watch(hasUnsavedChanges, (val) => {
   .editor-grid.two-cols {
     grid-template-columns: 1fr;
   }
+}
+</style>
+<style scoped>
+/* ── Tag System ── */
+.worldbook-picker-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 8px 2px;
+}
+.tag-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1.5px solid var(--tag-color, #3b82f6);
+  background: transparent;
+  color: var(--tag-color, #3b82f6);
+  cursor: pointer;
+  transition: all .15s;
+}
+.tag-filter-chip.active {
+  background: var(--tag-color, #3b82f6);
+  color: #fff;
+}
+.tag-filter-chip:hover {
+  opacity: .85;
+}
+.tag-editor-panel {
+  overflow-y: auto;
+  max-height: 100%;
+}
+.tag-editor-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.08);
+}
+.tag-editor-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.tag-editor-name-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255,255,255,.15);
+  color: inherit;
+  font-size: 13px;
+  padding: 2px 4px;
+  width: 80px;
+  outline: none;
+}
+.tag-editor-name-input:focus {
+  border-bottom-color: #60a5fa;
+}
+.tag-color-picker {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+.tag-color-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: border-color .15s;
+}
+.tag-color-dot.active {
+  border-color: #fff;
+  box-shadow: 0 0 4px rgba(255,255,255,.3);
+}
+.tag-delete-btn {
+  background: none;
+  border: none;
+  color: #f87171;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  opacity: .6;
+  transition: opacity .15s;
+}
+.tag-delete-btn:hover {
+  opacity: 1;
+}
+.tag-assign-list {
+  max-height: 400px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tag-assign-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: rgba(255,255,255,.03);
+}
+.tag-assign-name {
+  font-size: 13px;
+  min-width: 100px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.tag-assign-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.tag-assign-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  border: 1px solid var(--tag-color, #3b82f6);
+  background: transparent;
+  color: var(--tag-color, #3b82f6);
+  cursor: pointer;
+  transition: all .15s;
+  opacity: .5;
+}
+.tag-assign-chip.active {
+  background: var(--tag-color, #3b82f6);
+  color: #fff;
+  opacity: 1;
+}
+.tag-assign-chip:hover {
+  opacity: .85;
 }
 </style>
 
