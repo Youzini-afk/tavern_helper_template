@@ -844,7 +844,7 @@
                 >
                   <input v-model="tag.selected" type="checkbox" />
                   <div class="ai-tag-info">
-                    <span class="ai-tag-name">{{ tag.tag }}<span v-if="tag.duplicate" style="color:#f59e0b;font-size:0.85em;margin-left:6px;">⚠️ 已存在</span></span>
+                    <span class="ai-tag-name">{{ tag.tag }}<span v-if="tag.duplicate" style="color:#f59e0b;font-size:0.85em;margin-left:6px;">⚠️ 已存在</span><span v-else-if="tag.updated" style="color:#3b82f6;font-size:0.85em;margin-left:6px;">🔄 内容已更新</span></span>
                     <span class="ai-tag-preview">{{ tag.content.slice(0, 120) }}{{ tag.content.length > 120 ? '...' : '' }}</span>
                   </div>
                 </label>
@@ -1823,6 +1823,7 @@ interface ExtractedTag {
   content: string;
   selected: boolean;
   duplicate?: boolean;
+  updated?: boolean;
 }
 
 interface WorldbookTagDefinition {
@@ -3452,26 +3453,42 @@ function updateIgnoreTags(raw: string): void {
 async function markDuplicatesInTags(): Promise<void> {
   const targetName = aiTargetWorldbook.value;
   if (!targetName || aiExtractedTags.value.length === 0) {
-    // No target selected — clear all duplicate marks
     for (const tag of aiExtractedTags.value) {
       tag.duplicate = false;
+      tag.updated = false;
     }
     return;
   }
   try {
     const existing = await getWorldbook(targetName);
-    const existingNames = new Set(existing.map(e => e.name.toLowerCase()));
+    // Build a map: lowercase name → content
+    const existingMap = new Map<string, string>();
+    for (const e of existing) {
+      existingMap.set(e.name.toLowerCase(), e.content);
+    }
     for (const tag of aiExtractedTags.value) {
-      const isDup = existingNames.has(tag.tag.toLowerCase());
-      tag.duplicate = isDup;
-      if (isDup) {
+      const key = tag.tag.toLowerCase();
+      const existingContent = existingMap.get(key);
+      if (existingContent === undefined) {
+        // Not in worldbook
+        tag.duplicate = false;
+        tag.updated = false;
+      } else if (existingContent === tag.content) {
+        // Same name + same content → true duplicate
+        tag.duplicate = true;
+        tag.updated = false;
         tag.selected = false;
+      } else {
+        // Same name + different content → updated
+        tag.duplicate = false;
+        tag.updated = true;
+        // Keep selected — user likely wants the new version
       }
     }
   } catch {
-    // Worldbook might not exist yet — treat all as non-duplicate
     for (const tag of aiExtractedTags.value) {
       tag.duplicate = false;
+      tag.updated = false;
     }
   }
 }
