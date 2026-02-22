@@ -18,6 +18,7 @@ let destroyTeleport: (() => void) | null = null;
 let menuObserver: MutationObserver | null = null;
 let menuRetryTimer: number | null = null;
 let isPanelVisible = false;
+let viewportResizeHandler: (() => void) | null = null;
 
 function getHostWindow(): Window {
   return window.parent || window;
@@ -237,6 +238,7 @@ function ensurePanelStyle(): void {
     transform: none !important;
     width: 100vw !important;
     height: 100vh !important;
+    height: 100dvh !important;
     min-width: unset;
     min-height: unset;
     max-width: none;
@@ -828,15 +830,37 @@ function init(): void {
   } catch (e) {
     console.warn('[WB-FAB] createFab error:', e);
   }
+
+  // Mobile keyboard-aware height: listen to visualViewport resize
+  const hostWin = getHostWindow();
+  if (hostWin.visualViewport) {
+    viewportResizeHandler = () => {
+      const vv = hostWin.visualViewport!;
+      const panel = doc.getElementById(PANEL_ID) as HTMLDivElement | null;
+      if (panel && isPanelVisible && hostWin.matchMedia('(orientation: portrait)').matches) {
+        panel.style.height = `${vv.height}px`;
+      }
+    };
+    hostWin.visualViewport.addEventListener('resize', viewportResizeHandler);
+  }
+
   toastr.success('世界书助手已挂载到魔法棒菜单', 'Worldbook Assistant');
 }
 
 function cleanup(): void {
   const doc = getHostDocument();
+  const hostWin = getHostWindow();
   stopMenuRetry();
   stopMenuObserver();
   $(doc).off(EVENT_NS);
   doc.removeEventListener('pointerdown', closeThemeDropdownOnOutside, true);
+
+  // Clean up visualViewport listener
+  if (viewportResizeHandler && hostWin.visualViewport) {
+    hostWin.visualViewport.removeEventListener('resize', viewportResizeHandler);
+    viewportResizeHandler = null;
+  }
+
   $(`#${MENU_ID}`, doc).remove();
   $(`#${PANEL_ID}`, doc).remove();
   doc.getElementById(PANEL_STYLE_ID)?.remove();
