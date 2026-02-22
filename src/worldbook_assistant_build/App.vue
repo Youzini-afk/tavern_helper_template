@@ -1547,7 +1547,7 @@ interface PaneResizeState {
   win: Window;
 }
 
-type ThemeKey = 'ocean' | 'nebula' | 'forest' | 'sunset' | 'coffee' | 'paper' | 'snow';
+type ThemeKey = 'ocean' | 'nebula' | 'forest' | 'sunset' | 'coffee' | 'paper' | 'snow' | 'midnight';
 
 const THEMES: Record<ThemeKey, { name: string; label: string; colors: Record<string, string> }> = {
   ocean: {

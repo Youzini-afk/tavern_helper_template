@@ -407,6 +407,7 @@ const THEME_ITEMS: { key: string; label: string }[] = [
   { key: 'coffee', label: '咖啡' },
   { key: 'paper', label: '纸莎草' },
   { key: 'snow', label: '雪白' },
+  { key: 'midnight', label: '黑黄' },
 ];
 
 function toggleThemeDropdown(panel: HTMLDivElement): void {
