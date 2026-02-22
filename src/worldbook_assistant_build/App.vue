@@ -3654,12 +3654,12 @@ ${names || '无'}
   "cooldown": "int|null 冷却"
 }
 
-## 思考步骤
-收到用户指令后，请按以下步骤思考：
+## 思考步骤（内部思考，不要输出思考过程，直接输出结果）
 1. 识别用户提到了哪些条目（精确匹配"可用条目"中的名称）
 2. 识别每个条目需要修改什么设置（蓝灯/绿灯、位置、顺序、递归等）
 3. 如果用户给条目起了新名字，使用new_name字段
 4. 只输出有变更的字段，不要输出未提及的字段
+5. 注意：同名条目只需写一次，修改会自动应用到所有同名条目
 
 ## 输出格式
 将结果包裹在 <worldbook_config></worldbook_config> 中，内容为纯JSON数组，无注释无markdown。
@@ -3725,8 +3725,8 @@ async function aiConfigGenerate(): Promise<void> {
       if (codeBlockMatch) {
         jsonStr = codeBlockMatch[1];
       } else {
-        // Fallback 2: find a JSON array that contains "name" (to avoid false matches)
-        const arrayMatch = cleaned.match(/\[\s*\{[^[\]]*"name"[^[\]]*\}(?:\s*,\s*\{[^[\]]*\})*\s*\]/);
+        // Fallback 2: find a JSON array that contains "name"
+        const arrayMatch = cleaned.match(/\[\s*\{[\s\S]*?"name"[\s\S]*?\}\s*\]/);
         if (arrayMatch) {
           jsonStr = arrayMatch[0];
         } else {
@@ -3762,11 +3762,13 @@ async function aiConfigGenerate(): Promise<void> {
     for (const cfg of configs) {
       const name = cfg.name;
       if (!name) continue;
-      const entry = existingEntries.find(e => e.name === name);
-      if (!entry) {
+      const matchedEntries = existingEntries.filter(e => e.name === name);
+      if (matchedEntries.length === 0) {
         toastr.warning(`条目 "${name}" 在世界书中不存在，已跳过`);
         continue;
       }
+      // Use first matched entry for diff comparison (all same-name entries share config)
+      const entry = matchedEntries[0];
 
       // Check each settable field
       if (cfg.strategy_type !== undefined && cfg.strategy_type !== entry.strategy.type) {
@@ -3781,6 +3783,18 @@ async function aiConfigGenerate(): Promise<void> {
         if (oldKeys !== newKeys) {
           changes.push({ name, field: 'keys', label: '主要关键词', oldValue: oldKeys, newValue: newKeys, selected: true, apply: e => { e.strategy.keys = cfg.keys; } });
         }
+      }
+
+      if (cfg.keys_secondary !== undefined) {
+        const oldSecKeys = entry.strategy.keys_secondary.keys.map(k => String(k)).join(', ') || '（无）';
+        const newSecKeys = cfg.keys_secondary.join(', ') || '（无）';
+        if (oldSecKeys !== newSecKeys) {
+          changes.push({ name, field: 'keys_secondary', label: '次要关键词', oldValue: oldSecKeys, newValue: newSecKeys, selected: true, apply: e => { e.strategy.keys_secondary.keys = cfg.keys_secondary; } });
+        }
+      }
+
+      if (cfg.keys_secondary_logic !== undefined && cfg.keys_secondary_logic !== entry.strategy.keys_secondary.logic) {
+        changes.push({ name, field: 'keys_secondary_logic', label: '次要关键词逻辑', oldValue: entry.strategy.keys_secondary.logic, newValue: cfg.keys_secondary_logic, selected: true, apply: e => { e.strategy.keys_secondary.logic = cfg.keys_secondary_logic; } });
       }
 
       if (cfg.scan_depth !== undefined) {
@@ -3866,8 +3880,9 @@ async function aiConfigApply(): Promise<void> {
   try {
     await updateWorldbookWith(targetName, entries => {
       for (const change of selected) {
-        const entry = entries.find(e => e.name === change.name);
-        if (entry) {
+        // Apply to ALL entries with matching name (handles duplicates)
+        const matched = entries.filter(e => e.name === change.name);
+        for (const entry of matched) {
           change.apply(entry);
         }
       }
