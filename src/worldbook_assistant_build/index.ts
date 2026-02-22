@@ -299,6 +299,8 @@ function ensurePanelStyle(): void {
   cursor: pointer;
   box-shadow: 0 0 0 1.5px rgba(96, 165, 250, 0.3), 0 4px 16px rgba(0,0,0,0.35);
   touch-action: none;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
   transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
 }
 
@@ -317,20 +319,6 @@ function ensurePanelStyle(): void {
   transform: scale(1.05);
   box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.6), 0 12px 32px rgba(0,0,0,0.6);
   opacity: 0.9;
-}
-  user-select: none;
-  transition: box-shadow 0.2s, transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
-  transform: translateZ(0);
-  -webkit-font-smoothing: antialiased;
-}
-
-#${FAB_ID}:hover {
-  box-shadow: 0 0 0 1.5px #60a5fa, 0 4px 20px rgba(96,165,250,0.3);
-  transform: scale(1.05) translateZ(0);
-}
-
-#${FAB_ID}:active {
-  transform: scale(0.92) translateZ(0);
 }
 
 #${FAB_ID}.panel-open {
