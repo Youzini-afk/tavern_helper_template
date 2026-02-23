@@ -418,7 +418,7 @@
         <button @click="mobileTab = 'settings'" :class="{ active: mobileTab === 'settings' }">
           <span class="tab-icon">⚙️</span><span class="tab-label">设置</span>
         </button>
-        <button @click="mobileTab = 'ai'" :class="{ active: mobileTab === 'ai' }">
+        <button v-if="persistedState.show_ai_chat" @click="mobileTab = 'ai'" :class="{ active: mobileTab === 'ai' }">
           <span class="tab-icon">🤖</span><span class="tab-label">AI</span>
         </button>
         <button @click="mobileTab = 'tags'" :class="{ active: mobileTab === 'tags' }">
@@ -534,6 +534,7 @@
                 📡 激活监控
               </button>
               <button
+                v-if="persistedState.show_ai_chat"
                 class="btn history-btn utility-btn"
                 type="button"
                 :class="{ active: aiGeneratorMode }"
@@ -1256,6 +1257,13 @@
           </template>
           <div v-if="persistedState.ai_api_config.mode === 'tavern'" style="font-size:12px;color:var(--wb-text-muted);padding:8px 0;">
             将直接使用酒馆当前启用的预设和API配置进行生成。
+          </div>
+          <div style="border-top:1px solid var(--wb-border-subtle,#334155);padding-top:12px;margin-top:8px;">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+              <input type="checkbox" :checked="persistedState.show_ai_chat" @change="updatePersistedState(s => s.show_ai_chat = ($event.target as HTMLInputElement).checked)" />
+              <span>显示 AI 对话模块</span>
+            </label>
+            <div style="font-size:11px;color:var(--wb-text-muted,#64748b);margin-top:4px;">开启后将在工具栏和移动端 Tab 中显示 AI 对话入口</div>
           </div>
         </div>
       </div>
@@ -2066,6 +2074,7 @@ interface PersistedState {
   worldbook_tags: WorldbookTagState;
   extract_ignore_tags: string[];
   ai_api_config: AIApiConfig;
+  show_ai_chat: boolean;
 }
 
 interface ActivationLog {
@@ -3295,6 +3304,7 @@ function createDefaultPersistedState(): PersistedState {
     ai_chat: { sessions: [], activeSessionId: null },
     worldbook_tags: { definitions: [], assignments: {} },
     extract_ignore_tags: ['think', 'thinking', 'recap', 'content', 'details', 'summary'],
+    show_ai_chat: false,
     ai_api_config: {
       mode: 'tavern',
       use_main_api: true,
@@ -3474,6 +3484,7 @@ function normalizePersistedState(input: unknown): PersistedState {
     extract_ignore_tags: Array.isArray(root.extract_ignore_tags)
       ? root.extract_ignore_tags.map((t: unknown) => toStringSafe(t).trim().toLowerCase()).filter(Boolean)
       : ['thinking', 'recap', 'content', 'details', 'summary'],
+    show_ai_chat: root.show_ai_chat === true,
     ai_api_config: (() => {
       const raw = asRecord(root.ai_api_config);
       if (!raw) return createDefaultPersistedState().ai_api_config;
@@ -4034,7 +4045,7 @@ function aiExtractTags(text: string, ignoreTags?: Set<string>): ExtractedTag[] {
     } else {
       results.push({
         tag: tagName,
-        content: match[0],
+        content: innerContent.trim(),
         selected: true,
       });
     }
