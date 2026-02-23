@@ -56,7 +56,10 @@
                 <button class="btn" type="button" @click="addEntry" style="padding:8px 14px;font-size:13px;">+ 新条目</button>
                 <button class="btn" type="button" @click="triggerImport" style="padding:8px 14px;font-size:13px;">📥 导入</button>
                 <button class="btn" type="button" :disabled="!selectedWorldbookName" @click="exportCurrentWorldbook" style="padding:8px 14px;font-size:13px;">📤 导出</button>
-                <button class="btn" type="button" @click="toggleGlobalMode" :style="{ padding:'8px 14px', fontSize:'13px', background: globalWorldbookMode ? '#2563eb' : '', color: globalWorldbookMode ? '#fff' : '' }">🌐 全局</button>
+                <button class="btn" type="button" @click="toggleGlobalMode" :style="{ padding:'8px 14px', fontSize:'13px', background: globalWorldbookMode ? 'var(--wb-primary)' : '', color: globalWorldbookMode ? '#fff' : '' }">🌐 全局</button>
+                <button class="btn" type="button" @click="extractFromChat" style="padding:8px 14px;font-size:13px;">📥 提取</button>
+                <button class="btn" type="button" @click="showApiSettings = true" style="padding:8px 14px;font-size:13px;">⚙️ API</button>
+                <button class="btn" type="button" @click="aiConfigPreview = false; aiConfigChanges = []; aiConfigTargetWorldbook = selectedWorldbookName || ''" style="padding:8px 14px;font-size:13px;">🔧 AI配置</button>
               </div>
             </section>
             <div class="wb-bindings" v-if="bindings.global.length || bindings.charPrimary || bindings.charAdditional.length || bindings.chat">
@@ -404,22 +407,22 @@
         </div>
       </div>
 
-      <!-- Tab Bar: bottom, direct child of wb-assistant-root via fragment -->
-      <div style="display:flex !important;flex-shrink:0;height:52px;background:#1e293b;border-top:1px solid #334155;z-index:99999;">
-        <button @click="mobileTab = 'list'" :style="{ flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',border:'none',borderTop: mobileTab==='list' ? '2px solid #60a5fa' : '2px solid transparent',background:'transparent',color: mobileTab==='list' ? '#e2e8f0' : '#94a3b8',fontSize:'10px',padding:'4px 0',gap:'2px' }">
-          <span style="font-size:20px;">📋</span><span>列表</span>
+      <!-- Tab Bar: bottom -->
+      <div class="mobile-tab-bar">
+        <button @click="mobileTab = 'list'" :class="{ active: mobileTab === 'list' }">
+          <span class="tab-icon">📋</span><span class="tab-label">列表</span>
         </button>
-        <button @click="mobileTab = 'edit'" :style="{ flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',border:'none',borderTop: mobileTab==='edit' ? '2px solid #60a5fa' : '2px solid transparent',background:'transparent',color: mobileTab==='edit' ? '#e2e8f0' : '#94a3b8',fontSize:'10px',padding:'4px 0',gap:'2px' }">
-          <span style="font-size:20px;">✏️</span><span>编辑</span>
+        <button @click="mobileTab = 'edit'" :class="{ active: mobileTab === 'edit' }">
+          <span class="tab-icon">✏️</span><span class="tab-label">编辑</span>
         </button>
-        <button @click="mobileTab = 'settings'" :style="{ flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',border:'none',borderTop: mobileTab==='settings' ? '2px solid #60a5fa' : '2px solid transparent',background:'transparent',color: mobileTab==='settings' ? '#e2e8f0' : '#94a3b8',fontSize:'10px',padding:'4px 0',gap:'2px' }">
-          <span style="font-size:20px;">⚙️</span><span>设置</span>
+        <button @click="mobileTab = 'settings'" :class="{ active: mobileTab === 'settings' }">
+          <span class="tab-icon">⚙️</span><span class="tab-label">设置</span>
         </button>
-        <button @click="mobileTab = 'ai'" :style="{ flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',border:'none',borderTop: mobileTab==='ai' ? '2px solid #60a5fa' : '2px solid transparent',background:'transparent',color: mobileTab==='ai' ? '#e2e8f0' : '#94a3b8',fontSize:'10px',padding:'4px 0',gap:'2px' }">
-          <span style="font-size:20px;">🤖</span><span>AI</span>
+        <button @click="mobileTab = 'ai'" :class="{ active: mobileTab === 'ai' }">
+          <span class="tab-icon">🤖</span><span class="tab-label">AI</span>
         </button>
-        <button @click="mobileTab = 'tags'" :style="{ flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',border:'none',borderTop: mobileTab==='tags' ? '2px solid #60a5fa' : '2px solid transparent',background:'transparent',color: mobileTab==='tags' ? '#e2e8f0' : '#94a3b8',fontSize:'10px',padding:'4px 0',gap:'2px' }">
-          <span style="font-size:20px;">🏷️</span><span>标签</span>
+        <button @click="mobileTab = 'tags'" :class="{ active: mobileTab === 'tags' }">
+          <span class="tab-icon">🏷️</span><span class="tab-label">标签</span>
         </button>
       </div>
     </template>
