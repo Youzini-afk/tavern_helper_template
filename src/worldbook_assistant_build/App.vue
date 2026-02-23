@@ -4131,11 +4131,20 @@ async function extractFromChat(): Promise<void> {
       return true;
     });
 
-    aiExtractedTags.value = unique;
+    // Also deduplicate by content only (different tag name, same content)
+    const seenContent = new Set<string>();
+    const deduped = unique.filter(t => {
+      const contentKey = t.content.trim();
+      if (seenContent.has(contentKey)) return false;
+      seenContent.add(contentKey);
+      return true;
+    });
+
+    aiExtractedTags.value = deduped;
     aiTargetWorldbook.value = selectedWorldbookName.value || '';
     aiShowTagReview.value = true;
     await markDuplicatesInTags();
-    toastr.success(`从聊天记录中提取到 ${unique.length} 个条目`);
+    toastr.success(`从聊天记录中提取到 ${deduped.length} 个条目`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     toastr.error(`提取失败: ${message}`);
