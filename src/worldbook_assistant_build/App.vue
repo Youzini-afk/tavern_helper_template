@@ -1377,6 +1377,7 @@
             @change="updateIgnoreTags(($event.target as HTMLTextAreaElement).value)"
             style="width:100%;font-size:12px;"
           ></textarea>
+          <button class="btn" type="button" style="margin-top:4px;font-size:11px;" @click="resetIgnoreTags">🔄 恢复默认</button>
         </details>
         <div class="ai-tag-list">
           <label
@@ -4049,6 +4050,12 @@ function updateIgnoreTags(raw: string): void {
   const unique = [...new Set(tags)];
   updatePersistedState(state => {
     state.extract_ignore_tags = unique;
+  });
+}
+
+function resetIgnoreTags(): void {
+  updatePersistedState(state => {
+    state.extract_ignore_tags = ['think', 'thinking', 'recap', 'content', 'details', 'summary'];
   });
 }
 
