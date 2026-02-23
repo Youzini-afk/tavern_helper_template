@@ -9351,7 +9351,7 @@ watch(hasUnsavedChanges, (val) => {
     position: absolute;
     inset: 0;
     padding: 0;
-    z-index: 10050;
+    z-index: 10200;
     align-items: stretch;
     justify-content: stretch;
   }
