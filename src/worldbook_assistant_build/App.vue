@@ -9346,22 +9346,94 @@ watch(hasUnsavedChanges, (val) => {
     font-size: 0.85em;
   }
 
-  /* ── Tag review modal ── */
+  /* ── Tag review modal (mobile full-screen) ── */
+  .ai-tag-review-overlay {
+    position: absolute;
+    inset: 0;
+    padding: 0;
+    z-index: 10050;
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
   .ai-tag-review-modal {
-    width: 95vw;
-    max-height: 85vh;
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    height: 100%;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+  }
+
+  .ai-tag-review-head {
+    padding: 12px 14px;
+    flex-shrink: 0;
+  }
+
+  .ai-tag-review-title {
+    font-size: 13px;
+  }
+
+  .ai-tag-review-close {
+    width: 28px;
+    height: 28px;
+    font-size: 1em;
+  }
+
+  .ai-tag-review-target {
+    padding: 10px 14px;
+    flex-shrink: 0;
+  }
+
+  .ai-tag-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 8px 14px;
+  }
+
+  .ai-tag-item {
+    padding: 10px 0;
+    gap: 10px;
+  }
+
+  .ai-tag-item:hover {
+    margin: 0;
+    padding: 10px 0;
+    background: transparent;
   }
 
   .ai-tag-review-actions {
     flex-wrap: wrap;
     gap: 6px;
-    padding: 8px 12px;
+    padding: 10px 14px;
+    flex-shrink: 0;
   }
 
   .ai-tag-review-actions .btn {
     flex: 1;
     min-width: 0;
-    font-size: 0.82em;
+    font-size: 12px;
+    padding: 8px 10px;
+  }
+
+  /* Override inline max-height on modal body scrollable divs */
+  .ai-tag-review-modal > div:not(.ai-tag-review-head):not(.ai-tag-review-actions):not(.ai-tag-review-target):not(.ai-tag-list):not(.ai-tag-ignore-config) {
+    max-height: none !important;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* AI config preview table horizontal scroll */
+  .ai-tag-review-modal table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    font-size: 12px;
   }
 
   /* ── Status footer ── */
