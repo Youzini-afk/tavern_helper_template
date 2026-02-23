@@ -9091,22 +9091,29 @@ watch(hasUnsavedChanges, (val) => {
 }
 
 /* ═════════════════════════════════════════════════
-   Tag Review Modal
+   Tag Review Modal (API Settings / AI Config / Chat Extract)
    ═════════════════════════════════════════════════ */
 .ai-tag-review-overlay {
   position: fixed;
   inset: 0;
-  z-index: 9999;
-  background: rgba(0, 0, 0, 0.55);
+  z-index: 10020;
+  background: var(--wb-overlay-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 14px;
+  box-sizing: border-box;
 }
 
 .ai-tag-review-modal {
-  background: var(--wb-bg-root);
-  border-radius: var(--wb-radius);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  background: var(--wb-glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: 16px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.1);
   width: 580px;
   max-width: 92vw;
   max-height: 80vh;
@@ -9119,56 +9126,68 @@ watch(hasUnsavedChanges, (val) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--wb-border);
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--wb-border-subtle);
+  background: var(--wb-glass-header);
 }
 
 .ai-tag-review-title {
   font-weight: 600;
-  font-size: 1em;
+  font-size: 14px;
   color: var(--wb-text-main);
 }
 
 .ai-tag-review-close {
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: transparent;
-  color: var(--wb-text-dim);
-  font-size: 1.2em;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--wb-border-subtle);
+  background: var(--wb-input-bg);
+  color: var(--wb-text-main);
+  font-size: 1.1em;
   cursor: pointer;
-  border-radius: 50%;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 
 .ai-tag-review-close:hover {
-  background: var(--wb-bg-highlight);
+  background: var(--wb-input-bg-hover);
+  border-color: #f43f5e;
+  transform: translateY(-1px);
 }
 
 .ai-tag-review-target {
-  padding: 12px 18px;
-  border-bottom: 1px solid var(--wb-border);
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--wb-border-subtle);
 }
 
 .ai-tag-list {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 18px;
+  padding: 10px 20px;
 }
 
 .ai-tag-item {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--wb-border);
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--wb-border-subtle);
   cursor: pointer;
+  transition: background 0.15s ease;
 }
 
 .ai-tag-item:last-child {
   border-bottom: none;
+}
+
+.ai-tag-item:hover {
+  background: var(--wb-primary-soft);
+  border-radius: 8px;
+  margin: 0 -8px;
+  padding: 12px 8px;
 }
 
 .ai-tag-item input[type="checkbox"] {
@@ -9179,30 +9198,31 @@ watch(hasUnsavedChanges, (val) => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
 }
 
 .ai-tag-name {
   font-weight: 600;
-  font-size: 0.9em;
-  color: var(--wb-primary);
+  font-size: 13px;
+  color: var(--wb-primary-light);
 }
 
 .ai-tag-preview {
-  font-size: 0.8em;
+  font-size: 12px;
   color: var(--wb-text-dim);
   white-space: pre-wrap;
   word-break: break-all;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 .ai-tag-review-actions {
   display: flex;
   gap: 8px;
-  padding: 12px 18px;
-  border-top: 1px solid var(--wb-border);
+  padding: 14px 20px;
+  border-top: 1px solid var(--wb-border-subtle);
   justify-content: flex-end;
+  background: var(--wb-glass-header);
 }
 
 .btn.primary {
