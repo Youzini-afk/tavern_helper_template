@@ -80,6 +80,8 @@ function ensurePanelStyle(): void {
   border-bottom: 1px solid var(--wb-host-border, #334155);
   cursor: move;
   user-select: none;
+  position: relative;
+  z-index: 10;
 }
 
 #${PANEL_ID} .wb-assistant-header-title {
