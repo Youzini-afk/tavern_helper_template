@@ -7317,6 +7317,7 @@ watch(hasUnsavedChanges, (val) => {
   flex-direction: column;
   gap: 6px;
   position: relative;
+  padding: 4px 4px 4px 4px;
 }
 
 .entry-item {
@@ -7656,9 +7657,9 @@ watch(hasUnsavedChanges, (val) => {
 }
 
 .editor-advanced {
-  border: none;
-  border-radius: 8px;
-  padding: 10px;
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: 10px;
+  padding: 12px;
   background: var(--wb-input-bg);
 }
 
@@ -7702,34 +7703,38 @@ watch(hasUnsavedChanges, (val) => {
 }
 
 .strategy-pill {
-  border: none;
-  border-radius: 6px;
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: 8px;
   background: var(--wb-input-bg);
   color: var(--wb-text-muted);
-  padding: 6px 10px;
+  padding: 8px 12px;
   font-size: 12px;
   cursor: pointer;
   text-align: left;
-  transition: background-color 0.15s ease;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
 .strategy-pill:hover {
-  background: var(--wb-primary-hover);
+  background: var(--wb-input-bg-hover);
+  border-color: var(--wb-border-main);
 }
 
 .strategy-pill.active.constant {
-  background: rgba(59, 130, 246, 0.16);
-  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
+  border-color: rgba(59, 130, 246, 0.3);
 }
 
 .strategy-pill.active.vector {
-  background: rgba(168, 85, 247, 0.16);
-  color: #d8b4fe;
+  background: rgba(168, 85, 247, 0.12);
+  color: #a855f7;
+  border-color: rgba(168, 85, 247, 0.3);
 }
 
 .strategy-pill.active.selective {
-  background: rgba(34, 197, 94, 0.16);
-  color: #86efac;
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+  border-color: rgba(34, 197, 94, 0.3);
 }
 
 .editor-grid {
@@ -7825,13 +7830,16 @@ watch(hasUnsavedChanges, (val) => {
 }
 
 .tool-card {
-  border-radius: 10px;
-  padding: 10px;
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: 14px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   min-height: 170px;
   background: var(--wb-bg-panel);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.04);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .tool-card h4 {
@@ -7865,12 +7873,13 @@ watch(hasUnsavedChanges, (val) => {
 }
 
 .find-active-hit {
-  border: 1px solid var(--wb-border-main);
-  border-radius: 7px;
-  padding: 6px 8px;
+  border: 1px solid var(--wb-primary-light);
+  border-radius: 10px;
+  padding: 10px 12px;
   display: grid;
-  gap: 2px;
-  background: var(--wb-bg-panel);
+  gap: 4px;
+  background: var(--wb-primary-soft);
+  box-shadow: 0 0 0 2px var(--wb-primary-soft);
 }
 
 .find-active-hit strong {
@@ -7935,12 +7944,13 @@ watch(hasUnsavedChanges, (val) => {
 }
 
 .history-preview-card {
-  border: 1px solid var(--wb-border-main);
-  border-radius: 8px;
-  padding: 6px;
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: 10px;
+  padding: 10px 12px;
   display: grid;
-  gap: 3px;
+  gap: 4px;
   background: var(--wb-bg-panel);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
 }
 
 .history-preview-card strong {
@@ -7955,12 +7965,13 @@ watch(hasUnsavedChanges, (val) => {
 }
 
 .history-note {
-  border: 1px dashed var(--wb-border-main);
-  border-radius: 8px;
-  padding: 6px;
-  color: var(--wb-text-muted);
-  font-size: 11px;
-  background: var(--wb-bg-panel);
+  border: 1px dashed var(--wb-border-subtle);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--wb-text-dim);
+  font-size: 12px;
+  background: rgba(0, 0, 0, 0.02);
+  text-align: center;
 }
 
 .tool-scroll {
@@ -7971,13 +7982,21 @@ watch(hasUnsavedChanges, (val) => {
 }
 
 .tool-list-item {
-  border-radius: 8px;
-  padding: 8px;
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: 10px;
+  padding: 10px 12px;
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
   background: var(--wb-input-bg);
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.tool-list-item:hover {
+  background: var(--wb-input-bg-hover);
+  border-color: var(--wb-border-main);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 
 .item-main {
@@ -8005,11 +8024,18 @@ watch(hasUnsavedChanges, (val) => {
 }
 
 .activation-item {
-  border-radius: 8px;
-  padding: 8px;
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: 10px;
+  padding: 10px 12px;
   display: grid;
-  gap: 3px;
+  gap: 4px;
   background: var(--wb-input-bg);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.activation-item:hover {
+  background: var(--wb-input-bg-hover);
+  border-color: var(--wb-border-main);
 }
 
 .activation-main,
@@ -8074,9 +8100,9 @@ watch(hasUnsavedChanges, (val) => {
 
 .wb-floating-body {
   min-height: 0;
-  padding: 8px;
+  padding: 12px;
   display: grid;
-  gap: 8px;
+  gap: 10px;
   overflow: auto;
 }
 
@@ -8089,15 +8115,16 @@ watch(hasUnsavedChanges, (val) => {
 }
 
 .wb-status {
-  border-radius: 10px;
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: 12px;
   background: var(--wb-bg-panel);
-  padding: 10px 12px;
+  padding: 12px 14px;
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   color: var(--wb-text-main);
   flex-wrap: wrap;
-  transition: all 0.3s ease;
+  transition: background 0.3s ease, border-color 0.3s ease;
 }
 
 @keyframes wb-status-pulse {
