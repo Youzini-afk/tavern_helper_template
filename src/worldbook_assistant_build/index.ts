@@ -821,6 +821,7 @@ const FLOOR_BTN_CLASS = 'wb-extract-floor-btn';
 const EXTRACT_MODAL_ID = 'wb-extract-modal';
 const EXTRACT_STYLE_ID = 'wb-extract-style';
 const DEFAULT_IGNORE_TAGS = new Set(['think', 'thinking', 'recap', 'content', 'details', 'summary']);
+const LAST_EXTRACT_WB_KEY = '__WB_EXTRACT_LAST_WB__';
 
 let floorEventSubscriptions: { stop: () => void }[] = [];
 
@@ -944,24 +945,101 @@ function ensureExtractStyle(): void {
   padding: 14px 20px;
   border-bottom: 1px solid #334155;
 }
-#${EXTRACT_MODAL_ID} .wbex-target label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+#${EXTRACT_MODAL_ID} .wbex-target > span {
   font-size: 12px;
   color: #94a3b8;
+  margin-bottom: 4px;
+  display: block;
 }
-#${EXTRACT_MODAL_ID} .wbex-target select {
-  padding: 6px 10px;
+
+/* Searchable dropdown */
+#${EXTRACT_MODAL_ID} .wbex-dropdown {
+  position: relative;
+}
+#${EXTRACT_MODAL_ID} .wbex-dropdown-trigger {
+  width: 100%;
+  padding: 7px 32px 7px 10px;
   border: 1px solid #475569;
   border-radius: 8px;
   background: #1e293b;
   color: #e2e8f0;
   font-size: 13px;
-  outline: none;
+  cursor: pointer;
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-#${EXTRACT_MODAL_ID} .wbex-target select:focus {
+#${EXTRACT_MODAL_ID} .wbex-dropdown-trigger::after {
+  content: '▾';
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #64748b;
+  pointer-events: none;
+}
+#${EXTRACT_MODAL_ID} .wbex-dropdown-trigger:hover {
   border-color: #60a5fa;
+}
+#${EXTRACT_MODAL_ID} .wbex-dropdown-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  max-height: 220px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#${EXTRACT_MODAL_ID} .wbex-dropdown-search {
+  padding: 8px 10px;
+  border: none;
+  border-bottom: 1px solid #334155;
+  background: transparent;
+  color: #e2e8f0;
+  font-size: 13px;
+  outline: none;
+  flex-shrink: 0;
+}
+#${EXTRACT_MODAL_ID} .wbex-dropdown-search::placeholder {
+  color: #64748b;
+}
+#${EXTRACT_MODAL_ID} .wbex-dropdown-options {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px;
+}
+#${EXTRACT_MODAL_ID} .wbex-dropdown-opt {
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #e2e8f0;
+  transition: background 0.1s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#${EXTRACT_MODAL_ID} .wbex-dropdown-opt:hover,
+#${EXTRACT_MODAL_ID} .wbex-dropdown-opt.highlight {
+  background: rgba(96, 165, 250, 0.15);
+}
+#${EXTRACT_MODAL_ID} .wbex-dropdown-opt.selected {
+  background: rgba(96, 165, 250, 0.25);
+  color: #60a5fa;
+}
+#${EXTRACT_MODAL_ID} .wbex-dropdown-empty {
+  padding: 12px 10px;
+  color: #64748b;
+  font-size: 12px;
+  text-align: center;
 }
 
 #${EXTRACT_MODAL_ID} .wbex-list {
@@ -1288,29 +1366,112 @@ function showExtractionModal(tags: ExtractedFloorTag[], mesId: number): void {
   closeBtn.addEventListener('click', closeExtractionModal);
   head.append(title, closeBtn);
 
-  // ── Target worldbook selector
+  // ── Target worldbook selector (searchable dropdown)
+  let selectedWb = '';
+  // Restore last selection from localStorage
+  try {
+    const last = localStorage.getItem(LAST_EXTRACT_WB_KEY);
+    if (last && wbNames.includes(last)) selectedWb = last;
+  } catch { /* ignore */ }
+
   const targetSection = doc.createElement('div');
   targetSection.className = 'wbex-target';
-  const targetLabel = doc.createElement('label');
   const targetSpan = doc.createElement('span');
   targetSpan.textContent = '目标世界书';
-  const targetSelect = doc.createElement('select');
-  const defaultOpt = doc.createElement('option');
-  defaultOpt.value = '';
-  defaultOpt.textContent = '请选择目标世界书';
-  targetSelect.append(defaultOpt);
-  for (const name of wbNames) {
-    const opt = doc.createElement('option');
-    opt.value = name;
-    opt.textContent = name;
-    targetSelect.append(opt);
+
+  const dropdownWrap = doc.createElement('div');
+  dropdownWrap.className = 'wbex-dropdown';
+
+  const trigger = doc.createElement('button');
+  trigger.className = 'wbex-dropdown-trigger';
+  trigger.type = 'button';
+  trigger.textContent = selectedWb || '请选择目标世界书';
+
+  let panelOpen = false;
+  let dropdownPanel: HTMLDivElement | null = null;
+
+  function selectWorldbook(name: string): void {
+    selectedWb = name;
+    trigger.textContent = name || '请选择目标世界书';
+    try { localStorage.setItem(LAST_EXTRACT_WB_KEY, name); } catch { /* ignore */ }
+    closeDropdown();
+    updateCreateBtn();
+    // Mark duplicates
+    markDuplicatesForTags(tags, name).then(rerenderTagList);
   }
-  targetSelect.addEventListener('change', async () => {
-    await markDuplicatesForTags(tags, targetSelect.value);
-    rerenderTagList();
+
+  function closeDropdown(): void {
+    if (dropdownPanel) { dropdownPanel.remove(); dropdownPanel = null; }
+    panelOpen = false;
+  }
+
+  function openDropdown(): void {
+    if (panelOpen) { closeDropdown(); return; }
+    panelOpen = true;
+
+    const panel = doc.createElement('div');
+    panel.className = 'wbex-dropdown-panel';
+    dropdownPanel = panel;
+
+    const searchInput = doc.createElement('input');
+    searchInput.className = 'wbex-dropdown-search';
+    searchInput.type = 'text';
+    searchInput.placeholder = '搜索世界书...';
+
+    const optionsContainer = doc.createElement('div');
+    optionsContainer.className = 'wbex-dropdown-options';
+
+    function renderOptions(filter: string): void {
+      optionsContainer.innerHTML = '';
+      const q = filter.toLowerCase();
+      const filtered = wbNames.filter(n => !q || n.toLowerCase().includes(q));
+      if (filtered.length === 0) {
+        const empty = doc.createElement('div');
+        empty.className = 'wbex-dropdown-empty';
+        empty.textContent = '无匹配结果';
+        optionsContainer.append(empty);
+        return;
+      }
+      for (const name of filtered) {
+        const opt = doc.createElement('div');
+        opt.className = 'wbex-dropdown-opt' + (name === selectedWb ? ' selected' : '');
+        opt.textContent = name;
+        opt.addEventListener('click', (e) => {
+          e.stopPropagation();
+          selectWorldbook(name);
+        });
+        optionsContainer.append(opt);
+      }
+    }
+    renderOptions('');
+
+    searchInput.addEventListener('input', () => renderOptions(searchInput.value));
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeDropdown();
+    });
+
+    panel.append(searchInput, optionsContainer);
+    dropdownWrap.append(panel);
+
+    // Focus search
+    requestAnimationFrame(() => searchInput.focus());
+  }
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openDropdown();
   });
-  targetLabel.append(targetSpan, targetSelect);
-  targetSection.append(targetLabel);
+
+  // Close dropdown when clicking outside
+  overlay.addEventListener('click', () => closeDropdown());
+
+  dropdownWrap.append(trigger);
+  targetSection.append(targetSpan, dropdownWrap);
+
+  // Auto-select remembered worldbook and mark duplicates
+  if (selectedWb) {
+    markDuplicatesForTags(tags, selectedWb).then(() => { /* tags updated in place */ });
+  }
 
   // ── Tag list
   const listContainer = doc.createElement('div');
@@ -1458,13 +1619,13 @@ function showExtractionModal(tags: ExtractedFloorTag[], mesId: number): void {
   function updateCreateBtn(): void {
     const count = tags.filter(t => t.selected).length;
     createBtn.textContent = `创建选中条目（${count}）`;
-    createBtn.disabled = count === 0 || !targetSelect.value;
+    createBtn.disabled = count === 0 || !selectedWb;
   }
   updateCreateBtn();
 
   createBtn.addEventListener('click', async () => {
     const selected = tags.filter(t => t.selected);
-    const targetName = targetSelect.value;
+    const targetName = selectedWb;
     if (!selected.length || !targetName) return;
 
     createBtn.disabled = true;
@@ -1484,8 +1645,6 @@ function showExtractionModal(tags: ExtractedFloorTag[], mesId: number): void {
     }
   });
 
-  // Also update create btn when target changes
-  targetSelect.addEventListener('change', () => updateCreateBtn());
 
   actions.append(selectAllBtn, selectNoneBtn, createBtn);
 
