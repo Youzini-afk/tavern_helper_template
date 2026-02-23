@@ -575,8 +575,8 @@
                 class="btn history-btn utility-btn"
                 type="button"
                 :class="{ active: floorBtnVisible }"
-                @click="toggleFloorBtns(!floorBtnVisible)"
                 :title="floorBtnVisible ? '点击隐藏楼层提取按钮' : '点击显示楼层提取按钮'"
+                @click="toggleFloorBtns(!floorBtnVisible)"
               >
                 📥 {{ floorBtnVisible ? '楼层提取' : '楼层提取(已关)' }}
               </button>

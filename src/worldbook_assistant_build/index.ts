@@ -884,7 +884,6 @@ function ensureExtractStyle(): void {
   opacity: 0.5;
   transition: opacity 0.2s ease, transform 0.2s ease;
   user-select: none;
-  title: "提取世界书条目";
 }
 .${FLOOR_BTN_CLASS}:hover {
   opacity: 1;
@@ -1260,7 +1259,7 @@ function injectButtonToFloor(mesId: number): void {
   const $extraBtns = $mes.find('.extraMesButtons, .mes_buttons');
   if (!$extraBtns.length) return;
 
-  const btn = document.createElement('div');
+  const btn = doc.createElement('div');
   btn.className = FLOOR_BTN_CLASS;
   btn.textContent = '📥';
   btn.title = '提取世界书条目';
@@ -1489,7 +1488,7 @@ function showExtractionModal(tags: ExtractedFloorTag[], mesId: number): void {
 
   // Auto-select remembered worldbook and mark duplicates
   if (selectedWb) {
-    markDuplicatesForTags(tags, selectedWb).then(() => { /* tags updated in place */ });
+    markDuplicatesForTags(tags, selectedWb).then(rerenderTagList);
   }
 
   // ── Tag list
@@ -1533,7 +1532,10 @@ function showExtractionModal(tags: ExtractedFloorTag[], mesId: number): void {
         input.value = tag.tag;
         input.size = Math.max(tag.tag.length, 6);
 
+        let renamed = false;
         const confirmRename = () => {
+          if (renamed) return;
+          renamed = true;
           const newName = input.value.trim();
           if (newName) {
             tag.tag = newName;
@@ -1587,8 +1589,9 @@ function showExtractionModal(tags: ExtractedFloorTag[], mesId: number): void {
       expandHint.className = 'wbex-expand-hint';
       expandHint.textContent = isLong ? '▶ 点击查看完整内容' : '';
 
-      // Click info area to expand/collapse
+      // Click info area to expand/collapse (skip if clicking tag name or input)
       info.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('.wbex-tag-name') || (e.target as HTMLElement).tagName === 'INPUT') return;
         e.stopPropagation();
         const expanded = item.classList.toggle('expanded');
         if (expanded) {
