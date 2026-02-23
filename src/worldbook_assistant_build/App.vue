@@ -407,8 +407,8 @@
         </div>
       </div>
 
-      <!-- Tab Bar: bottom -->
-      <div class="mobile-tab-bar">
+      <!-- Tab Bar: bottom, direct child of wb-assistant-root via fragment -->
+      <div class="mobile-tab-bar" style="display:flex !important;flex-shrink:0;">
         <button @click="mobileTab = 'list'" :class="{ active: mobileTab === 'list' }">
           <span class="tab-icon">📋</span><span class="tab-label">列表</span>
         </button>
@@ -8703,10 +8703,7 @@ watch(hasUnsavedChanges, (val) => {
 }
 
 .mobile-tab-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  flex-shrink: 0;
   z-index: 10100;
   display: flex;
   border-top: 1px solid var(--wb-border-main);
