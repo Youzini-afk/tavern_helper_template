@@ -6691,7 +6691,11 @@ onUnmounted(() => {
 });
 
 function updateHostPanelTheme() {
-  const panel = document.getElementById('wb-assistant-panel');
+  // The panel may live in the parent document (host) — try both
+  let panel = document.getElementById('wb-assistant-panel');
+  if (!panel) {
+    try { panel = window.parent?.document?.getElementById('wb-assistant-panel') ?? null; } catch { /* cross-origin */ }
+  }
   if (!panel) return;
   const theme = THEMES[currentTheme.value];
   const colors = theme.colors;
@@ -6702,6 +6706,9 @@ function updateHostPanelTheme() {
   panel.style.setProperty('--wb-host-text', colors['--wb-text-main']);
   panel.style.setProperty('--wb-host-tool-bg', colors['--wb-input-bg']);
   panel.style.setProperty('--wb-host-tool-border', colors['--wb-border-subtle']);
+  // Glass/dropdown variables for theme dropdown & host shadows
+  panel.style.setProperty('--wb-host-dropdown-bg', colors['--wb-dropdown-bg'] || 'rgba(15,15,15,0.7)');
+  panel.style.setProperty('--wb-host-shadow', colors['--wb-shadow-main'] || '0 12px 32px rgba(0,0,0,0.5)');
 }
 
 watch(currentTheme, () => {

@@ -191,8 +191,8 @@ function ensurePanelStyle(): void {
   margin-top: 4px;
   border: 1px solid var(--wb-host-border, #334155);
   border-radius: 8px;
-  background: var(--wb-host-header-bg, #111827);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+  background: var(--wb-host-dropdown-bg, var(--wb-host-header-bg, #111827));
+  box-shadow: var(--wb-host-shadow, 0 8px 24px rgba(0,0,0,0.45));
   padding: 4px;
   min-width: 140px;
   opacity: 0;
