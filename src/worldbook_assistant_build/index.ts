@@ -894,31 +894,16 @@ function ensureExtractStyle(): void {
   transform: scale(0.95);
 }
 
-/* ── Extraction modal (standalone) ── */
-#${EXTRACT_MODAL_ID} {
-  position: fixed;
-  inset: 0;
-  z-index: 10050;
-  background: var(--wb-overlay-bg, rgba(0, 0, 0, 0.55));
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 14px;
-  box-sizing: border-box;
-}
-
-#${EXTRACT_MODAL_ID} .wbex-modal {
+/* ── Extraction modal (inside SillyTavern Popup) ── */
+#${EXTRACT_MODAL_ID}.wbex-modal {
   background: var(--wb-glass-bg, rgba(20, 20, 20, 0.85));
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--wb-border-subtle, rgba(255,255,255,0.05));
   border-radius: 16px;
   box-shadow: var(--wb-shadow-main, 0 16px 48px rgba(0, 0, 0, 0.4));
-  width: 580px;
-  max-width: 92vw;
-  max-height: 80vh;
+  width: 100%;
+  max-width: 580px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1193,16 +1178,8 @@ function ensureExtractStyle(): void {
 
 /* ── Mobile adaptation ── */
 @media (max-width: 768px), (orientation: portrait) {
-  #${EXTRACT_MODAL_ID} {
-    padding: 0;
-    align-items: stretch;
-    justify-content: stretch;
-  }
-  #${EXTRACT_MODAL_ID} .wbex-modal {
-    width: 100% !important;
+  #${EXTRACT_MODAL_ID}.wbex-modal {
     max-width: 100% !important;
-    max-height: 100% !important;
-    height: 100%;
     border-radius: 0;
     border: none;
     box-shadow: none;
@@ -1279,7 +1256,6 @@ function injectAllFloorButtons(): void {
 
 // ── Handle extraction for a single floor ───────────────────────────
 function handleFloorExtract(mesId: number): void {
-  toastr.info(`提取楼层 #${mesId}...`, '楼层提取', { timeOut: 2000 });
   const messages = getChatMessages(mesId);
   if (!messages.length) {
     toastr.warning('无法读取该楼层消息');
@@ -1348,9 +1324,13 @@ async function markDuplicatesForTags(tags: ExtractedFloorTag[], worldbookName: s
 }
 
 // ── Standalone extraction modal ────────────────────────────────────
+let activeExtractionPopup: { completeCancelled: () => Promise<void> } | null = null;
+
 function closeExtractionModal(): void {
-  const doc = getHostDocument();
-  doc.getElementById(EXTRACT_MODAL_ID)?.remove();
+  if (activeExtractionPopup) {
+    activeExtractionPopup.completeCancelled();
+    activeExtractionPopup = null;
+  }
 }
 
 function showExtractionModal(tags: ExtractedFloorTag[], mesId: number): void {
@@ -1362,12 +1342,10 @@ function showExtractionModal(tags: ExtractedFloorTag[], mesId: number): void {
 
   const wbNames = getWorldbookNames();
 
-  // Build HTML
-  const overlay = doc.createElement('div');
-  overlay.id = EXTRACT_MODAL_ID;
-
+  // Build modal content (SillyTavern's Popup provides the overlay)
   const modal = doc.createElement('div');
   modal.className = 'wbex-modal';
+  modal.id = EXTRACT_MODAL_ID;
 
   // ── Head
   const head = doc.createElement('div');
@@ -1479,7 +1457,7 @@ function showExtractionModal(tags: ExtractedFloorTag[], mesId: number): void {
   });
 
   // Close dropdown when clicking outside
-  overlay.addEventListener('click', () => closeDropdown());
+  modal.addEventListener('click', () => closeDropdown());
 
   dropdownWrap.append(trigger);
   targetSection.append(targetSpan, dropdownWrap);
@@ -1668,14 +1646,8 @@ function showExtractionModal(tags: ExtractedFloorTag[], mesId: number): void {
 
   actions.append(selectAllBtn, selectNoneBtn, createBtn);
 
-  // ── Assemble modal
+  // ── Assemble modal content
   modal.append(head, targetSection, listContainer, actions);
-  overlay.append(modal);
-
-  // Click overlay bg to close
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) closeExtractionModal();
-  });
 
   // ── Sync theme variables from Vue panel root to modal
   const panelBody = doc.getElementById(PANEL_ID);
@@ -1691,11 +1663,19 @@ function showExtractionModal(tags: ExtractedFloorTag[], mesId: number): void {
     ];
     for (const v of vars) {
       const val = cs.getPropertyValue(v);
-      if (val) overlay.style.setProperty(v, val);
+      if (val) modal.style.setProperty(v, val);
     }
   }
 
-  doc.body.append(overlay);
+  // ── Show via SillyTavern's native Popup API (works on mobile)
+  const popup = new SillyTavern.Popup(
+    modal,
+    SillyTavern.POPUP_TYPE.DISPLAY,
+    '',
+    { wide: true, allowVerticalScrolling: true },
+  );
+  activeExtractionPopup = popup;
+  popup.show();
 }
 
 // ── Event listeners for floor button injection ─────────────────────
