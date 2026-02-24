@@ -884,12 +884,29 @@ function ensureExtractStyle(): void {
   opacity: 0.5;
   transition: opacity 0.2s ease, transform 0.2s ease;
   user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 .${FLOOR_BTN_CLASS}:hover {
   opacity: 1;
   transform: scale(1.15);
 }
 .${FLOOR_BTN_CLASS}:active {
+  transform: scale(0.95);
+}
+/* Mobile: floating corner placement inside mes_block */
+.mes_block > .${FLOOR_BTN_CLASS} {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  font-size: 0.85em;
+  opacity: 0.45;
+  z-index: 1;
+  padding: 4px;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.15);
+}
+.mes_block > .${FLOOR_BTN_CLASS}:active {
+  opacity: 1;
   transform: scale(0.95);
 }
 
@@ -1256,8 +1273,19 @@ function injectButtonToFloor(mesId: number): void {
   const $mes = $(`#chat > .mes[mesid="${mesId}"]`, doc);
   if (!$mes.length || $mes.find(`.${FLOOR_BTN_CLASS}`).length) return;
 
-  const $extraBtns = $mes.find('.extraMesButtons, .mes_buttons');
-  if (!$extraBtns.length) return;
+  const isMobile = window.innerWidth <= 768;
+
+  // On mobile, inject into mes_block (always visible).
+  // On desktop, inject into extraMesButtons / mes_buttons.
+  let $target: JQuery;
+  if (isMobile) {
+    $target = $mes.find('.mes_block');
+    // Ensure mes_block has position:relative for the absolute-positioned button
+    $target.css('position', 'relative');
+  } else {
+    $target = $mes.find('.extraMesButtons, .mes_buttons');
+  }
+  if (!$target.length) return;
 
   const btn = doc.createElement('div');
   btn.className = FLOOR_BTN_CLASS;
@@ -1268,7 +1296,7 @@ function injectButtonToFloor(mesId: number): void {
     e.preventDefault();
     handleFloorExtract(mesId);
   });
-  $extraBtns.first().append(btn);
+  $target.first().append(btn);
 }
 
 // ── Scan all displayed floors and inject buttons ───────────────────
