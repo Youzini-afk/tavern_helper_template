@@ -8160,11 +8160,13 @@ watch(hasUnsavedChanges, (val) => {
 }
 
 .wb-main-layout {
-  flex: 1;
-  min-height: 60vh;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
   display: grid;
   grid-template-columns: 280px 10px minmax(0, 1fr);
   gap: 0;
+  align-items: stretch;
   transition: grid-template-columns 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -8177,6 +8179,7 @@ watch(hasUnsavedChanges, (val) => {
   gap: 10px;
   background: transparent;
   min-height: 0;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -8375,7 +8378,7 @@ watch(hasUnsavedChanges, (val) => {
 }
 
 .wb-editor {
-  max-height: 70vh;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -8444,6 +8447,7 @@ watch(hasUnsavedChanges, (val) => {
   flex-direction: column;
   gap: 20px;
   min-height: 0;
+  height: 100%;
   overflow: auto;
   box-shadow: 0 8px 32px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
 }
@@ -8700,6 +8704,7 @@ watch(hasUnsavedChanges, (val) => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  height: 100%;
   min-height: 0;
   overflow: auto;
 }
