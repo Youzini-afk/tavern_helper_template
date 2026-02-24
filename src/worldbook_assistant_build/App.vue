@@ -2398,8 +2398,8 @@ const focusMetaPanel = reactive<Record<FocusMetaPanelKey, boolean>>({
   keywords: false,
 });
 const focusSidePanelState = reactive<Record<FocusSidePanelKey, boolean>>({
-  strategy: false,
-  insertion: false,
+  strategy: true,
+  insertion: true,
   recursion: false,
 });
 
@@ -3117,8 +3117,8 @@ watch(
     if (isDesktopFocusMode.value) {
       focusMetaPanel.comment = false;
       focusMetaPanel.keywords = false;
-      focusSidePanelState.strategy = false;
-      focusSidePanelState.insertion = false;
+      focusSidePanelState.strategy = true;
+      focusSidePanelState.insertion = true;
       focusSidePanelState.recursion = false;
     }
   },
@@ -6508,8 +6508,8 @@ function openRolePicker(): void {
 function resetFocusPanels(): void {
   focusMetaPanel.comment = false;
   focusMetaPanel.keywords = false;
-  focusSidePanelState.strategy = false;
-  focusSidePanelState.insertion = false;
+  focusSidePanelState.strategy = true;
+  focusSidePanelState.insertion = true;
   focusSidePanelState.recursion = false;
   focusToolsExpanded.value = false;
   focusToolsTriggerVisible.value = true;
