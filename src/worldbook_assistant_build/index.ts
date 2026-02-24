@@ -1264,21 +1264,7 @@ function injectButtonToFloor(mesId: number): void {
   btn.className = FLOOR_BTN_CLASS;
   btn.textContent = '📥';
   btn.title = '提取世界书条目';
-
-  // Use both pointerup + click to cover mobile & desktop.
-  // Mobile: SillyTavern may swallow click but pointerup still fires.
-  // Desktop: click always works. Guard against double-fire.
-  let handled = false;
-  const handler = (e: Event) => {
-    e.stopPropagation();
-    e.preventDefault();
-    if (handled) return;
-    handled = true;
-    setTimeout(() => { handled = false; }, 300);
-    handleFloorExtract(mesId);
-  };
-  btn.addEventListener('pointerup', handler);
-  btn.addEventListener('click', handler);
+  btn.dataset.mesid = String(mesId);
   $extraBtns.first().append(btn);
 }
 
@@ -1713,6 +1699,18 @@ function showExtractionModal(tags: ExtractedFloorTag[], mesId: number): void {
 
 // ── Event listeners for floor button injection ─────────────────────
 function startFloorButtonListeners(): void {
+  const doc = getHostDocument();
+
+  // ── Delegated click handler for floor extraction buttons (cross-iframe safe)
+  const FLOOR_NS = '.wbFloorExtract';
+  $(doc).off(`click${FLOOR_NS}`, `.${FLOOR_BTN_CLASS}`)
+    .on(`click${FLOOR_NS}`, `.${FLOOR_BTN_CLASS}`, function (this: HTMLElement, e: JQuery.Event) {
+      e.stopPropagation();
+      e.preventDefault();
+      const mesId = parseInt(this.dataset.mesid || '-1');
+      if (mesId >= 0) handleFloorExtract(mesId);
+    });
+
   // Inject into existing floors (if visible)
   if (isFloorBtnsVisible()) {
     injectAllFloorButtons();
@@ -1759,6 +1757,11 @@ function stopFloorButtonListeners(): void {
     window.removeEventListener('wb-helper:floor-btns-toggle', floorBtnToggleHandler);
     floorBtnToggleHandler = null;
   }
+  // Remove delegated click handler
+  try {
+    const doc = getHostDocument();
+    $(doc).off('.wbFloorExtract');
+  } catch { /* cleanup best-effort */ }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
