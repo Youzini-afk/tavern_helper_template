@@ -429,7 +429,7 @@
 
     <!-- ═══ Desktop Layout ═══ -->
     <template v-if="!isMobile">
-    <section class="wb-toolbar">
+    <section v-if="!isDesktopFocusMode" class="wb-toolbar">
             <label class="toolbar-label">
               <span>世界书</span>
               <div ref="worldbookPickerRef" class="worldbook-picker">
@@ -485,18 +485,121 @@
               导出
             </button>
             <button class="btn" type="button" @click="triggerImport">导入</button>
-            <input
-              ref="importFileInput"
-              class="hidden-input"
-              type="file"
-              accept=".json,application/json"
-              @change="onImportChange"
-            />
           </section>
 
+          <section v-else ref="focusToolbarRef" class="wb-focus-toolbar" :class="{ compact: isFocusToolbarCompact }">
+            <div class="wb-focus-toolbar-row">
+              <div class="wb-focus-core-group">
+                <label class="toolbar-label focus-toolbar-label">
+                  <span class="focus-toolbar-label-text">世界书</span>
+                  <div ref="worldbookPickerRef" class="worldbook-picker">
+                    <button class="worldbook-picker-trigger" type="button" @click="toggleWorldbookPicker">
+                      <span class="worldbook-picker-trigger-text" :title="selectedWorldbookName || '请选择世界书'">
+                        {{ selectedWorldbookName || '请选择世界书' }}
+                      </span>
+                      <span class="worldbook-picker-trigger-arrow">{{ worldbookPickerOpen ? '▴' : '▾' }}</span>
+                    </button>
+                    <div v-if="worldbookPickerOpen" class="worldbook-picker-dropdown">
+                      <div v-if="tagDefinitions.length" class="worldbook-picker-tags">
+                        <button
+                          v-for="tag in tagDefinitions" :key="`focus-tag-${tag.id}`"
+                          class="tag-filter-chip"
+                          :class="{ active: activeTagFilter === tag.id }"
+                          :style="{ '--tag-color': tag.color }"
+                          type="button"
+                          @click="activeTagFilter = activeTagFilter === tag.id ? '' : tag.id"
+                        >{{ tag.name }}</button>
+                      </div>
+                      <input
+                        ref="worldbookPickerSearchInputRef"
+                        v-model="worldbookPickerSearchText"
+                        type="text"
+                        class="text-input worldbook-picker-search"
+                        placeholder="搜索世界书..."
+                        @keydown.enter.prevent="filteredSelectableWorldbookNames[0] && selectWorldbookFromPicker(filteredSelectableWorldbookNames[0])"
+                      />
+                      <div class="worldbook-picker-list">
+                        <button
+                          v-for="name in filteredSelectableWorldbookNames"
+                          :key="`focus-worldbook-${name}`"
+                          class="worldbook-picker-item"
+                          :class="{ active: name === selectedWorldbookName }"
+                          type="button"
+                          @click="selectWorldbookFromPicker(name)"
+                        >
+                          {{ name }}
+                        </button>
+                        <div v-if="!filteredSelectableWorldbookNames.length" class="empty-note">没有匹配的世界书</div>
+                      </div>
+                    </div>
+                  </div>
+                </label>
+                <button class="btn" type="button" :class="{ 'glow-pulse': hasUnsavedChanges }" :disabled="!hasUnsavedChanges" @click="saveCurrentWorldbook">
+                  {{ isFocusToolbarCompact ? '💾' : '💾 保存' }}
+                </button>
+                <button class="btn utility-btn" type="button" :class="{ active: isDesktopFocusMode }" @click="toggleFocusEditing">
+                  {{ isFocusToolbarCompact ? '🎯' : '🎯 专注开关' }}
+                </button>
+                <div ref="focusWorldbookMenuRef" class="focus-menu-wrap">
+                  <button class="btn utility-btn" type="button" @click="toggleFocusWorldbookMenu">
+                    {{ isFocusToolbarCompact ? '⋯' : '更多' }}
+                  </button>
+                  <Transition name="focus-menu-pop">
+                    <div v-if="focusWorldbookMenuOpen" class="focus-menu-panel">
+                      <button class="btn mini" type="button" @click="runFocusWorldbookAction('create')">新建</button>
+                      <button class="btn mini" type="button" :disabled="!selectedWorldbookName" @click="runFocusWorldbookAction('duplicate')">另存为</button>
+                      <button class="btn mini danger" type="button" :disabled="!selectedWorldbookName" @click="runFocusWorldbookAction('delete')">删除</button>
+                      <button class="btn mini" type="button" @click="runFocusWorldbookAction('import')">导入</button>
+                      <button class="btn mini" type="button" :disabled="!selectedWorldbookName" @click="runFocusWorldbookAction('export')">导出</button>
+                    </div>
+                  </Transition>
+                </div>
+              </div>
+              <div class="wb-focus-tool-entry">
+                <button
+                  class="btn history-btn utility-btn focus-search-btn"
+                  type="button"
+                  :class="{ active: floatingPanels.find.visible }"
+                  :disabled="!draftEntries.length"
+                  @click="toggleFloatingPanel('find')"
+                >
+                  {{ isFocusToolbarCompact ? '🔎' : '🔎 查找替换' }}
+                </button>
+                <Transition name="focus-tools-trigger">
+                  <button v-if="focusToolsTriggerVisible" class="btn history-btn utility-btn" type="button" :disabled="focusToolsExpanded" @click="openFocusToolsBand">
+                    {{ isFocusToolbarCompact ? '工具' : '更多工具' }}
+                  </button>
+                </Transition>
+              </div>
+            </div>
+            <Transition name="focus-tools-band" @after-leave="onFocusToolsBandAfterLeave">
+              <div v-if="focusToolsExpanded" class="wb-focus-tools-band">
+                <button class="btn history-btn utility-btn" type="button" :class="{ active: globalWorldbookMode }" @click="toggleGlobalMode">🌐 全局模式</button>
+                <button class="btn history-btn utility-btn" type="button" :disabled="!selectedEntry" @click="openEntryHistoryModal">🕰️ 条目时光机</button>
+                <button class="btn history-btn utility-btn" type="button" :disabled="!selectedWorldbookName" @click="openWorldbookHistoryModal">⏪ 整本时光机</button>
+                <button class="btn history-btn utility-btn" type="button" :class="{ active: floatingPanels.activation.visible }" @click="toggleFloatingPanel('activation')">📡 激活监控</button>
+                <button v-if="persistedState.show_ai_chat" class="btn history-btn utility-btn" type="button" :class="{ active: aiGeneratorMode }" @click="aiToggleMode">🤖 AI 生成</button>
+                <button class="btn history-btn utility-btn" type="button" @click="extractFromChat">📥 从聊天提取</button>
+                <button class="btn history-btn utility-btn" type="button" :class="{ active: tagEditorMode }" @click="tagToggleMode">🏷️ 标签管理</button>
+                <button class="btn history-btn utility-btn" type="button" @click="showApiSettings = true">⚙️ 设置</button>
+                <button class="btn history-btn utility-btn" type="button" @click="aiConfigPreview = false; aiConfigChanges = []; aiConfigTargetWorldbook = selectedWorldbookName || ''">🔧 AI配置</button>
+                <button class="btn history-btn utility-btn focus-tools-collapse" type="button" @click="closeFocusToolsBand">收起工具</button>
+              </div>
+            </Transition>
+          </section>
+
+          <input
+            ref="importFileInput"
+            class="hidden-input"
+            type="file"
+            accept=".json,application/json"
+            @change="onImportChange"
+          />
+
           <div class="wb-scroll-area">
-          <section class="wb-bindings">
-            <div class="wb-history-shortcuts">
+          <section v-if="!isDesktopFocusMode || globalWorldbookMode" class="wb-bindings" :class="{ 'focus-bindings': isDesktopFocusMode }">
+            <div v-if="!isDesktopFocusMode" class="wb-history-shortcuts">
+              <button class="btn history-btn utility-btn" type="button" @click="toggleFocusEditing">🎯 专注编辑</button>
               <button
                 class="btn history-btn utility-btn"
                 type="button"
@@ -886,16 +989,16 @@
             <div v-else class="empty-note" style="margin-top:20px;">暂无标签，请先创建</div>
           </section>
 
-          <section v-show="!aiGeneratorMode && !tagEditorMode" ref="mainLayoutRef" class="wb-main-layout" :style="mainLayoutStyle">
-            <aside v-show="!showMobileEditor" class="wb-entry-list">
-              <div class="list-search">
+          <section v-show="!aiGeneratorMode && !tagEditorMode" ref="mainLayoutRef" class="wb-main-layout" :class="{ 'focus-mode': isDesktopFocusMode }" :style="mainLayoutStyle">
+            <aside v-show="!showMobileEditor" class="wb-entry-list" :class="{ focus: isDesktopFocusMode }">
+              <div v-if="!isDesktopFocusMode" class="list-search">
                 <input v-model="searchText" type="text" class="text-input" placeholder="搜索名称 / 内容 / 关键词" />
                 <label class="checkbox-inline">
                   <input v-model="onlyEnabled" type="checkbox" />
                   <span>仅启用</span>
                 </label>
               </div>
-              <div class="list-summary">
+              <div v-if="!isDesktopFocusMode" class="list-summary">
                 条目 {{ filteredEntries.length }} / {{ draftEntries.length }} | 启用 {{ enabledEntryCount }}
               </div>
               <TransitionGroup name="list" tag="div" class="list-scroll">
@@ -914,9 +1017,9 @@
                   <div class="entry-item-head">
                     <span class="entry-status-dot" :data-status="getEntryVisualStatus(entry)"></span>
                     <div class="entry-item-title">{{ entry.name || `条目 ${entry.uid}` }}</div>
-                    <span class="entry-chip uid">#{{ entry.uid }}</span>
+                    <span v-if="!isDesktopFocusMode" class="entry-chip uid">#{{ entry.uid }}</span>
                   </div>
-                  <div class="entry-item-tags">
+                  <div v-if="!isDesktopFocusMode" class="entry-item-tags">
                     <span class="entry-chip status" :data-status="getEntryVisualStatus(entry)">
                       {{ getEntryStatusLabel(entry) }}
                     </span>
@@ -924,10 +1027,10 @@
                     <span class="entry-chip">🎯 {{ entry.probability }}</span>
                     <span class="entry-chip mono">#{{ entry.position.order }}</span>
                   </div>
-                  <div class="entry-item-preview">{{ getEntryKeyPreview(entry) }}</div>
+                  <div v-if="!isDesktopFocusMode" class="entry-item-preview">{{ getEntryKeyPreview(entry) }}</div>
                 </button>
               </TransitionGroup>
-              <div class="list-actions">
+              <div v-if="!isDesktopFocusMode" class="list-actions">
                 <button class="btn" type="button" :disabled="!selectedWorldbookName" @click="addEntry">新增</button>
                 <button class="btn" type="button" :disabled="!selectedEntry" @click="duplicateSelectedEntry">
                   复制
@@ -951,15 +1054,29 @@
             <main v-show="!isMobile || showMobileEditor" class="wb-editor">
               <template v-if="selectedEntry">
                 <div ref="editorShellRef" class="wb-editor-shell" :style="editorShellStyle">
-                  <section class="editor-center">
-                    <header class="editor-head">
+                  <section class="editor-center" :class="{ focus: isDesktopFocusMode }">
+                    <header class="editor-head" :class="{ focus: isDesktopFocusMode }">
                       <div v-if="isMobile" class="editor-back-btn" @click="goBackToList">
                         ← 返回
                       </div>
-                      <label class="field editor-comment">
-                        <span>备注 (COMMENT)</span>
-                        <input v-model="selectedEntry.name" type="text" class="text-input" />
-                      </label>
+                      <template v-if="!isDesktopFocusMode">
+                        <label class="field editor-comment">
+                          <span>备注 (COMMENT)</span>
+                          <input v-model="selectedEntry.name" type="text" class="text-input" />
+                        </label>
+                      </template>
+                      <template v-else>
+                        <div class="focus-meta-summary-row">
+                          <button class="focus-meta-chip" type="button" :class="{ active: focusMetaPanel.comment }" @click="toggleFocusMetaPanel('comment')">
+                            <span>备注</span>
+                            <strong>{{ focusCommentSummary }}</strong>
+                          </button>
+                          <button class="focus-meta-chip" type="button" :class="{ active: focusMetaPanel.keywords }" @click="toggleFocusMetaPanel('keywords')">
+                            <span>关键词</span>
+                            <strong>{{ focusKeywordSummary }}</strong>
+                          </button>
+                        </div>
+                      </template>
                       <div class="editor-badges">
                         <span class="editor-badge" :class="selectedEntry.enabled ? 'on' : 'off'">
                           {{ selectedEntry.enabled ? 'EN' : 'OFF' }}
@@ -973,7 +1090,16 @@
                       </div>
                     </header>
 
-                    <section class="editor-grid two-cols editor-keyword-grid">
+                    <Transition name="focus-meta-panel">
+                      <section v-if="isDesktopFocusMode && focusMetaPanel.comment" class="focus-meta-panel">
+                        <label class="field editor-comment">
+                          <span>备注 (COMMENT)</span>
+                          <input v-model="selectedEntry.name" type="text" class="text-input" />
+                        </label>
+                      </section>
+                    </Transition>
+
+                    <section v-if="!isDesktopFocusMode || focusMetaPanel.keywords" class="editor-grid two-cols editor-keyword-grid">
                       <label class="field">
                         <span>主要关键词 (KEYS)</span>
                         <textarea :value="selectedKeysRaw" @input="selectedKeysRaw = ($event.target as HTMLTextAreaElement).value" @blur="commitKeysFromRaw" class="text-area compact"></textarea>
@@ -1018,165 +1144,226 @@
                     @pointerdown="startPaneResize('editor', $event)"
                   ></div>
 
-                  <aside class="editor-side">
-                    <article class="editor-card">
-                      <h4>触发策略 (STRATEGY)</h4>
-                      <label class="field checkbox-inline">
-                        <input v-model="selectedEntry.enabled" type="checkbox" />
-                        <span>启用条目</span>
-                      </label>
-                      <div class="strategy-switch">
-                        <button
-                          type="button"
-                          class="strategy-pill constant"
-                          :class="{ active: selectedEntry.strategy.type === 'constant' }"
-                          @click="selectedEntry.strategy.type = 'constant'"
-                        >
-                          🔵 常驻 (Constant)
+                  <aside class="editor-side" :class="{ focus: isDesktopFocusMode }">
+                    <article class="editor-card focus-side-card" :class="{ open: focusSidePanelState.strategy }">
+                      <template v-if="isDesktopFocusMode">
+                        <button type="button" class="focus-side-summary" @click="toggleFocusSidePanel('strategy')">
+                          <span class="focus-side-summary-title">触发策略</span>
+                          <span class="focus-side-summary-value">{{ focusStrategySummary }}</span>
+                          <span class="focus-side-summary-arrow">{{ focusSidePanelState.strategy ? '▾' : '▸' }}</span>
                         </button>
-                        <button
-                          type="button"
-                          class="strategy-pill vector"
-                          :class="{ active: selectedEntry.strategy.type === 'vectorized' }"
-                          @click="selectedEntry.strategy.type = 'vectorized'"
-                        >
-                          📎 向量化 (Vector)
-                        </button>
-                        <button
-                          type="button"
-                          class="strategy-pill selective"
-                          :class="{ active: selectedEntry.strategy.type === 'selective' }"
-                          @click="selectedEntry.strategy.type = 'selective'"
-                        >
-                          🟢 关键词 (Selective)
-                        </button>
+                      </template>
+                      <h4 v-else>触发策略 (STRATEGY)</h4>
+                      <div class="focus-side-content" :class="{ hidden: isDesktopFocusMode && !focusSidePanelState.strategy }">
+                        <label class="field checkbox-inline">
+                          <input v-model="selectedEntry.enabled" type="checkbox" />
+                          <span>启用条目</span>
+                        </label>
+                        <div class="strategy-switch">
+                          <button
+                            type="button"
+                            class="strategy-pill constant"
+                            :class="{ active: selectedEntry.strategy.type === 'constant' }"
+                            @click="selectedEntry.strategy.type = 'constant'"
+                          >
+                            🔵 常驻 (Constant)
+                          </button>
+                          <button
+                            type="button"
+                            class="strategy-pill vector"
+                            :class="{ active: selectedEntry.strategy.type === 'vectorized' }"
+                            @click="selectedEntry.strategy.type = 'vectorized'"
+                          >
+                            📎 向量化 (Vector)
+                          </button>
+                          <button
+                            type="button"
+                            class="strategy-pill selective"
+                            :class="{ active: selectedEntry.strategy.type === 'selective' }"
+                            @click="selectedEntry.strategy.type = 'selective'"
+                          >
+                            🟢 关键词 (Selective)
+                          </button>
+                        </div>
+                        <details class="editor-advanced">
+                          <summary>高级设置</summary>
+                          <label class="field">
+                            <span>次要逻辑 (LOGIC)</span>
+                            <select v-model="selectedEntry.strategy.keys_secondary.logic" class="text-input">
+                              <option v-for="item in secondaryLogicOptions" :key="item" :value="item">
+                                {{ getSecondaryLogicLabel(item) }}
+                              </option>
+                            </select>
+                          </label>
+                          <label class="field">
+                            <span>扫描深度</span>
+                            <input
+                              v-model="selectedScanDepthText"
+                              type="text"
+                              class="text-input"
+                              placeholder="留空或 same_as_global"
+                            />
+                          </label>
+                          <label class="field">
+                            <span>概率(0-100)</span>
+                            <input
+                              v-model.number="selectedEntry.probability"
+                              type="number"
+                              class="text-input"
+                              min="0"
+                              max="100"
+                              step="1"
+                            />
+                          </label>
+                        </details>
                       </div>
-                      <details class="editor-advanced">
-                        <summary>高级设置</summary>
+                    </article>
+
+                    <article class="editor-card focus-side-card" :class="{ open: focusSidePanelState.insertion }">
+                      <template v-if="isDesktopFocusMode">
+                        <button type="button" class="focus-side-summary" @click="toggleFocusSidePanel('insertion')">
+                          <span class="focus-side-summary-title">插入设置</span>
+                          <span class="focus-side-summary-value">{{ focusInsertionSummary }}</span>
+                          <span class="focus-side-summary-arrow">{{ focusSidePanelState.insertion ? '▾' : '▸' }}</span>
+                        </button>
+                      </template>
+                      <h4 v-else>插入设置 (INSERTION)</h4>
+                      <div class="focus-side-content" :class="{ hidden: isDesktopFocusMode && !focusSidePanelState.insertion }">
                         <label class="field">
-                          <span>次要逻辑 (LOGIC)</span>
-                          <select v-model="selectedEntry.strategy.keys_secondary.logic" class="text-input">
-                            <option v-for="item in secondaryLogicOptions" :key="item" :value="item">
-                              {{ getSecondaryLogicLabel(item) }}
+                          <span>位置 (Position)</span>
+                          <select
+                            v-model="selectedEntry.position.type"
+                            class="text-input"
+                            @change="handleSelectedPositionTypeChanged"
+                          >
+                            <option v-for="item in positionTypeOptions" :key="item" :value="item">
+                              {{ getPositionTypeLabel(item) }}
                             </option>
                           </select>
                         </label>
                         <label class="field">
-                          <span>扫描深度</span>
-                          <input
-                            v-model="selectedScanDepthText"
-                            type="text"
-                            class="text-input"
-                            placeholder="留空或 same_as_global"
-                          />
+                          <span>权重 (Order)</span>
+                          <input v-model.number="selectedEntry.position.order" type="number" class="text-input" step="1" />
                         </label>
-                        <label class="field">
-                          <span>概率(0-100)</span>
-                          <input
-                            v-model.number="selectedEntry.probability"
-                            type="number"
-                            class="text-input"
-                            min="0"
-                            max="100"
-                            step="1"
-                          />
-                        </label>
-                      </details>
-                    </article>
-
-                    <article class="editor-card">
-                      <h4>插入设置 (INSERTION)</h4>
-                      <label class="field">
-                        <span>位置 (Position)</span>
-                        <select
-                          v-model="selectedEntry.position.type"
-                          class="text-input"
-                          @change="handleSelectedPositionTypeChanged"
-                        >
-                          <option v-for="item in positionTypeOptions" :key="item" :value="item">
-                            {{ getPositionTypeLabel(item) }}
-                          </option>
-                        </select>
-                      </label>
-                      <label class="field">
-                        <span>权重 (Order)</span>
-                        <input v-model.number="selectedEntry.position.order" type="number" class="text-input" step="1" />
-                      </label>
-                      <div class="editor-grid two-cols">
-                        <label class="field" :class="{ disabled: selectedEntry.position.type !== 'at_depth' }">
-                          <span>at_depth role</span>
-                          <select
-                            v-model="selectedEntry.position.role"
-                            class="text-input"
-                            :disabled="selectedEntry.position.type !== 'at_depth'"
-                          >
-                            <option value="system">system</option>
-                            <option value="assistant">assistant</option>
-                            <option value="user">user</option>
-                          </select>
-                        </label>
-                        <label class="field" :class="{ disabled: selectedEntry.position.type !== 'at_depth' }">
-                          <span>at_depth depth</span>
-                          <input
-                            v-model.number="selectedEntry.position.depth"
-                            type="number"
-                            class="text-input"
-                            min="1"
-                            step="1"
-                            :disabled="selectedEntry.position.type !== 'at_depth'"
-                          />
-                        </label>
+                        <div class="editor-collapsible-group">
+                          <details class="editor-mini-collapse" :class="{ disabled: selectedEntry.position.type !== 'at_depth' }">
+                            <summary>
+                              <span>at_depth role</span>
+                              <span class="editor-mini-collapse-value">
+                                {{ selectedEntry.position.type === 'at_depth' ? selectedEntry.position.role : '仅 at_depth 可用' }}
+                              </span>
+                            </summary>
+                            <div class="editor-mini-collapse-body">
+                              <select
+                                v-model="selectedEntry.position.role"
+                                class="text-input"
+                                :disabled="selectedEntry.position.type !== 'at_depth'"
+                              >
+                                <option value="system">system</option>
+                                <option value="assistant">assistant</option>
+                                <option value="user">user</option>
+                              </select>
+                            </div>
+                          </details>
+                          <details class="editor-mini-collapse" :class="{ disabled: selectedEntry.position.type !== 'at_depth' }">
+                            <summary>
+                              <span>at_depth depth</span>
+                              <span class="editor-mini-collapse-value">
+                                {{ selectedEntry.position.type === 'at_depth' ? selectedEntry.position.depth : '仅 at_depth 可用' }}
+                              </span>
+                            </summary>
+                            <div class="editor-mini-collapse-body">
+                              <input
+                                v-model.number="selectedEntry.position.depth"
+                                type="number"
+                                class="text-input"
+                                min="1"
+                                step="1"
+                                :disabled="selectedEntry.position.type !== 'at_depth'"
+                              />
+                            </div>
+                          </details>
+                        </div>
                       </div>
                     </article>
 
-                    <article class="editor-card">
-                      <h4>递归与效果 (RECURSION)</h4>
-                      <label class="field checkbox-inline">
-                        <input v-model="selectedEntry.recursion.prevent_incoming" type="checkbox" />
-                        <span>不可递归命中 (Exclude Incoming)</span>
-                      </label>
-                      <label class="field checkbox-inline">
-                        <input v-model="selectedEntry.recursion.prevent_outgoing" type="checkbox" />
-                        <span>阻止后续递归 (Prevent Outgoing)</span>
-                      </label>
-                      <label class="field">
-                        <span>递归延迟层级</span>
-                        <input
-                          v-model="selectedRecursionDelayText"
-                          type="text"
-                          class="text-input"
-                          placeholder="留空表示 null"
-                        />
-                      </label>
-                      <div class="editor-grid two-cols">
-                        <label class="field">
-                          <span>sticky</span>
-                          <input
-                            v-model="selectedStickyText"
-                            type="text"
-                            class="text-input"
-                            placeholder="留空表示 null"
-                          />
+                    <article class="editor-card focus-side-card" :class="{ open: focusSidePanelState.recursion }">
+                      <template v-if="isDesktopFocusMode">
+                        <button type="button" class="focus-side-summary" @click="toggleFocusSidePanel('recursion')">
+                          <span class="focus-side-summary-title">递归与效果</span>
+                          <span class="focus-side-summary-value">{{ focusRecursionSummary }}</span>
+                          <span class="focus-side-summary-arrow">{{ focusSidePanelState.recursion ? '▾' : '▸' }}</span>
+                        </button>
+                      </template>
+                      <h4 v-else>递归与效果 (RECURSION)</h4>
+                      <div class="focus-side-content" :class="{ hidden: isDesktopFocusMode && !focusSidePanelState.recursion }">
+                        <label class="field checkbox-inline">
+                          <input v-model="selectedEntry.recursion.prevent_incoming" type="checkbox" />
+                          <span>不可递归命中 (Exclude Incoming)</span>
                         </label>
-                        <label class="field">
-                          <span>cooldown</span>
-                          <input
-                            v-model="selectedCooldownText"
-                            type="text"
-                            class="text-input"
-                            placeholder="留空表示 null"
-                          />
+                        <label class="field checkbox-inline">
+                          <input v-model="selectedEntry.recursion.prevent_outgoing" type="checkbox" />
+                          <span>阻止后续递归 (Prevent Outgoing)</span>
                         </label>
+                        <div class="editor-collapsible-group">
+                          <details class="editor-mini-collapse">
+                            <summary>
+                              <span>递归延迟层级</span>
+                              <span class="editor-mini-collapse-value">{{ selectedRecursionDelayText || 'null' }}</span>
+                            </summary>
+                            <div class="editor-mini-collapse-body">
+                              <input
+                                v-model="selectedRecursionDelayText"
+                                type="text"
+                                class="text-input"
+                                placeholder="留空表示 null"
+                              />
+                            </div>
+                          </details>
+                          <details class="editor-mini-collapse">
+                            <summary>
+                              <span>sticky</span>
+                              <span class="editor-mini-collapse-value">{{ selectedStickyText || 'null' }}</span>
+                            </summary>
+                            <div class="editor-mini-collapse-body">
+                              <input
+                                v-model="selectedStickyText"
+                                type="text"
+                                class="text-input"
+                                placeholder="留空表示 null"
+                              />
+                            </div>
+                          </details>
+                          <details class="editor-mini-collapse">
+                            <summary>
+                              <span>cooldown</span>
+                              <span class="editor-mini-collapse-value">{{ selectedCooldownText || 'null' }}</span>
+                            </summary>
+                            <div class="editor-mini-collapse-body">
+                              <input
+                                v-model="selectedCooldownText"
+                                type="text"
+                                class="text-input"
+                                placeholder="留空表示 null"
+                              />
+                            </div>
+                          </details>
+                          <details class="editor-mini-collapse">
+                            <summary>
+                              <span>delay</span>
+                              <span class="editor-mini-collapse-value">{{ selectedEffectDelayText || 'null' }}</span>
+                            </summary>
+                            <div class="editor-mini-collapse-body">
+                              <input
+                                v-model="selectedEffectDelayText"
+                                type="text"
+                                class="text-input"
+                                placeholder="留空表示 null"
+                              />
+                            </div>
+                          </details>
+                        </div>
                       </div>
-                      <label class="field">
-                        <span>delay</span>
-                        <input
-                          v-model="selectedEffectDelayText"
-                          type="text"
-                          class="text-input"
-                          placeholder="留空表示 null"
-                        />
-                      </label>
                     </article>
                   </aside>
                 </div>
@@ -1756,6 +1943,8 @@ type PaneResizeKey = 'main' | 'editor';
 type BatchSearchScope = 'all' | 'current';
 type FindFieldKey = 'name' | 'content' | 'keys';
 type SelectionSource = 'manual' | 'auto';
+type FocusSidePanelKey = 'strategy' | 'insertion' | 'recursion';
+type FocusMetaPanelKey = 'comment' | 'keywords';
 
 interface WorldbookSwitchOptions {
   source?: SelectionSource;
@@ -2097,6 +2286,14 @@ interface AIApiConfig {
   temperature: number;
 }
 
+interface LayoutState {
+  focus_mode: boolean;
+  normal_left_width: number;
+  normal_right_width: number;
+  focus_left_width: number;
+  focus_right_width: number;
+}
+
 interface PersistedState {
   last_worldbook: string;
   history: Record<string, WorldbookSnapshot[]>;
@@ -2110,6 +2307,7 @@ interface PersistedState {
   extract_ignore_tags: string[];
   ai_api_config: AIApiConfig;
   show_ai_chat: boolean;
+  layout: LayoutState;
 }
 
 interface ActivationLog {
@@ -2146,9 +2344,15 @@ const HISTORY_LIMIT = 12;
 const ENTRY_HISTORY_LIMIT = 7;
 const ACTIVATION_LOG_LIMIT = 120;
 const RESIZE_HANDLE_SIZE = 10;
+const MAIN_PANE_DEFAULT = 280;
 const MAIN_PANE_MIN = 220;
+const FOCUS_MAIN_PANE_DEFAULT = 176;
+const FOCUS_MAIN_PANE_MIN = 150;
 const MAIN_EDITOR_MIN = 540;
+const EDITOR_SIDE_DEFAULT = 360;
 const EDITOR_SIDE_MIN = 280;
+const FOCUS_EDITOR_SIDE_DEFAULT = 220;
+const FOCUS_EDITOR_SIDE_MIN = 180;
 const EDITOR_CENTER_MIN = 420;
 const GLOBAL_PRESET_LIMIT = 64;
 const TAG_LIMIT = 32;
@@ -2176,6 +2380,8 @@ const worldbookPickerOpen = ref(false);
 const worldbookPickerSearchText = ref('');
 const worldbookPickerRef = ref<HTMLElement | null>(null);
 const worldbookPickerSearchInputRef = ref<HTMLInputElement | null>(null);
+const focusToolbarRef = ref<HTMLElement | null>(null);
+const focusWorldbookMenuRef = ref<HTMLElement | null>(null);
 const rolePickerOpen = ref(false);
 const rolePickerRef = ref<HTMLElement | null>(null);
 const rolePickerSearchInputRef = ref<HTMLInputElement | null>(null);
@@ -2183,6 +2389,19 @@ const currentTheme = ref<ThemeKey>('ocean');
 const themePickerOpen = ref(false);
 const globalWorldbookMode = ref(false);
 const aiGeneratorMode = ref(false);
+const isFocusEditing = ref(false);
+const focusWorldbookMenuOpen = ref(false);
+const focusToolsExpanded = ref(false);
+const focusToolsTriggerVisible = ref(true);
+const focusMetaPanel = reactive<Record<FocusMetaPanelKey, boolean>>({
+  comment: false,
+  keywords: false,
+});
+const focusSidePanelState = reactive<Record<FocusSidePanelKey, boolean>>({
+  strategy: false,
+  insertion: false,
+  recursion: false,
+});
 
 // Floor extraction button visibility (synced via localStorage + custom event)
 const FAB_VISIBLE_KEY = '__WB_FAB_VISIBLE__';
@@ -2310,8 +2529,10 @@ const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 14
 const mainLayoutRef = ref<HTMLElement | null>(null);
 const editorShellRef = ref<HTMLElement | null>(null);
 const contentTextareaRef = ref<HTMLTextAreaElement | null>(null);
-const mainPaneWidth = ref(320);
-const editorSideWidth = ref(360);
+const mainPaneWidth = ref(MAIN_PANE_DEFAULT);
+const editorSideWidth = ref(EDITOR_SIDE_DEFAULT);
+const focusMainPaneWidth = ref(FOCUS_MAIN_PANE_DEFAULT);
+const focusEditorSideWidth = ref(FOCUS_EDITOR_SIDE_DEFAULT);
 const paneResizeState = ref<PaneResizeState | null>(null);
 const hostResizeWindow = ref<Window | null>(null);
 
@@ -2396,6 +2617,12 @@ const totalContentChars = computed(() =>
 
 const hasUnsavedChanges = computed(() => draftEntriesDigest.value !== originalEntriesDigest.value);
 const isCompactLayout = computed(() => viewportWidth.value <= 1100);
+const isDesktopFocusMode = computed(() => !isMobile.value && !isCompactLayout.value && isFocusEditing.value);
+const isFocusToolbarCompact = computed(() => isDesktopFocusMode.value && viewportWidth.value < 1360);
+const activeMainPaneMin = computed(() => (isDesktopFocusMode.value ? FOCUS_MAIN_PANE_MIN : MAIN_PANE_MIN));
+const activeEditorSideMin = computed(() => (isDesktopFocusMode.value ? FOCUS_EDITOR_SIDE_MIN : EDITOR_SIDE_MIN));
+const activeMainPaneWidth = computed(() => (isDesktopFocusMode.value ? focusMainPaneWidth.value : mainPaneWidth.value));
+const activeEditorSideWidth = computed(() => (isDesktopFocusMode.value ? focusEditorSideWidth.value : editorSideWidth.value));
 
 const mainLayoutStyle = computed<Record<string, string> | undefined>(() => {
   if (isMobile.value) {
@@ -2409,7 +2636,7 @@ const mainLayoutStyle = computed<Record<string, string> | undefined>(() => {
     return undefined;
   }
   return {
-    gridTemplateColumns: `minmax(${MAIN_PANE_MIN}px, min(${mainPaneWidth.value}px, calc(100% - ${MAIN_EDITOR_MIN + RESIZE_HANDLE_SIZE}px))) ${RESIZE_HANDLE_SIZE}px minmax(0, 1fr)`,
+    gridTemplateColumns: `minmax(${activeMainPaneMin.value}px, min(${activeMainPaneWidth.value}px, calc(100% - ${MAIN_EDITOR_MIN + RESIZE_HANDLE_SIZE}px))) ${RESIZE_HANDLE_SIZE}px minmax(0, 1fr)`,
   };
 });
 
@@ -2418,7 +2645,7 @@ const editorShellStyle = computed<Record<string, string> | undefined>(() => {
     return undefined;
   }
   return {
-    gridTemplateColumns: `minmax(0, 1fr) ${RESIZE_HANDLE_SIZE}px minmax(${EDITOR_SIDE_MIN}px, min(${editorSideWidth.value}px, calc(100% - ${EDITOR_CENTER_MIN + RESIZE_HANDLE_SIZE}px)))`,
+    gridTemplateColumns: `minmax(0, 1fr) ${RESIZE_HANDLE_SIZE}px minmax(${activeEditorSideMin.value}px, min(${activeEditorSideWidth.value}px, calc(100% - ${EDITOR_CENTER_MIN + RESIZE_HANDLE_SIZE}px)))`,
   };
 });
 
@@ -2773,6 +3000,46 @@ const selectedTokenEstimate = computed(() => {
   return Math.max(1, Math.round(chars / 3.6));
 });
 
+const focusCommentSummary = computed(() => {
+  const name = selectedEntry.value?.name?.trim();
+  if (!name) {
+    return '未命名';
+  }
+  return name.length > 20 ? `${name.slice(0, 20)}...` : name;
+});
+
+const focusKeywordSummary = computed(() => {
+  if (!selectedEntry.value) {
+    return '主0 / 次0';
+  }
+  return `主${selectedEntry.value.strategy.keys.length} / 次${selectedEntry.value.strategy.keys_secondary.keys.length}`;
+});
+
+const focusStrategySummary = computed(() => {
+  if (!selectedEntry.value) {
+    return '-';
+  }
+  return `${getEntryStatusLabel(selectedEntry.value)} · ${selectedEntry.value.probability}%`;
+});
+
+const focusInsertionSummary = computed(() => {
+  if (!selectedEntry.value) {
+    return '-';
+  }
+  return `${getPositionTypeLabel(selectedEntry.value.position.type)} · #${selectedEntry.value.position.order}`;
+});
+
+const focusRecursionSummary = computed(() => {
+  if (!selectedEntry.value) {
+    return '-';
+  }
+  const tags: string[] = [];
+  tags.push(selectedEntry.value.recursion.prevent_incoming ? '🚫入' : '入✓');
+  tags.push(selectedEntry.value.recursion.prevent_outgoing ? '🚫出' : '出✓');
+  tags.push(`d:${selectedEffectDelayText.value || 'null'}`);
+  return tags.join(' · ');
+});
+
 function confirmDiscardUnsavedChanges(options: { source?: SelectionSource; reason?: string } = {}): boolean {
   if (!hasUnsavedChanges.value) {
     return true;
@@ -2847,6 +3114,13 @@ watch(
     // Sync raw keyword text when entry selection changes
     selectedKeysRaw.value = selectedKeysText.value;
     selectedSecondaryKeysRaw.value = selectedSecondaryKeysText.value;
+    if (isDesktopFocusMode.value) {
+      focusMetaPanel.comment = false;
+      focusMetaPanel.keywords = false;
+      focusSidePanelState.strategy = false;
+      focusSidePanelState.insertion = false;
+      focusSidePanelState.recursion = false;
+    }
   },
 );
 
@@ -3425,6 +3699,31 @@ function getNextUid(entries: WorldbookEntry[]): number {
   return Math.max(...entries.map(entry => entry.uid)) + 1;
 }
 
+function createDefaultLayoutState(): LayoutState {
+  return {
+    focus_mode: false,
+    normal_left_width: MAIN_PANE_DEFAULT,
+    normal_right_width: EDITOR_SIDE_DEFAULT,
+    focus_left_width: FOCUS_MAIN_PANE_DEFAULT,
+    focus_right_width: FOCUS_EDITOR_SIDE_DEFAULT,
+  };
+}
+
+function normalizeLayoutState(input: unknown): LayoutState {
+  const fallback = createDefaultLayoutState();
+  const raw = asRecord(input);
+  if (!raw) {
+    return fallback;
+  }
+  return {
+    focus_mode: raw.focus_mode === true,
+    normal_left_width: clampNumber(Math.floor(toNumberSafe(raw.normal_left_width, fallback.normal_left_width)), MAIN_PANE_MIN, 1200),
+    normal_right_width: clampNumber(Math.floor(toNumberSafe(raw.normal_right_width, fallback.normal_right_width)), EDITOR_SIDE_MIN, 1200),
+    focus_left_width: clampNumber(Math.floor(toNumberSafe(raw.focus_left_width, fallback.focus_left_width)), FOCUS_MAIN_PANE_MIN, 800),
+    focus_right_width: clampNumber(Math.floor(toNumberSafe(raw.focus_right_width, fallback.focus_right_width)), FOCUS_EDITOR_SIDE_MIN, 800),
+  };
+}
+
 function createDefaultPersistedState(): PersistedState {
   return {
     last_worldbook: '',
@@ -3447,6 +3746,7 @@ function createDefaultPersistedState(): PersistedState {
       max_tokens: 4096,
       temperature: 1,
     },
+    layout: createDefaultLayoutState(),
   };
 }
 
@@ -3631,6 +3931,7 @@ function normalizePersistedState(input: unknown): PersistedState {
         temperature: toNumberSafe(raw.temperature, 1),
       } as AIApiConfig;
     })(),
+    layout: normalizeLayoutState(root.layout),
   };
 }
 
@@ -3665,6 +3966,27 @@ function updatePersistedState(mutator: (state: PersistedState) => void): void {
   const state = readPersistedState();
   mutator(state);
   writePersistedState(state);
+}
+
+function applyLayoutStateFromPersisted(): void {
+  const layout = normalizeLayoutState(persistedState.value.layout);
+  isFocusEditing.value = layout.focus_mode;
+  mainPaneWidth.value = layout.normal_left_width;
+  editorSideWidth.value = layout.normal_right_width;
+  focusMainPaneWidth.value = layout.focus_left_width;
+  focusEditorSideWidth.value = layout.focus_right_width;
+}
+
+function persistLayoutState(): void {
+  updatePersistedState(state => {
+    state.layout = {
+      focus_mode: isFocusEditing.value,
+      normal_left_width: mainPaneWidth.value,
+      normal_right_width: editorSideWidth.value,
+      focus_left_width: focusMainPaneWidth.value,
+      focus_right_width: focusEditorSideWidth.value,
+    };
+  });
 }
 
 // ── AI Chat: computed ──────────────────────────────────────────────
@@ -6183,6 +6505,94 @@ function openRolePicker(): void {
   });
 }
 
+function resetFocusPanels(): void {
+  focusMetaPanel.comment = false;
+  focusMetaPanel.keywords = false;
+  focusSidePanelState.strategy = false;
+  focusSidePanelState.insertion = false;
+  focusSidePanelState.recursion = false;
+  focusToolsExpanded.value = false;
+  focusToolsTriggerVisible.value = true;
+  focusWorldbookMenuOpen.value = false;
+}
+
+function toggleFocusMetaPanel(panel: FocusMetaPanelKey): void {
+  focusMetaPanel[panel] = !focusMetaPanel[panel];
+}
+
+function toggleFocusSidePanel(panel: FocusSidePanelKey): void {
+  focusSidePanelState[panel] = !focusSidePanelState[panel];
+}
+
+function closeFocusWorldbookMenu(): void {
+  focusWorldbookMenuOpen.value = false;
+}
+
+function toggleFocusWorldbookMenu(): void {
+  if (!focusWorldbookMenuOpen.value) {
+    closeFocusToolsBand();
+  }
+  focusWorldbookMenuOpen.value = !focusWorldbookMenuOpen.value;
+}
+
+function openFocusToolsBand(): void {
+  if (focusToolsExpanded.value || !focusToolsTriggerVisible.value) {
+    return;
+  }
+  closeFocusWorldbookMenu();
+  focusToolsTriggerVisible.value = false;
+  focusToolsExpanded.value = true;
+}
+
+function closeFocusToolsBand(): void {
+  if (!focusToolsExpanded.value) {
+    focusToolsTriggerVisible.value = true;
+    return;
+  }
+  focusToolsExpanded.value = false;
+}
+
+function onFocusToolsBandAfterLeave(): void {
+  if (!focusToolsExpanded.value) {
+    focusToolsTriggerVisible.value = true;
+  }
+}
+
+function runFocusWorldbookAction(action: 'create' | 'duplicate' | 'delete' | 'export' | 'import'): void {
+  closeFocusWorldbookMenu();
+  if (action === 'create') {
+    void createNewWorldbook();
+    return;
+  }
+  if (action === 'duplicate') {
+    void duplicateWorldbook();
+    return;
+  }
+  if (action === 'delete') {
+    void deleteCurrentWorldbook();
+    return;
+  }
+  if (action === 'export') {
+    exportCurrentWorldbook();
+    return;
+  }
+  triggerImport();
+}
+
+function toggleFocusEditing(): void {
+  isFocusEditing.value = !isFocusEditing.value;
+  if (isFocusEditing.value) {
+    resetFocusPanels();
+  } else {
+    closeFocusWorldbookMenu();
+    closeFocusToolsBand();
+  }
+  void nextTick(() => {
+    clampPaneWidths();
+    persistLayoutState();
+  });
+}
+
 function toggleWorldbookPicker(): void {
   if (worldbookPickerOpen.value) {
     closeWorldbookPicker();
@@ -6242,13 +6652,14 @@ function bindFirstRoleCandidate(): void {
 }
 
 function onHostPointerDownForWorldbookPicker(event: PointerEvent): void {
-  if (!worldbookPickerOpen.value && !rolePickerOpen.value && !themePickerOpen.value) {
+  if (!worldbookPickerOpen.value && !rolePickerOpen.value && !themePickerOpen.value && !focusWorldbookMenuOpen.value) {
     return;
   }
   const target = event.target as Node | null;
   if (!target) {
     closeWorldbookPicker();
     closeRolePicker();
+    closeFocusWorldbookMenu();
     themePickerOpen.value = false;
     return;
   }
@@ -6270,15 +6681,23 @@ function onHostPointerDownForWorldbookPicker(event: PointerEvent): void {
   if (themePickerOpen.value) {
     themePickerOpen.value = false;
   }
+
+  if (focusWorldbookMenuOpen.value) {
+    const focusMenuRoot = focusWorldbookMenuRef.value;
+    if (!focusMenuRoot || !focusMenuRoot.contains(target)) {
+      closeFocusWorldbookMenu();
+    }
+  }
 }
 
 function onHostKeyDownForWorldbookPicker(event: KeyboardEvent): void {
-  if (!worldbookPickerOpen.value && !rolePickerOpen.value) {
+  if (!worldbookPickerOpen.value && !rolePickerOpen.value && !focusWorldbookMenuOpen.value) {
     return;
   }
   if (event.key === 'Escape') {
     closeWorldbookPicker();
     closeRolePicker();
+    closeFocusWorldbookMenu();
   }
 }
 
@@ -6662,16 +7081,27 @@ function clampPaneWidths(): void {
     return;
   }
 
+  const mainMin = isDesktopFocusMode.value ? FOCUS_MAIN_PANE_MIN : MAIN_PANE_MIN;
+  const sideMin = isDesktopFocusMode.value ? FOCUS_EDITOR_SIDE_MIN : EDITOR_SIDE_MIN;
+
   const mainRect = mainLayoutRef.value?.getBoundingClientRect();
   if (mainRect) {
-    const maxLeft = Math.max(MAIN_PANE_MIN, Math.floor(mainRect.width - MAIN_EDITOR_MIN - RESIZE_HANDLE_SIZE));
-    mainPaneWidth.value = clampNumber(mainPaneWidth.value, MAIN_PANE_MIN, maxLeft);
+    const maxLeft = Math.max(mainMin, Math.floor(mainRect.width - MAIN_EDITOR_MIN - RESIZE_HANDLE_SIZE));
+    if (isDesktopFocusMode.value) {
+      focusMainPaneWidth.value = clampNumber(focusMainPaneWidth.value, mainMin, maxLeft);
+    } else {
+      mainPaneWidth.value = clampNumber(mainPaneWidth.value, mainMin, maxLeft);
+    }
   }
 
   const editorRect = editorShellRef.value?.getBoundingClientRect();
   if (editorRect) {
-    const maxSide = Math.max(EDITOR_SIDE_MIN, Math.floor(editorRect.width - EDITOR_CENTER_MIN - RESIZE_HANDLE_SIZE));
-    editorSideWidth.value = clampNumber(editorSideWidth.value, EDITOR_SIDE_MIN, maxSide);
+    const maxSide = Math.max(sideMin, Math.floor(editorRect.width - EDITOR_CENTER_MIN - RESIZE_HANDLE_SIZE));
+    if (isDesktopFocusMode.value) {
+      focusEditorSideWidth.value = clampNumber(focusEditorSideWidth.value, sideMin, maxSide);
+    } else {
+      editorSideWidth.value = clampNumber(editorSideWidth.value, sideMin, maxSide);
+    }
   }
 }
 
@@ -6794,8 +7224,13 @@ function onPaneResizeMove(event: PointerEvent): void {
       return;
     }
     const left = Math.floor(event.clientX - rect.left);
-    const maxLeft = Math.max(MAIN_PANE_MIN, Math.floor(rect.width - MAIN_EDITOR_MIN - RESIZE_HANDLE_SIZE));
-    mainPaneWidth.value = clampNumber(left, MAIN_PANE_MIN, maxLeft);
+    const minLeft = isDesktopFocusMode.value ? FOCUS_MAIN_PANE_MIN : MAIN_PANE_MIN;
+    const maxLeft = Math.max(minLeft, Math.floor(rect.width - MAIN_EDITOR_MIN - RESIZE_HANDLE_SIZE));
+    if (isDesktopFocusMode.value) {
+      focusMainPaneWidth.value = clampNumber(left, minLeft, maxLeft);
+    } else {
+      mainPaneWidth.value = clampNumber(left, minLeft, maxLeft);
+    }
     return;
   }
 
@@ -6804,8 +7239,13 @@ function onPaneResizeMove(event: PointerEvent): void {
     return;
   }
   const side = Math.floor(rect.right - event.clientX);
-  const maxSide = Math.max(EDITOR_SIDE_MIN, Math.floor(rect.width - EDITOR_CENTER_MIN - RESIZE_HANDLE_SIZE));
-  editorSideWidth.value = clampNumber(side, EDITOR_SIDE_MIN, maxSide);
+  const minSide = isDesktopFocusMode.value ? FOCUS_EDITOR_SIDE_MIN : EDITOR_SIDE_MIN;
+  const maxSide = Math.max(minSide, Math.floor(rect.width - EDITOR_CENTER_MIN - RESIZE_HANDLE_SIZE));
+  if (isDesktopFocusMode.value) {
+    focusEditorSideWidth.value = clampNumber(side, minSide, maxSide);
+  } else {
+    editorSideWidth.value = clampNumber(side, minSide, maxSide);
+  }
 }
 
 function stopPaneResize(): void {
@@ -6817,6 +7257,9 @@ function stopPaneResize(): void {
     state.win.removeEventListener('blur', stopPaneResize);
   }
   paneResizeState.value = null;
+  if (!isCompactLayout.value) {
+    persistLayoutState();
+  }
 }
 
 function onPanelRefresh(): void {
@@ -6877,6 +7320,10 @@ onMounted(() => {
   }
   persistedState.value = readPersistedState();
   syncSelectedGlobalPresetFromState();
+  applyLayoutStateFromPersisted();
+  if (isFocusEditing.value) {
+    resetFocusPanels();
+  }
 
   subscriptions.push(
     eventOn(tavern_events.WORLD_INFO_ACTIVATED, entries => {
@@ -7080,6 +7527,164 @@ watch(hasUnsavedChanges, (val) => {
   background: var(--wb-bg-panel);
 }
 
+.wb-focus-toolbar {
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+  background: var(--wb-bg-panel);
+  border: 1px solid var(--wb-border-subtle);
+  transition: padding 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wb-focus-toolbar.compact {
+  padding: 8px 10px;
+}
+
+.wb-focus-toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.wb-focus-core-group,
+.wb-focus-tool-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.wb-focus-core-group {
+  flex: 1 1 auto;
+}
+
+.focus-toolbar-label {
+  min-width: 220px;
+  flex: 1 1 auto;
+}
+
+.focus-toolbar-label-text {
+  white-space: nowrap;
+}
+
+.wb-focus-tool-entry .btn {
+  white-space: nowrap;
+}
+
+.wb-focus-toolbar.compact .btn {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.focus-menu-wrap {
+  position: relative;
+}
+
+.focus-menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 10140;
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: 10px;
+  background: var(--wb-dropdown-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.4);
+  padding: 8px;
+  min-width: 168px;
+  display: grid;
+  gap: 6px;
+}
+
+.focus-menu-pop-enter-active,
+.focus-menu-pop-leave-active {
+  transition: opacity 180ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.focus-menu-pop-enter-from,
+.focus-menu-pop-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+}
+
+.wb-focus-tools-band {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+  justify-self: end;
+  margin-left: auto;
+  max-width: 100%;
+  padding-top: 2px;
+}
+
+.wb-focus-tools-band > .btn {
+  animation: focus-tool-stagger 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wb-focus-tools-band > .btn:nth-child(2) { animation-delay: 20ms; }
+.wb-focus-tools-band > .btn:nth-child(3) { animation-delay: 40ms; }
+.wb-focus-tools-band > .btn:nth-child(4) { animation-delay: 60ms; }
+.wb-focus-tools-band > .btn:nth-child(5) { animation-delay: 80ms; }
+.wb-focus-tools-band > .btn:nth-child(6) { animation-delay: 100ms; }
+.wb-focus-tools-band > .btn:nth-child(7) { animation-delay: 120ms; }
+.wb-focus-tools-band > .btn:nth-child(8) { animation-delay: 140ms; }
+.wb-focus-tools-band > .btn:nth-child(9) { animation-delay: 160ms; }
+.wb-focus-tools-band > .btn:nth-child(10) { animation-delay: 180ms; }
+
+@keyframes focus-tool-stagger {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.focus-tools-band-enter-active,
+.focus-tools-band-leave-active {
+  transition: opacity 220ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1), max-height 220ms ease;
+  transform-origin: top right;
+}
+
+.focus-tools-band-enter-from,
+.focus-tools-band-leave-to {
+  opacity: 0;
+  transform: translate(18px, -8px) scale(0.96);
+  max-height: 0;
+}
+
+.focus-tools-band-enter-to,
+.focus-tools-band-leave-from {
+  opacity: 1;
+  transform: translate(0, 0) scale(1);
+  max-height: 300px;
+}
+
+.focus-tools-trigger-enter-active,
+.focus-tools-trigger-leave-active {
+  transition: opacity 140ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.focus-tools-trigger-enter-from,
+.focus-tools-trigger-leave-to {
+  opacity: 0;
+  transform: translate(-14px, 10px);
+}
+
+.focus-tools-collapse {
+  margin-left: auto;
+}
+
 .toolbar-label {
   display: inline-flex;
   align-items: center;
@@ -7195,6 +7800,11 @@ watch(hasUnsavedChanges, (val) => {
   display: grid;
   gap: 8px;
   background: var(--wb-bg-panel);
+}
+
+.wb-bindings.focus-bindings {
+  padding: 0;
+  background: transparent;
 }
 
 .wb-history-shortcuts {
@@ -7553,8 +8163,9 @@ watch(hasUnsavedChanges, (val) => {
   flex: 1;
   min-height: 60vh;
   display: grid;
-  grid-template-columns: 320px 10px minmax(0, 1fr);
+  grid-template-columns: 280px 10px minmax(0, 1fr);
   gap: 0;
+  transition: grid-template-columns 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .wb-entry-list,
@@ -7774,6 +8385,29 @@ watch(hasUnsavedChanges, (val) => {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 10px 360px;
   gap: 0;
+  transition: grid-template-columns 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wb-main-layout.focus-mode .wb-entry-list {
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: 12px;
+  padding: 6px;
+  background: var(--wb-bg-panel);
+}
+
+.wb-main-layout.focus-mode .list-scroll {
+  padding: 2px;
+}
+
+.wb-main-layout.focus-mode .entry-item {
+  padding: 9px 10px 9px 14px;
+  border-radius: 8px;
+  margin-bottom: 4px;
+  gap: 4px;
+}
+
+.wb-main-layout.focus-mode .entry-item-title {
+  font-size: 12px;
 }
 
 .wb-resize-handle {
@@ -7814,6 +8448,10 @@ watch(hasUnsavedChanges, (val) => {
   box-shadow: 0 8px 32px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
 }
 
+.editor-center.focus {
+  padding: 18px;
+}
+
 .editor-head {
   display: flex;
   justify-content: space-between;
@@ -7821,6 +8459,62 @@ watch(hasUnsavedChanges, (val) => {
   align-items: flex-end;
   border-bottom: 1px solid var(--wb-border-subtle);
   padding-bottom: 16px;
+}
+
+.editor-head.focus {
+  align-items: center;
+  gap: 10px;
+}
+
+.focus-meta-summary-row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.focus-meta-chip {
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: 999px;
+  background: var(--wb-input-bg);
+  color: var(--wb-text-main);
+  padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  max-width: 48%;
+}
+
+.focus-meta-chip strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focus-meta-chip.active {
+  border-color: var(--wb-primary-light);
+  background: var(--wb-primary-soft);
+}
+
+.focus-meta-panel {
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--wb-input-bg);
+}
+
+.focus-meta-panel-enter-active,
+.focus-meta-panel-leave-active {
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.focus-meta-panel-enter-from,
+.focus-meta-panel-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 
 .editor-comment {
@@ -7947,12 +8641,72 @@ watch(hasUnsavedChanges, (val) => {
   margin-bottom: 7px;
 }
 
+.editor-collapsible-group {
+  display: grid;
+  gap: 8px;
+}
+
+.editor-mini-collapse {
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: 10px;
+  background: var(--wb-input-bg);
+}
+
+.editor-mini-collapse > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  color: var(--wb-primary-light);
+  font-size: 12px;
+}
+
+.editor-mini-collapse > summary::-webkit-details-marker {
+  display: none;
+}
+
+.editor-mini-collapse > summary::after {
+  content: '▾';
+  margin-left: 6px;
+  color: var(--wb-text-muted);
+  transform: rotate(-90deg);
+  transition: transform 0.2s ease;
+}
+
+.editor-mini-collapse[open] > summary::after {
+  transform: rotate(0deg);
+}
+
+.editor-mini-collapse-value {
+  margin-left: auto;
+  color: var(--wb-text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-mini-collapse-body {
+  padding: 0 10px 10px;
+}
+
+.editor-mini-collapse.disabled {
+  opacity: 0.56;
+}
+
 .editor-side {
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-height: 0;
   overflow: auto;
+}
+
+.editor-side.focus .editor-grid.two-cols,
+.editor-side.focus .editor-grid.three-cols {
+  grid-template-columns: 1fr;
 }
 
 .editor-card {
@@ -7963,6 +8717,52 @@ watch(hasUnsavedChanges, (val) => {
   display: grid;
   gap: 10px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+}
+
+.focus-side-card {
+  transition: border-color 220ms ease, box-shadow 220ms ease;
+}
+
+.focus-side-summary {
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: 10px;
+  background: var(--wb-input-bg);
+  color: var(--wb-text-main);
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.focus-side-summary-title {
+  color: var(--wb-primary);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.focus-side-summary-value {
+  color: var(--wb-text-muted);
+  margin-left: auto;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focus-side-summary-arrow {
+  color: var(--wb-text-muted);
+  font-size: 12px;
+}
+
+.focus-side-content {
+  display: grid;
+  gap: 10px;
+}
+
+.focus-side-content.hidden {
+  display: none;
 }
 
 .editor-card h4 {

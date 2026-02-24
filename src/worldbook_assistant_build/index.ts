@@ -121,7 +121,7 @@ function ensurePanelStyle(): void {
   margin: auto;
   transform: scale(0.95);
   transform-origin: center center;
-  width: min(1280px, calc(100vw - 120px));
+  width: min(1680px, 92vw);
   height: calc(100vh - 16px);
   min-width: 920px;
   min-height: 560px;
