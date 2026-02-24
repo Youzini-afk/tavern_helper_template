@@ -737,6 +737,8 @@ function createFab(): void {
   fab.id = FAB_ID;
   fab.textContent = '📖';
   fab.title = '世界书助手';
+  fab.setAttribute('tabindex', '-1');
+  fab.setAttribute('inputmode', 'none');
 
   // On mobile, position:fixed breaks due to CSS transforms.
   // Use position:absolute on <html> + scroll listener to simulate fixed behavior.
