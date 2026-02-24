@@ -485,6 +485,11 @@
               导出
             </button>
             <button class="btn" type="button" @click="triggerImport">导入</button>
+            <div class="focus-cine-sink-row" aria-hidden="true">
+              <span class="focus-cine-sink" data-focus-sink="save_btn"></span>
+              <span class="focus-cine-sink" data-focus-sink="more_btn"></span>
+              <span class="focus-cine-sink" data-focus-sink="tools_btn"></span>
+            </div>
           </section>
 
           <section v-else ref="focusToolbarRef" class="wb-focus-toolbar" :class="{ compact: isFocusToolbarCompact }">
@@ -1987,6 +1992,12 @@ interface PaneResizeState {
 }
 
 interface FocusHeroSnapshot {
+  key: FocusHeroKey;
+  element: HTMLElement;
+  rect: DOMRect;
+}
+
+interface FocusSinkSnapshot {
   key: FocusHeroKey;
   element: HTMLElement;
   rect: DOMRect;
@@ -6684,24 +6695,45 @@ function collectFocusHeroSnapshots(): Map<FocusHeroKey, FocusHeroSnapshot> {
   return snapshots;
 }
 
-function pickNearestHeroSnapshot(anchorRect: DOMRect, snapshots: FocusHeroSnapshot[]): FocusHeroSnapshot | null {
-  if (!snapshots.length) {
-    return null;
+function collectFocusSinkSnapshots(): Map<FocusHeroKey, FocusSinkSnapshot> {
+  const snapshots = new Map<FocusHeroKey, FocusSinkSnapshot>();
+  const root = rootRef.value;
+  if (!root) {
+    return snapshots;
   }
-  const anchorX = anchorRect.left + anchorRect.width / 2;
-  const anchorY = anchorRect.top + anchorRect.height / 2;
-  let nearest = snapshots[0];
-  let nearestDistance = Number.POSITIVE_INFINITY;
-  for (const item of snapshots) {
-    const itemX = item.rect.left + item.rect.width / 2;
-    const itemY = item.rect.top + item.rect.height / 2;
-    const distance = Math.hypot(anchorX - itemX, anchorY - itemY);
-    if (distance < nearestDistance) {
-      nearestDistance = distance;
-      nearest = item;
+  for (const key of FOCUS_HERO_KEYS) {
+    const nodes = Array.from(root.querySelectorAll<HTMLElement>(`[data-focus-sink="${key}"]`));
+    const element = nodes.find(node => node.isConnected && node.getBoundingClientRect().width > 1 && node.getBoundingClientRect().height > 1) ?? null;
+    if (!element) {
+      continue;
+    }
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 1 || rect.height <= 1) {
+      continue;
+    }
+    snapshots.set(key, { key, element, rect });
+  }
+  return snapshots;
+}
+
+function resolveFocusFallbackRect(
+  heroMap: Map<FocusHeroKey, FocusHeroSnapshot>,
+  sinkMap: Map<FocusHeroKey, FocusSinkSnapshot>,
+): DOMRect | null {
+  const priority: FocusHeroKey[] = ['focus_toggle', 'worldbook_picker', 'find_btn', 'save_btn', 'more_btn', 'tools_btn'];
+  for (const key of priority) {
+    const hero = heroMap.get(key);
+    if (hero) {
+      return hero.rect;
     }
   }
-  return nearest;
+  for (const key of priority) {
+    const sink = sinkMap.get(key);
+    if (sink) {
+      return sink.rect;
+    }
+  }
+  return null;
 }
 
 function clearFocusCineArtifacts(): void {
@@ -6719,34 +6751,39 @@ function clearFocusCineArtifacts(): void {
 function mountFocusCineGhosts(
   sourceMap: Map<FocusHeroKey, FocusHeroSnapshot>,
   targetMap: Map<FocusHeroKey, FocusHeroSnapshot>,
+  sourceSinkMap: Map<FocusHeroKey, FocusSinkSnapshot>,
+  targetSinkMap: Map<FocusHeroKey, FocusSinkSnapshot>,
 ): number {
   clearFocusCineArtifacts();
   const overlay = focusCineOverlayRef.value;
   if (!overlay) {
     return 0;
   }
-  const sourceList = Array.from(sourceMap.values());
-  const targetList = Array.from(targetMap.values());
+  const sourceFallbackRect = resolveFocusFallbackRect(sourceMap, sourceSinkMap);
+  const targetFallbackRect = resolveFocusFallbackRect(targetMap, targetSinkMap);
+  const sourceElementFallback = sourceMap.get('focus_toggle')?.element ?? targetMap.get('focus_toggle')?.element ?? null;
   const hiddenTargets = new Set<HTMLElement>();
   let index = 0;
 
   for (const key of FOCUS_HERO_KEYS) {
     const sourceSelf = sourceMap.get(key) ?? null;
     const targetSelf = targetMap.get(key) ?? null;
+    const sourceSink = sourceSinkMap.get(key) ?? null;
+    const targetSink = targetSinkMap.get(key) ?? null;
 
-    if (!sourceSelf && !targetSelf) {
+    if (!sourceSelf && !targetSelf && !sourceSink && !targetSink) {
       continue;
     }
 
-    const sourceAnchor = sourceSelf ?? (targetSelf ? pickNearestHeroSnapshot(targetSelf.rect, sourceList) : null);
-    const targetAnchor = targetSelf ?? (sourceSelf ? pickNearestHeroSnapshot(sourceSelf.rect, targetList) : null);
-    if (!sourceAnchor || !targetAnchor) {
+    const startRect = sourceSelf?.rect ?? sourceSink?.rect ?? sourceFallbackRect;
+    const endRect = targetSelf?.rect ?? targetSink?.rect ?? targetFallbackRect;
+    if (!startRect || !endRect) {
       continue;
     }
-
-    const startRect = sourceSelf?.rect ?? sourceAnchor.rect;
-    const endRect = targetSelf?.rect ?? targetAnchor.rect;
-    const sourceElement = sourceSelf?.element ?? sourceAnchor.element;
+    const sourceElement = sourceSelf?.element ?? targetSelf?.element ?? sourceElementFallback;
+    if (!sourceElement) {
+      continue;
+    }
     const ghost = sourceElement.cloneNode(true) as HTMLElement;
     ghost.classList.add('focus-cine-ghost');
     ghost.removeAttribute('id');
@@ -6802,6 +6839,7 @@ async function runFocusCinematicTransition(nextFocus: boolean): Promise<void> {
   try {
     await nextTick();
     const sourceMap = collectFocusHeroSnapshots();
+    const sourceSinkMap = collectFocusSinkSnapshots();
 
     applyFocusEditingState(nextFocus);
     await nextTick();
@@ -6810,7 +6848,8 @@ async function runFocusCinematicTransition(nextFocus: boolean): Promise<void> {
 
     clampPaneWidths();
     const targetMap = collectFocusHeroSnapshots();
-    const ghostCount = mountFocusCineGhosts(sourceMap, targetMap);
+    const targetSinkMap = collectFocusSinkSnapshots();
+    const ghostCount = mountFocusCineGhosts(sourceMap, targetMap, sourceSinkMap, targetSinkMap);
     if (token !== focusCineToken) {
       return;
     }
@@ -7872,6 +7911,7 @@ watch(hasUnsavedChanges, (val) => {
 }
 
 .wb-toolbar {
+  position: relative;
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -7879,6 +7919,23 @@ watch(hasUnsavedChanges, (val) => {
   border-radius: 12px;
   padding: 10px 12px;
   background: var(--wb-bg-panel);
+}
+
+.focus-cine-sink-row {
+  position: absolute;
+  right: 12px;
+  top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.focus-cine-sink {
+  width: 86px;
+  height: 34px;
+  border-radius: 8px;
 }
 
 .wb-focus-toolbar {
