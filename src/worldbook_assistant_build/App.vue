@@ -2000,21 +2000,55 @@
                   </div>
                 </div>
 
-                <section class="wb-history-diff-wrap">
-                  <div class="wb-history-diff-head">
-                    <div>{{ crossCopyDiffSummary }}</div>
-                    <div v-if="crossCopyDiffRow.target_summary.same_name_matches.length > 1" class="cross-copy-diff-note">
+                <section class="cross-copy-visual-section">
+                  <div class="cross-copy-visual-head">
+                    <strong>字段对比</strong>
+                    <span>{{ crossCopyDiffSummary }}</span>
+                    <span v-if="crossCopyDiffRow.target_summary.same_name_matches.length > 1" class="cross-copy-diff-note">
                       同名命中 {{ crossCopyDiffRow.target_summary.same_name_matches.length }} 条（右侧展示首条）
+                    </span>
+                  </div>
+                  <div class="cross-copy-field-table">
+                    <div class="cross-copy-field-row cross-copy-field-header">
+                      <span>字段</span>
+                      <span>来源</span>
+                      <span>目标</span>
+                      <span>状态</span>
+                    </div>
+                    <div v-for="field in crossCopyFieldDiffRows" :key="field.key" class="cross-copy-field-row" :class="{ changed: field.changed }">
+                      <span class="cross-copy-field-label">{{ field.label }}</span>
+                      <span class="cross-copy-field-value left">{{ field.left }}</span>
+                      <span class="cross-copy-field-value right">{{ field.right }}</span>
+                      <span class="cross-copy-field-state" :class="{ changed: field.changed, same: !field.changed }">
+                        {{ field.changed ? '不同' : '一致' }}
+                      </span>
                     </div>
                   </div>
-                  <div class="wb-history-diff-grid">
-                    <div>
-                      <div class="wb-history-diff-title">Left / 来源条目</div>
-                      <div class="wb-history-diff-body" v-html="crossCopyDiffResult.leftHtml"></div>
+                </section>
+
+                <section class="cross-copy-visual-section">
+                  <div class="cross-copy-visual-head">
+                    <strong>内容差异</strong>
+                    <span>{{ crossCopyContentDiffSummary }}</span>
+                  </div>
+                  <div class="cross-copy-content-grid">
+                    <div class="cross-copy-content-col">
+                      <div class="wb-history-diff-title">Left / 来源内容</div>
+                      <div class="cross-copy-content-body">
+                        <div v-for="(line, idx) in crossCopyContentDiff.left" :key="`cc-left-${idx}`" class="cross-copy-content-line" :class="line.type">
+                          <span class="line-no">{{ line.line_no ?? '' }}</span>
+                          <span class="line-text">{{ line.text || ' ' }}</span>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <div class="wb-history-diff-title">Right / 目标条目</div>
-                      <div class="wb-history-diff-body" v-html="crossCopyDiffResult.rightHtml"></div>
+                    <div class="cross-copy-content-col">
+                      <div class="wb-history-diff-title">Right / 目标内容</div>
+                      <div class="cross-copy-content-body">
+                        <div v-for="(line, idx) in crossCopyContentDiff.right" :key="`cc-right-${idx}`" class="cross-copy-content-line" :class="line.type">
+                          <span class="line-no">{{ line.line_no ?? '' }}</span>
+                          <span class="line-text">{{ line.text || ' ' }}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </section>
@@ -2383,6 +2417,28 @@ interface CrossCopyRow {
   note: string;
   details_open: boolean;
   target_summary: CrossCopyMatchSummary;
+}
+
+interface CrossCopyFieldDiffRow {
+  key: string;
+  label: string;
+  left: string;
+  right: string;
+  changed: boolean;
+}
+
+interface CrossCopyTextDiffLine {
+  type: 'same' | 'add' | 'del' | 'empty';
+  line_no: number | null;
+  text: string;
+}
+
+interface CrossCopyTextDiffResult {
+  left: CrossCopyTextDiffLine[];
+  right: CrossCopyTextDiffLine[];
+  added: number;
+  removed: number;
+  changed: number;
 }
 
 interface WorldbookSwitchOptions {
@@ -3329,11 +3385,19 @@ const crossCopyDiffTargetEntry = computed(() => {
   return getCrossCopyPrimaryTargetMatch(crossCopyDiffRow.value);
 });
 
-const crossCopyDiffResult = computed(() => {
-  return buildDiffHtml(
-    serializeWorldbookEntryForDiff(crossCopyDiffRow.value?.source_entry ?? null),
-    serializeWorldbookEntryForDiff(crossCopyDiffTargetEntry.value),
-  );
+const crossCopyFieldDiffRows = computed<CrossCopyFieldDiffRow[]>(() => {
+  return buildCrossCopyFieldDiffRows(crossCopyDiffRow.value?.source_entry ?? null, crossCopyDiffTargetEntry.value);
+});
+
+const crossCopyContentDiff = computed<CrossCopyTextDiffResult>(() => {
+  const left = crossCopyDiffRow.value?.source_entry.content ?? '';
+  const right = crossCopyDiffTargetEntry.value?.content ?? '';
+  return buildCrossCopyTextDiff(toStringSafe(left), toStringSafe(right));
+});
+
+const crossCopyContentDiffSummary = computed(() => {
+  const result = crossCopyContentDiff.value;
+  return `新增行 ${result.added} / 修改行 ${result.changed} / 删除行 ${result.removed}`;
 });
 
 const crossCopyDiffSummary = computed(() => {
@@ -5550,6 +5614,169 @@ function getCrossCopyRowDiffSummary(row: CrossCopyRow): string {
     return '主要字段一致';
   }
   return diff.join(' / ');
+}
+
+function formatCrossCopyDiffScalar(value: unknown): string {
+  if (value === null || value === undefined) {
+    return 'null';
+  }
+  if (typeof value === 'boolean') {
+    return value ? '是' : '否';
+  }
+  const rendered = toStringSafe(value).trim();
+  return rendered || '(空)';
+}
+
+function formatCrossCopyDiffKeywords(list: unknown[]): string {
+  if (!Array.isArray(list) || !list.length) {
+    return '(空)';
+  }
+  return list.map(item => stringifyKeyword(item as WorldbookKeyword)).join(' , ');
+}
+
+function formatCrossCopyDiffExtra(extra: WorldbookEntry['extra']): string {
+  if (!extra || typeof extra !== 'object') {
+    return '无';
+  }
+  const keys = Object.keys(extra);
+  if (!keys.length) {
+    return '无';
+  }
+  const preview = keys.slice(0, 6).join(', ');
+  return keys.length > 6 ? `${keys.length} 项: ${preview} ...` : `${keys.length} 项: ${preview}`;
+}
+
+function buildCrossCopyFieldDiffRows(source: WorldbookEntry | null, target: WorldbookEntry | null): CrossCopyFieldDiffRow[] {
+  if (!source) {
+    return [];
+  }
+  const rightFallback = '（无命中）';
+  const rows: CrossCopyFieldDiffRow[] = [];
+  const pushRow = (key: string, label: string, left: string, right: string): void => {
+    rows.push({
+      key,
+      label,
+      left,
+      right,
+      changed: left !== right,
+    });
+  };
+
+  pushRow('name', '名称', source.name || '(空)', target ? (target.name || '(空)') : rightFallback);
+  pushRow('enabled', '启用', source.enabled ? '启用' : '禁用', target ? (target.enabled ? '启用' : '禁用') : rightFallback);
+  pushRow('strategy_type', '触发模式', getStrategyTypeLabel(source.strategy.type), target ? getStrategyTypeLabel(target.strategy.type) : rightFallback);
+  pushRow('probability', '概率', `${source.probability}%`, target ? `${target.probability}%` : rightFallback);
+  pushRow('keys', '主要关键词', formatCrossCopyDiffKeywords(source.strategy.keys), target ? formatCrossCopyDiffKeywords(target.strategy.keys) : rightFallback);
+  pushRow(
+    'secondary_keys',
+    '次要关键词',
+    formatCrossCopyDiffKeywords(source.strategy.keys_secondary.keys),
+    target ? formatCrossCopyDiffKeywords(target.strategy.keys_secondary.keys) : rightFallback,
+  );
+  pushRow(
+    'secondary_logic',
+    '次要逻辑',
+    getSecondaryLogicLabel(source.strategy.keys_secondary.logic),
+    target ? getSecondaryLogicLabel(target.strategy.keys_secondary.logic) : rightFallback,
+  );
+  pushRow('position_type', '插入位置', getPositionTypeLabel(source.position.type), target ? getPositionTypeLabel(target.position.type) : rightFallback);
+  pushRow('position_order', '插入权重', String(source.position.order), target ? String(target.position.order) : rightFallback);
+  pushRow(
+    'at_depth_role',
+    'at_depth role',
+    source.position.type === 'at_depth' ? source.position.role : '-',
+    target ? (target.position.type === 'at_depth' ? target.position.role : '-') : rightFallback,
+  );
+  pushRow(
+    'at_depth_depth',
+    'at_depth depth',
+    source.position.type === 'at_depth' ? String(source.position.depth) : '-',
+    target ? (target.position.type === 'at_depth' ? String(target.position.depth) : '-') : rightFallback,
+  );
+  pushRow(
+    'recursion_in',
+    '不可递归命中',
+    source.recursion.prevent_incoming ? '是' : '否',
+    target ? (target.recursion.prevent_incoming ? '是' : '否') : rightFallback,
+  );
+  pushRow(
+    'recursion_out',
+    '阻止后续递归',
+    source.recursion.prevent_outgoing ? '是' : '否',
+    target ? (target.recursion.prevent_outgoing ? '是' : '否') : rightFallback,
+  );
+  pushRow('effect_sticky', 'sticky', formatCrossCopyDiffScalar(source.effect.sticky), target ? formatCrossCopyDiffScalar(target.effect.sticky) : rightFallback);
+  pushRow('effect_cooldown', 'cooldown', formatCrossCopyDiffScalar(source.effect.cooldown), target ? formatCrossCopyDiffScalar(target.effect.cooldown) : rightFallback);
+  pushRow('effect_delay', 'delay', formatCrossCopyDiffScalar(source.effect.delay), target ? formatCrossCopyDiffScalar(target.effect.delay) : rightFallback);
+  pushRow(
+    'effect_delay_until',
+    'delay_until',
+    formatCrossCopyDiffScalar(source.effect.delay_until),
+    target ? formatCrossCopyDiffScalar(target.effect.delay_until) : rightFallback,
+  );
+  pushRow('extra', 'extra 字段', formatCrossCopyDiffExtra(source.extra), target ? formatCrossCopyDiffExtra(target.extra) : rightFallback);
+  return rows;
+}
+
+function buildCrossCopyTextDiff(leftText: string, rightText: string): CrossCopyTextDiffResult {
+  const left: CrossCopyTextDiffLine[] = [];
+  const right: CrossCopyTextDiffLine[] = [];
+  let leftLineNo = 1;
+  let rightLineNo = 1;
+  let addLines = 0;
+  let delLines = 0;
+  const parts = diffLines(leftText, rightText);
+
+  for (const part of parts as Array<{ value: string; added?: boolean; removed?: boolean }>) {
+    const lines = part.value.split('\n');
+    if (lines.length && lines[lines.length - 1] === '') {
+      lines.pop();
+    }
+    if (!lines.length) {
+      continue;
+    }
+
+    if (part.added) {
+      for (const line of lines) {
+        left.push({ type: 'empty', line_no: null, text: '' });
+        right.push({ type: 'add', line_no: rightLineNo, text: line });
+        rightLineNo += 1;
+        addLines += 1;
+      }
+      continue;
+    }
+
+    if (part.removed) {
+      for (const line of lines) {
+        left.push({ type: 'del', line_no: leftLineNo, text: line });
+        right.push({ type: 'empty', line_no: null, text: '' });
+        leftLineNo += 1;
+        delLines += 1;
+      }
+      continue;
+    }
+
+    for (const line of lines) {
+      left.push({ type: 'same', line_no: leftLineNo, text: line });
+      right.push({ type: 'same', line_no: rightLineNo, text: line });
+      leftLineNo += 1;
+      rightLineNo += 1;
+    }
+  }
+
+  if (!left.length && !right.length) {
+    left.push({ type: 'same', line_no: 1, text: '(空内容)' });
+    right.push({ type: 'same', line_no: 1, text: '(空内容)' });
+  }
+
+  const changed = Math.min(addLines, delLines);
+  return {
+    left,
+    right,
+    added: Math.max(0, addLines - changed),
+    removed: Math.max(0, delLines - changed),
+    changed,
+  };
 }
 
 function generateCrossCopyUniqueName(baseName: string, occupiedNameKeys: Set<string>): string {
@@ -9440,13 +9667,16 @@ watch(hasUnsavedChanges, (val) => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: auto;
+  gap: 10px;
+  padding: 0 10px 10px;
 }
 
 .cross-copy-preview-grid.cross-copy-preview-grid-modal {
-  margin-top: 0;
+  margin-top: 10px;
   padding: 10px;
-  border-bottom: 1px solid var(--wb-border-main);
+  border: 1px solid var(--wb-border-main);
+  border-radius: 10px;
   background: var(--wb-bg-panel);
 }
 
@@ -9457,6 +9687,154 @@ watch(hasUnsavedChanges, (val) => {
 .cross-copy-diff-note {
   color: var(--wb-text-muted);
   font-size: 11px;
+}
+
+.cross-copy-visual-section {
+  border: 1px solid var(--wb-border-main);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--wb-input-bg-focus);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cross-copy-visual-head {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--wb-border-main);
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 12px;
+  color: var(--wb-text-muted);
+  background: var(--wb-bg-panel);
+}
+
+.cross-copy-visual-head strong {
+  font-size: 13px;
+  color: var(--wb-primary-light);
+}
+
+.cross-copy-field-table {
+  min-height: 0;
+  overflow: auto;
+}
+
+.cross-copy-field-row {
+  display: grid;
+  grid-template-columns: 140px minmax(220px, 1fr) minmax(220px, 1fr) 68px;
+  gap: 8px;
+  align-items: start;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--wb-border-subtle);
+  font-size: 12px;
+}
+
+.cross-copy-field-row:last-child {
+  border-bottom: none;
+}
+
+.cross-copy-field-row.changed {
+  background: color-mix(in srgb, var(--wb-primary-soft) 35%, transparent);
+}
+
+.cross-copy-field-row.cross-copy-field-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--wb-bg-panel);
+  font-size: 11px;
+  color: var(--wb-text-muted);
+  border-bottom-color: var(--wb-border-main);
+}
+
+.cross-copy-field-label {
+  font-weight: 600;
+  color: var(--wb-text-main);
+}
+
+.cross-copy-field-value {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--wb-text-main);
+}
+
+.cross-copy-field-state {
+  justify-self: end;
+  border: 1px solid var(--wb-border-main);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+}
+
+.cross-copy-field-state.same {
+  color: #22c55e;
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.16);
+}
+
+.cross-copy-field-state.changed {
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.16);
+}
+
+.cross-copy-content-grid {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.cross-copy-content-col {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cross-copy-content-col + .cross-copy-content-col {
+  border-left: 1px solid var(--wb-border-main);
+}
+
+.cross-copy-content-body {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.cross-copy-content-line {
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  align-items: start;
+  border-bottom: 1px solid var(--wb-border-subtle);
+}
+
+.cross-copy-content-line .line-no {
+  color: var(--wb-text-muted);
+  padding: 2px 8px;
+  border-right: 1px solid var(--wb-border-subtle);
+  user-select: none;
+}
+
+.cross-copy-content-line .line-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 2px 8px;
+  color: var(--wb-text-main);
+}
+
+.cross-copy-content-line.add {
+  background: rgba(34, 197, 94, 0.2);
+}
+
+.cross-copy-content-line.del {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.cross-copy-content-line.empty {
+  background: rgba(100, 116, 139, 0.08);
 }
 
 .cross-copy-actions {
@@ -9494,11 +9872,37 @@ watch(hasUnsavedChanges, (val) => {
   .cross-copy-row-actions {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .cross-copy-field-row {
+    grid-template-columns: 120px minmax(0, 1fr) minmax(0, 1fr) 62px;
+  }
 }
 
 @media (max-width: 780px) {
   .cross-copy-preview-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cross-copy-content-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cross-copy-content-col + .cross-copy-content-col {
+    border-left: none;
+    border-top: 1px solid var(--wb-border-main);
+  }
+
+  .cross-copy-field-row.cross-copy-field-header {
+    display: none;
+  }
+
+  .cross-copy-field-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .cross-copy-field-state {
+    justify-self: start;
   }
 }
 
