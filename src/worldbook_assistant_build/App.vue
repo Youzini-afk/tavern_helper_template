@@ -304,6 +304,171 @@
           </div>
           </Transition>
 
+          <!-- Tab: 复制 -->
+          <Transition name="mobile-tab">
+          <div v-show="mobileTab === 'copy'" class="mobile-pane">
+            <section class="cross-copy-panel mobile">
+              <div class="cross-copy-head">
+                <strong>📚 跨世界书复制</strong>
+                <span>{{ crossCopyHasCompared ? `上次比较：${formatDateTime(crossCopyLastComparedAt)}` : '尚未比较' }}</span>
+              </div>
+
+              <div class="cross-copy-controls">
+                <label class="field">
+                  <span>来源世界书</span>
+                  <select v-model="crossCopySourceWorldbook" class="text-input">
+                    <option value="">请选择来源世界书</option>
+                    <option v-for="name in worldbookNames" :key="`m-copy-source-${name}`" :value="name">{{ name }}</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>目标世界书</span>
+                  <select v-model="crossCopyTargetWorldbook" class="text-input">
+                    <option value="">请选择目标世界书</option>
+                    <option v-for="name in worldbookNames" :key="`m-copy-target-${name}`" :value="name">{{ name }}</option>
+                  </select>
+                </label>
+                <label class="checkbox-inline">
+                  <input
+                    v-model="crossCopyUseDraftSourceWhenCurrent"
+                    type="checkbox"
+                    :disabled="!crossCopySourceIsCurrentWorldbook"
+                  />
+                  <span>{{ crossCopySourceVersionLabel }}</span>
+                </label>
+                <label class="checkbox-inline">
+                  <input v-model="crossCopySnapshotBeforeApply" type="checkbox" />
+                  <span>执行前写入目标快照（默认开启）</span>
+                </label>
+                <div class="cross-copy-control-actions">
+                  <button class="btn" type="button" :disabled="!crossCopyCanCompare || crossCopyCompareLoading || crossCopyApplyLoading" @click="refreshCrossCopyComparison">
+                    {{ crossCopyCompareLoading ? '比较中...' : '刷新比较' }}
+                  </button>
+                </div>
+              </div>
+
+              <div v-if="crossCopySourceTargetInvalid" class="cross-copy-inline-tip warning">来源和目标不能相同。</div>
+              <div v-if="crossCopyCompareSummary" class="cross-copy-inline-tip">{{ crossCopyCompareSummary }}</div>
+              <div v-if="crossCopyLastResultSummary" class="cross-copy-inline-tip success">{{ crossCopyLastResultSummary }}</div>
+
+              <div class="cross-copy-grid mobile">
+                <aside class="cross-copy-left">
+                  <div class="cross-copy-list-head">
+                    <strong>来源条目</strong>
+                    <span>{{ crossCopyRows.length }} 条</span>
+                  </div>
+                  <div class="cross-copy-list-tools">
+                    <input v-model="crossCopySearchText" type="text" class="text-input" placeholder="搜索来源条目..." />
+                    <div class="cross-copy-mini-actions">
+                      <button class="btn mini" type="button" :disabled="!crossCopySourceRowsFiltered.length" @click="setCrossCopySelectionForFiltered(true)">全选显示</button>
+                      <button class="btn mini" type="button" :disabled="!crossCopyRows.length" @click="setCrossCopySelectionForAll(false)">全不选</button>
+                    </div>
+                  </div>
+                  <div class="cross-copy-source-list">
+                    <label v-for="row in crossCopySourceRowsFiltered" :key="`m-copy-pick-${row.id}`" class="cross-copy-source-item" :class="{ checked: row.selected }">
+                      <input v-model="row.selected" type="checkbox" :disabled="row.status === 'invalid_same_source_target' || crossCopyApplyLoading" />
+                      <span class="cross-copy-status-dot" :class="getCrossCopyStatusBadgeClass(row.status)"></span>
+                      <span class="cross-copy-source-name" :title="row.source_entry.name || `条目 ${row.source_entry.uid}`">
+                        {{ row.source_entry.name || `条目 ${row.source_entry.uid}` }}
+                      </span>
+                    </label>
+                    <div v-if="!crossCopySourceRowsFiltered.length" class="empty-note">暂无可选条目，请先刷新比较</div>
+                  </div>
+                </aside>
+
+                <section class="cross-copy-right">
+                  <div class="cross-copy-list-head">
+                    <strong>对比与动作</strong>
+                    <span>已选 {{ crossCopySelectedCount }} 条</span>
+                  </div>
+                  <div class="cross-copy-list-tools">
+                    <select v-model="crossCopyStatusFilter" class="text-input">
+                      <option value="all">全部状态</option>
+                      <option v-for="status in CROSS_COPY_STATUS_PRIORITY" :key="`m-copy-filter-${status}`" :value="status">
+                        {{ getCrossCopyStatusLabel(status) }} ({{ crossCopyStatusCounts[status] }})
+                      </option>
+                    </select>
+                  </div>
+                  <div class="cross-copy-rows">
+                    <article v-for="row in crossCopyRowsFiltered" :key="`m-copy-row-${row.id}`" class="cross-copy-row">
+                      <div class="cross-copy-row-head">
+                        <div class="cross-copy-row-title">
+                          <span class="cross-copy-status-badge" :class="getCrossCopyStatusBadgeClass(row.status)">{{ getCrossCopyStatusLabel(row.status) }}</span>
+                          <strong :title="row.source_entry.name || `条目 ${row.source_entry.uid}`">{{ row.source_entry.name || `条目 ${row.source_entry.uid}` }}</strong>
+                        </div>
+                        <label class="checkbox-inline">
+                          <input v-model="row.selected" type="checkbox" :disabled="row.status === 'invalid_same_source_target' || crossCopyApplyLoading" />
+                          <span>选中</span>
+                        </label>
+                      </div>
+                      <div class="cross-copy-row-note">{{ row.note || getCrossCopyRowDiffSummary(row) }}</div>
+                      <div class="cross-copy-row-actions">
+                        <select v-model="row.action" class="text-input" :disabled="!row.selected || row.status === 'invalid_same_source_target' || crossCopyApplyLoading" @change="onCrossCopyRowActionChange(row)">
+                          <option value="skip">{{ getCrossCopyActionLabel('skip') }}</option>
+                          <option value="overwrite">{{ getCrossCopyActionLabel('overwrite') }}</option>
+                          <option value="create">{{ getCrossCopyActionLabel('create') }}</option>
+                          <option value="rename_create">{{ getCrossCopyActionLabel('rename_create') }}</option>
+                        </select>
+                        <input
+                          v-if="row.action === 'rename_create'"
+                          v-model="row.rename_name"
+                          type="text"
+                          class="text-input"
+                          placeholder="输入新名称（自动去重）"
+                          :disabled="!row.selected || crossCopyApplyLoading"
+                          @blur="onCrossCopyRowRenameBlur(row)"
+                        />
+                      </div>
+                      <details class="cross-copy-details">
+                        <summary>查看对比明细</summary>
+                        <div class="cross-copy-preview-grid">
+                          <div class="cross-copy-preview-card">
+                            <strong>来源</strong>
+                            <span class="name">{{ row.source_entry.name || `条目 ${row.source_entry.uid}` }}</span>
+                            <span class="meta">{{ getCrossCopyEntryProfile(row.source_entry) }}</span>
+                            <p>{{ getCrossCopyPreviewText(row.source_entry.content) }}</p>
+                          </div>
+                          <div class="cross-copy-preview-card">
+                            <strong>目标命中</strong>
+                            <template v-if="getCrossCopyPrimaryTargetMatch(row)">
+                              <span class="name">{{ getCrossCopyPrimaryTargetMatch(row)?.name }}</span>
+                              <span class="meta">{{ getCrossCopyEntryProfile(getCrossCopyPrimaryTargetMatch(row) as WorldbookEntry) }}</span>
+                              <p>{{ getCrossCopyPreviewText((getCrossCopyPrimaryTargetMatch(row) as WorldbookEntry).content) }}</p>
+                            </template>
+                            <template v-else>
+                              <span class="meta">无直接命中条目</span>
+                            </template>
+                          </div>
+                        </div>
+                      </details>
+                    </article>
+                    <div v-if="!crossCopyRowsFiltered.length" class="empty-note">当前筛选下无条目</div>
+                  </div>
+                </section>
+              </div>
+
+              <div class="cross-copy-actions mobile">
+                <button class="btn mini" type="button" :disabled="!crossCopyRows.length" @click="setCrossCopySelectionForAll(false)">全不选</button>
+                <button class="btn mini" type="button" :disabled="!crossCopySelectedCount" @click="applyCrossCopyActionByStatus('same_name_changed', 'overwrite')">同名更新→覆盖</button>
+                <button class="btn mini" type="button" :disabled="!crossCopySelectedCount" @click="applyCrossCopyActionByStatus('duplicate_exact', 'skip')">同名同内容→跳过</button>
+                <button class="btn mini" type="button" :disabled="!crossCopySelectedCount" @click="applyCrossCopyActionByStatus('content_duplicate_other_name', 'skip')">异名同内容→跳过</button>
+                <div class="cross-copy-bulk-box">
+                  <select v-model="crossCopyBulkAction" class="text-input">
+                    <option value="skip">{{ getCrossCopyActionLabel('skip') }}</option>
+                    <option value="overwrite">{{ getCrossCopyActionLabel('overwrite') }}</option>
+                    <option value="create">{{ getCrossCopyActionLabel('create') }}</option>
+                    <option value="rename_create">{{ getCrossCopyActionLabel('rename_create') }}</option>
+                  </select>
+                  <button class="btn mini" type="button" :disabled="!crossCopySelectedCount" @click="applyCrossCopyBulkAction()">应用到已选</button>
+                </div>
+                <button class="btn primary" type="button" :disabled="!crossCopyCanApply" @click="applyCrossCopySelection">
+                  {{ crossCopyApplyLoading ? '执行中...' : `执行复制（${crossCopySelectedCount}）` }}
+                </button>
+              </div>
+            </section>
+          </div>
+          </Transition>
+
           <!-- Tab: AI -->
           <Transition name="mobile-tab">
           <div v-show="mobileTab === 'ai'" class="mobile-pane">
@@ -417,6 +582,9 @@
         </button>
         <button @click="mobileTab = 'settings'" :class="{ active: mobileTab === 'settings' }">
           <span class="tab-icon">⚙️</span><span class="tab-label">设置</span>
+        </button>
+        <button @click="mobileTab = 'copy'" :class="{ active: mobileTab === 'copy' }">
+          <span class="tab-icon">📚</span><span class="tab-label">复制</span>
         </button>
         <button v-if="persistedState.show_ai_chat" @click="mobileTab = 'ai'" :class="{ active: mobileTab === 'ai' }">
           <span class="tab-icon">🤖</span><span class="tab-label">AI</span>
@@ -591,6 +759,7 @@
                   <span class="focus-cine-sink" data-focus-sink="tool_ai_generate"></span>
                   <span class="focus-cine-sink" data-focus-sink="tool_extract"></span>
                   <span class="focus-cine-sink" data-focus-sink="tool_tag"></span>
+                  <span class="focus-cine-sink" data-focus-sink="tool_copy"></span>
                   <span class="focus-cine-sink" data-focus-sink="tool_settings"></span>
                   <span class="focus-cine-sink" data-focus-sink="tool_ai_config"></span>
                 </div>
@@ -605,6 +774,7 @@
                 <button v-if="persistedState.show_ai_chat" class="btn history-btn utility-btn" data-focus-hero="tool_ai_generate" type="button" :class="{ active: aiGeneratorMode }" @click="aiToggleMode">🤖 AI 生成</button>
                 <button class="btn history-btn utility-btn" data-focus-hero="tool_extract" type="button" @click="extractFromChat">📥 从聊天提取</button>
                 <button class="btn history-btn utility-btn" data-focus-hero="tool_tag" type="button" :class="{ active: tagEditorMode }" @click="tagToggleMode">🏷️ 标签管理</button>
+                <button class="btn history-btn utility-btn" data-focus-hero="tool_copy" type="button" :class="{ active: crossCopyMode }" @click="toggleCrossCopyMode">📚 跨书复制</button>
                 <button class="btn history-btn utility-btn" data-focus-hero="tool_settings" type="button" @click="showApiSettings = true">⚙️ 设置</button>
                 <button class="btn history-btn utility-btn" data-focus-hero="tool_ai_config" type="button" @click="aiConfigPreview = false; aiConfigChanges = []; aiConfigTargetWorldbook = selectedWorldbookName || ''">🔧 AI配置</button>
                 <button class="btn history-btn utility-btn focus-tools-collapse" type="button" @click="closeFocusToolsBand">收起工具</button>
@@ -690,6 +860,15 @@
                 @click="tagToggleMode"
               >
                 🏷️ 标签管理
+              </button>
+              <button
+                class="btn history-btn utility-btn"
+                data-focus-hero="tool_copy"
+                type="button"
+                :class="{ active: crossCopyMode }"
+                @click="toggleCrossCopyMode"
+              >
+                📚 跨书复制
               </button>
               <button
                 class="btn history-btn utility-btn"
@@ -1022,7 +1201,167 @@
             <div v-else class="empty-note" style="margin-top:20px;">暂无标签，请先创建</div>
           </section>
 
-          <section v-show="!aiGeneratorMode && !tagEditorMode" ref="mainLayoutRef" class="wb-main-layout" :class="{ 'focus-mode': isDesktopFocusMode }" :style="mainLayoutStyle">
+          <section v-if="crossCopyMode" class="cross-copy-panel desktop">
+            <div class="cross-copy-head">
+              <strong>📚 跨世界书复制条目</strong>
+              <span>{{ crossCopyHasCompared ? `上次比较：${formatDateTime(crossCopyLastComparedAt)}` : '尚未比较' }}</span>
+            </div>
+
+            <div class="cross-copy-controls">
+              <label class="field">
+                <span>来源世界书</span>
+                <select v-model="crossCopySourceWorldbook" class="text-input">
+                  <option value="">请选择来源世界书</option>
+                  <option v-for="name in worldbookNames" :key="`d-copy-source-${name}`" :value="name">{{ name }}</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>目标世界书</span>
+                <select v-model="crossCopyTargetWorldbook" class="text-input">
+                  <option value="">请选择目标世界书</option>
+                  <option v-for="name in worldbookNames" :key="`d-copy-target-${name}`" :value="name">{{ name }}</option>
+                </select>
+              </label>
+              <label class="checkbox-inline">
+                <input
+                  v-model="crossCopyUseDraftSourceWhenCurrent"
+                  type="checkbox"
+                  :disabled="!crossCopySourceIsCurrentWorldbook"
+                />
+                <span>{{ crossCopySourceVersionLabel }}</span>
+              </label>
+              <label class="checkbox-inline">
+                <input v-model="crossCopySnapshotBeforeApply" type="checkbox" />
+                <span>执行前写入目标快照</span>
+              </label>
+              <div class="cross-copy-control-actions">
+                <button class="btn" type="button" :disabled="!crossCopyCanCompare || crossCopyCompareLoading || crossCopyApplyLoading" @click="refreshCrossCopyComparison">
+                  {{ crossCopyCompareLoading ? '比较中...' : '刷新比较' }}
+                </button>
+              </div>
+            </div>
+
+            <div v-if="crossCopySourceTargetInvalid" class="cross-copy-inline-tip warning">来源和目标不能相同。</div>
+            <div v-if="crossCopyCompareSummary" class="cross-copy-inline-tip">{{ crossCopyCompareSummary }}</div>
+            <div v-if="crossCopyLastResultSummary" class="cross-copy-inline-tip success">{{ crossCopyLastResultSummary }}</div>
+
+            <div class="cross-copy-grid">
+              <aside class="cross-copy-left">
+                <div class="cross-copy-list-head">
+                  <strong>来源条目</strong>
+                  <span>{{ crossCopyRows.length }} 条</span>
+                </div>
+                <div class="cross-copy-list-tools">
+                  <input v-model="crossCopySearchText" type="text" class="text-input" placeholder="搜索来源名称 / 内容" />
+                  <div class="cross-copy-mini-actions">
+                    <button class="btn mini" type="button" :disabled="!crossCopySourceRowsFiltered.length" @click="setCrossCopySelectionForFiltered(true)">全选显示</button>
+                    <button class="btn mini" type="button" :disabled="!crossCopyRows.length" @click="setCrossCopySelectionForAll(false)">全不选</button>
+                  </div>
+                </div>
+                <div class="cross-copy-source-list">
+                  <label v-for="row in crossCopySourceRowsFiltered" :key="`d-copy-pick-${row.id}`" class="cross-copy-source-item" :class="{ checked: row.selected }">
+                    <input v-model="row.selected" type="checkbox" :disabled="row.status === 'invalid_same_source_target' || crossCopyApplyLoading" />
+                    <span class="cross-copy-status-dot" :class="getCrossCopyStatusBadgeClass(row.status)"></span>
+                    <span class="cross-copy-source-name" :title="row.source_entry.name || `条目 ${row.source_entry.uid}`">
+                      {{ row.source_entry.name || `条目 ${row.source_entry.uid}` }}
+                    </span>
+                  </label>
+                  <div v-if="!crossCopySourceRowsFiltered.length" class="empty-note">暂无可选条目，请先刷新比较</div>
+                </div>
+              </aside>
+
+              <section class="cross-copy-right">
+                <div class="cross-copy-list-head">
+                  <strong>对比与动作</strong>
+                  <span>已选 {{ crossCopySelectedCount }} 条</span>
+                </div>
+                <div class="cross-copy-list-tools">
+                  <select v-model="crossCopyStatusFilter" class="text-input">
+                    <option value="all">全部状态</option>
+                    <option v-for="status in CROSS_COPY_STATUS_PRIORITY" :key="`d-copy-filter-${status}`" :value="status">
+                      {{ getCrossCopyStatusLabel(status) }} ({{ crossCopyStatusCounts[status] }})
+                    </option>
+                  </select>
+                </div>
+                <div class="cross-copy-rows">
+                  <article v-for="row in crossCopyRowsFiltered" :key="`d-copy-row-${row.id}`" class="cross-copy-row">
+                    <div class="cross-copy-row-head">
+                      <div class="cross-copy-row-title">
+                        <span class="cross-copy-status-badge" :class="getCrossCopyStatusBadgeClass(row.status)">{{ getCrossCopyStatusLabel(row.status) }}</span>
+                        <strong :title="row.source_entry.name || `条目 ${row.source_entry.uid}`">{{ row.source_entry.name || `条目 ${row.source_entry.uid}` }}</strong>
+                      </div>
+                      <label class="checkbox-inline">
+                        <input v-model="row.selected" type="checkbox" :disabled="row.status === 'invalid_same_source_target' || crossCopyApplyLoading" />
+                        <span>选中</span>
+                      </label>
+                    </div>
+                    <div class="cross-copy-row-note">{{ row.note || getCrossCopyRowDiffSummary(row) }}</div>
+                    <div class="cross-copy-row-actions">
+                      <select v-model="row.action" class="text-input" :disabled="!row.selected || row.status === 'invalid_same_source_target' || crossCopyApplyLoading" @change="onCrossCopyRowActionChange(row)">
+                        <option value="skip">{{ getCrossCopyActionLabel('skip') }}</option>
+                        <option value="overwrite">{{ getCrossCopyActionLabel('overwrite') }}</option>
+                        <option value="create">{{ getCrossCopyActionLabel('create') }}</option>
+                        <option value="rename_create">{{ getCrossCopyActionLabel('rename_create') }}</option>
+                      </select>
+                      <input
+                        v-if="row.action === 'rename_create'"
+                        v-model="row.rename_name"
+                        type="text"
+                        class="text-input"
+                        placeholder="输入新名称（自动去重）"
+                        :disabled="!row.selected || crossCopyApplyLoading"
+                        @blur="onCrossCopyRowRenameBlur(row)"
+                      />
+                    </div>
+                    <details class="cross-copy-details">
+                      <summary>查看对比明细</summary>
+                      <div class="cross-copy-preview-grid">
+                        <div class="cross-copy-preview-card">
+                          <strong>来源</strong>
+                          <span class="name">{{ row.source_entry.name || `条目 ${row.source_entry.uid}` }}</span>
+                          <span class="meta">{{ getCrossCopyEntryProfile(row.source_entry) }}</span>
+                          <p>{{ getCrossCopyPreviewText(row.source_entry.content) }}</p>
+                        </div>
+                        <div class="cross-copy-preview-card">
+                          <strong>目标命中</strong>
+                          <template v-if="getCrossCopyPrimaryTargetMatch(row)">
+                            <span class="name">{{ getCrossCopyPrimaryTargetMatch(row)?.name }}</span>
+                            <span class="meta">{{ getCrossCopyEntryProfile(getCrossCopyPrimaryTargetMatch(row) as WorldbookEntry) }}</span>
+                            <p>{{ getCrossCopyPreviewText((getCrossCopyPrimaryTargetMatch(row) as WorldbookEntry).content) }}</p>
+                          </template>
+                          <template v-else>
+                            <span class="meta">无直接命中条目</span>
+                          </template>
+                        </div>
+                      </div>
+                    </details>
+                  </article>
+                  <div v-if="!crossCopyRowsFiltered.length" class="empty-note">当前筛选下无条目</div>
+                </div>
+              </section>
+            </div>
+
+            <div class="cross-copy-actions">
+              <button class="btn mini" type="button" :disabled="!crossCopyRows.length" @click="setCrossCopySelectionForAll(false)">全不选</button>
+              <button class="btn mini" type="button" :disabled="!crossCopySelectedCount" @click="applyCrossCopyActionByStatus('same_name_changed', 'overwrite')">同名更新→覆盖</button>
+              <button class="btn mini" type="button" :disabled="!crossCopySelectedCount" @click="applyCrossCopyActionByStatus('duplicate_exact', 'skip')">同名同内容→跳过</button>
+              <button class="btn mini" type="button" :disabled="!crossCopySelectedCount" @click="applyCrossCopyActionByStatus('content_duplicate_other_name', 'skip')">异名同内容→跳过</button>
+              <div class="cross-copy-bulk-box">
+                <select v-model="crossCopyBulkAction" class="text-input">
+                  <option value="skip">{{ getCrossCopyActionLabel('skip') }}</option>
+                  <option value="overwrite">{{ getCrossCopyActionLabel('overwrite') }}</option>
+                  <option value="create">{{ getCrossCopyActionLabel('create') }}</option>
+                  <option value="rename_create">{{ getCrossCopyActionLabel('rename_create') }}</option>
+                </select>
+                <button class="btn mini" type="button" :disabled="!crossCopySelectedCount" @click="applyCrossCopyBulkAction()">应用到已选</button>
+              </div>
+              <button class="btn primary" type="button" :disabled="!crossCopyCanApply" @click="applyCrossCopySelection">
+                {{ crossCopyApplyLoading ? '执行中...' : `执行复制（${crossCopySelectedCount}）` }}
+              </button>
+            </div>
+          </section>
+
+          <section v-show="!aiGeneratorMode && !tagEditorMode && !crossCopyMode" ref="mainLayoutRef" class="wb-main-layout" :class="{ 'focus-mode': isDesktopFocusMode }" :style="mainLayoutStyle">
             <aside v-show="!showMobileEditor" class="wb-entry-list" :class="{ focus: isDesktopFocusMode }">
               <div v-if="!isDesktopFocusMode" class="list-search">
                 <input v-model="searchText" type="text" class="text-input" placeholder="搜索名称 / 内容 / 关键词" />
@@ -1988,6 +2327,42 @@ type FocusMetaPanelKey = 'comment' | 'keywords';
 type FocusCinePhase = 'idle' | 'prepare' | 'running' | 'settling';
 type FocusCineDirection = 'enter' | 'exit';
 type FocusHeroKey = string;
+type CrossCopyRowStatus =
+  | 'new'
+  | 'duplicate_exact'
+  | 'same_name_changed'
+  | 'content_duplicate_other_name'
+  | 'invalid_same_source_target';
+type CrossCopyAction = 'skip' | 'overwrite' | 'rename_create' | 'create';
+type CrossCopyStatusFilter = 'all' | CrossCopyRowStatus;
+
+interface CrossCopyPersistState {
+  last_source_worldbook: string;
+  last_target_worldbook: string;
+  use_draft_source_when_current: boolean;
+  snapshot_before_apply: boolean;
+}
+
+interface CrossCopyMatchSummary {
+  same_name_matches: WorldbookEntry[];
+  same_name_exact_count: number;
+  content_duplicate_other_name_matches: WorldbookEntry[];
+}
+
+interface CrossCopyRow {
+  id: string;
+  source_entry: WorldbookEntry;
+  source_index: number;
+  source_name_key: string;
+  source_content_key: string;
+  status: CrossCopyRowStatus;
+  selected: boolean;
+  action: CrossCopyAction;
+  rename_name: string;
+  note: string;
+  details_open: boolean;
+  target_summary: CrossCopyMatchSummary;
+}
 
 interface WorldbookSwitchOptions {
   source?: SelectionSource;
@@ -2363,6 +2738,7 @@ interface PersistedState {
   ai_api_config: AIApiConfig;
   show_ai_chat: boolean;
   layout: LayoutState;
+  cross_copy: CrossCopyPersistState;
 }
 
 interface ActivationLog {
@@ -2427,6 +2803,26 @@ const FOCUS_FALLBACK_PRIORITY: FocusHeroKey[] = [
   'more_btn',
   'tools_btn',
 ];
+const CROSS_COPY_STATUS_PRIORITY: CrossCopyRowStatus[] = [
+  'same_name_changed',
+  'content_duplicate_other_name',
+  'duplicate_exact',
+  'new',
+  'invalid_same_source_target',
+];
+const CROSS_COPY_STATUS_LABELS: Record<CrossCopyRowStatus, string> = {
+  new: '新增',
+  duplicate_exact: '同名同内容',
+  same_name_changed: '同名内容不同',
+  content_duplicate_other_name: '异名同内容',
+  invalid_same_source_target: '来源与目标相同',
+};
+const CROSS_COPY_ACTION_LABELS: Record<CrossCopyAction, string> = {
+  skip: '跳过',
+  overwrite: '覆盖同名',
+  rename_create: '另存新名',
+  create: '直接创建',
+};
 
 const strategyTypeOptions: StrategyType[] = ['constant', 'selective', 'vectorized'];
 const secondaryLogicOptions: SecondaryLogic[] = ['and_any', 'and_all', 'not_all', 'not_any'];
@@ -2455,6 +2851,7 @@ const currentTheme = ref<ThemeKey>('ocean');
 const themePickerOpen = ref(false);
 const globalWorldbookMode = ref(false);
 const aiGeneratorMode = ref(false);
+const crossCopyMode = ref(false);
 const isFocusEditing = ref(false);
 const focusWorldbookMenuOpen = ref(false);
 const focusToolsExpanded = ref(false);
@@ -2538,6 +2935,22 @@ const aiConfigPreview = ref(false);
 const aiConfigGenerating = ref(false);
 const aiConfigTargetWorldbook = ref('');
 const aiConfigCustomPrompt = ref('');
+
+const crossCopySourceWorldbook = ref('');
+const crossCopyTargetWorldbook = ref('');
+const crossCopyUseDraftSourceWhenCurrent = ref(true);
+const crossCopySnapshotBeforeApply = ref(true);
+const crossCopyRows = ref<CrossCopyRow[]>([]);
+const crossCopySourceBaselineEntries = ref<WorldbookEntry[]>([]);
+const crossCopyTargetBaselineEntries = ref<WorldbookEntry[]>([]);
+const crossCopyCompareLoading = ref(false);
+const crossCopyApplyLoading = ref(false);
+const crossCopySearchText = ref('');
+const crossCopyStatusFilter = ref<CrossCopyStatusFilter>('all');
+const crossCopyBulkAction = ref<CrossCopyAction>('skip');
+const crossCopyCompareSummary = ref('');
+const crossCopyLastResultSummary = ref('');
+const crossCopyLastComparedAt = ref<number>(0);
 
 const AI_CHAT_SESSION_LIMIT = 50;
 const AI_CHAT_MESSAGE_LIMIT = 200;
@@ -2630,7 +3043,7 @@ if (typeof window !== 'undefined') {
   };
 }
 const showMobileEditor = computed(() => isMobile.value && selectedEntryUid.value !== null);
-const mobileTab = ref<'list' | 'edit' | 'settings' | 'ai' | 'tags'>('list');
+const mobileTab = ref<'list' | 'edit' | 'settings' | 'copy' | 'ai' | 'tags'>('list');
 const tagEditorMode = ref(false);
 const activeTagFilter = ref('');
 const tagNewName = ref('');
@@ -2815,6 +3228,69 @@ const tagAssignWorldbooks = computed(() => {
   if (!keyword) return names;
   return names.filter(name => name.toLowerCase().includes(keyword));
 });
+
+const crossCopySourceIsCurrentWorldbook = computed(() => {
+  return Boolean(crossCopySourceWorldbook.value) && crossCopySourceWorldbook.value === selectedWorldbookName.value;
+});
+
+const crossCopySourceVersionLabel = computed(() => {
+  if (!crossCopySourceIsCurrentWorldbook.value) {
+    return '来源为其他世界书，固定读取已保存版本';
+  }
+  return crossCopyUseDraftSourceWhenCurrent.value ? '来源读取当前草稿（含未保存修改）' : '来源读取已保存版本';
+});
+
+const crossCopySourceTargetInvalid = computed(() => {
+  if (!crossCopySourceWorldbook.value || !crossCopyTargetWorldbook.value) {
+    return false;
+  }
+  return crossCopySourceWorldbook.value === crossCopyTargetWorldbook.value;
+});
+
+const crossCopySourceRowsFiltered = computed(() => {
+  const keyword = crossCopySearchText.value.trim().toLowerCase();
+  return crossCopyRows.value.filter(row => {
+    if (!keyword) {
+      return true;
+    }
+    return (
+      row.source_entry.name.toLowerCase().includes(keyword) ||
+      row.source_entry.content.toLowerCase().includes(keyword)
+    );
+  });
+});
+
+const crossCopyRowsFiltered = computed(() => {
+  if (crossCopyStatusFilter.value === 'all') {
+    return crossCopySourceRowsFiltered.value;
+  }
+  return crossCopySourceRowsFiltered.value.filter(row => row.status === crossCopyStatusFilter.value);
+});
+
+const crossCopySelectedRows = computed(() => crossCopyRows.value.filter(row => row.selected));
+
+const crossCopyStatusCounts = computed(() => {
+  const counts: Record<CrossCopyRowStatus, number> = {
+    new: 0,
+    duplicate_exact: 0,
+    same_name_changed: 0,
+    content_duplicate_other_name: 0,
+    invalid_same_source_target: 0,
+  };
+  for (const row of crossCopyRows.value) {
+    counts[row.status] += 1;
+  }
+  return counts;
+});
+
+const crossCopyHasCompared = computed(() => crossCopyLastComparedAt.value > 0);
+const crossCopySelectedCount = computed(() => crossCopySelectedRows.value.length);
+const crossCopyCanCompare = computed(() =>
+  Boolean(crossCopySourceWorldbook.value && crossCopyTargetWorldbook.value) && !crossCopySourceTargetInvalid.value,
+);
+const crossCopyCanApply = computed(() =>
+  crossCopyCanCompare.value && crossCopySelectedRows.value.length > 0 && !crossCopyApplyLoading.value,
+);
 
 const globalAddCandidates = computed(() => {
   const keyword = globalAddSearchText.value.trim().toLowerCase();
@@ -3185,6 +3661,14 @@ watch(selectedWorldbookName, name => {
   updatePersistedState(state => {
     state.last_worldbook = name;
   });
+  normalizeCrossCopyWorldbookSelection();
+  if (crossCopyHasCompared.value) {
+    if (crossCopySourceWorldbook.value === name && crossCopyUseDraftSourceWhenCurrent.value) {
+      resetCrossCopyCompare('当前世界书已切换，来源草稿基线已变化，请刷新比较');
+    } else if (crossCopyTargetWorldbook.value === name) {
+      resetCrossCopyCompare('当前世界书已切换，目标基线可能变化，请刷新比较');
+    }
+  }
   void loadWorldbook(name);
 });
 
@@ -3231,6 +3715,30 @@ watch(
     resetFindState();
   },
 );
+
+watch(
+  [crossCopySourceWorldbook, crossCopyTargetWorldbook, crossCopyUseDraftSourceWhenCurrent],
+  () => {
+    persistCrossCopyState();
+    if (crossCopyHasCompared.value) {
+      resetCrossCopyCompare('来源或目标已变更，请先刷新比较');
+    }
+  },
+);
+
+watch(crossCopySnapshotBeforeApply, () => {
+  persistCrossCopyState();
+});
+
+watch(mobileTab, tab => {
+  if (tab !== 'copy') {
+    return;
+  }
+  globalWorldbookMode.value = false;
+  aiGeneratorMode.value = false;
+  tagEditorMode.value = false;
+  normalizeCrossCopyWorldbookSelection();
+});
 
 watch(
   entryVersionViews,
@@ -3790,6 +4298,29 @@ function createDefaultLayoutState(): LayoutState {
   };
 }
 
+function createDefaultCrossCopyPersistState(): CrossCopyPersistState {
+  return {
+    last_source_worldbook: '',
+    last_target_worldbook: '',
+    use_draft_source_when_current: true,
+    snapshot_before_apply: true,
+  };
+}
+
+function normalizeCrossCopyPersistState(input: unknown): CrossCopyPersistState {
+  const fallback = createDefaultCrossCopyPersistState();
+  const raw = asRecord(input);
+  if (!raw) {
+    return fallback;
+  }
+  return {
+    last_source_worldbook: toStringSafe(raw.last_source_worldbook).trim(),
+    last_target_worldbook: toStringSafe(raw.last_target_worldbook).trim(),
+    use_draft_source_when_current: raw.use_draft_source_when_current !== false,
+    snapshot_before_apply: raw.snapshot_before_apply !== false,
+  };
+}
+
 function normalizeLayoutState(input: unknown): LayoutState {
   const fallback = createDefaultLayoutState();
   const raw = asRecord(input);
@@ -3828,6 +4359,7 @@ function createDefaultPersistedState(): PersistedState {
       temperature: 1,
     },
     layout: createDefaultLayoutState(),
+    cross_copy: createDefaultCrossCopyPersistState(),
   };
 }
 
@@ -4013,6 +4545,7 @@ function normalizePersistedState(input: unknown): PersistedState {
       } as AIApiConfig;
     })(),
     layout: normalizeLayoutState(root.layout),
+    cross_copy: normalizeCrossCopyPersistState(root.cross_copy),
   };
 }
 
@@ -4068,6 +4601,43 @@ function persistLayoutState(): void {
       focus_right_width: focusEditorSideWidth.value,
     };
   });
+}
+
+function applyCrossCopyStateFromPersisted(): void {
+  const state = normalizeCrossCopyPersistState(persistedState.value.cross_copy);
+  crossCopySourceWorldbook.value = state.last_source_worldbook;
+  crossCopyTargetWorldbook.value = state.last_target_worldbook;
+  crossCopyUseDraftSourceWhenCurrent.value = state.use_draft_source_when_current;
+  crossCopySnapshotBeforeApply.value = state.snapshot_before_apply;
+}
+
+function persistCrossCopyState(): void {
+  updatePersistedState(state => {
+    state.cross_copy = {
+      last_source_worldbook: crossCopySourceWorldbook.value,
+      last_target_worldbook: crossCopyTargetWorldbook.value,
+      use_draft_source_when_current: crossCopyUseDraftSourceWhenCurrent.value,
+      snapshot_before_apply: crossCopySnapshotBeforeApply.value,
+    };
+  });
+}
+
+function normalizeCrossCopyWorldbookSelection(): void {
+  const names = worldbookNames.value;
+  if (!names.length) {
+    crossCopySourceWorldbook.value = '';
+    crossCopyTargetWorldbook.value = '';
+    return;
+  }
+  if (!crossCopySourceWorldbook.value || !names.includes(crossCopySourceWorldbook.value)) {
+    crossCopySourceWorldbook.value = selectedWorldbookName.value && names.includes(selectedWorldbookName.value)
+      ? selectedWorldbookName.value
+      : names[0];
+  }
+  if (!crossCopyTargetWorldbook.value || !names.includes(crossCopyTargetWorldbook.value)) {
+    const firstDifferent = names.find(name => name !== crossCopySourceWorldbook.value) ?? names[0];
+    crossCopyTargetWorldbook.value = firstDifferent;
+  }
 }
 
 // ── AI Chat: computed ──────────────────────────────────────────────
@@ -4734,6 +5304,7 @@ function aiToggleMode(): void {
   if (aiGeneratorMode.value) {
     globalWorldbookMode.value = false;
     tagEditorMode.value = false;
+    crossCopyMode.value = false;
   }
 }
 
@@ -4742,6 +5313,7 @@ function tagToggleMode(): void {
   if (tagEditorMode.value) {
     aiGeneratorMode.value = false;
     globalWorldbookMode.value = false;
+    crossCopyMode.value = false;
   }
 }
 
@@ -4814,6 +5386,541 @@ function tagResetAll(): void {
 
 function setStatus(message: string): void {
   statusMessage.value = message;
+}
+
+function normalizeCrossCopyNameKey(name: string): string {
+  return toStringSafe(name).trim().toLowerCase();
+}
+
+function normalizeCrossCopyContentKey(content: string): string {
+  return toStringSafe(content).replace(/\s+/g, ' ').trim();
+}
+
+function getCrossCopyStatusLabel(status: CrossCopyRowStatus): string {
+  return CROSS_COPY_STATUS_LABELS[status];
+}
+
+function getCrossCopyActionLabel(action: CrossCopyAction): string {
+  return CROSS_COPY_ACTION_LABELS[action];
+}
+
+function getCrossCopyStatusBadgeClass(status: CrossCopyRowStatus): string {
+  if (status === 'new') {
+    return 'new';
+  }
+  if (status === 'same_name_changed') {
+    return 'changed';
+  }
+  if (status === 'duplicate_exact') {
+    return 'duplicate';
+  }
+  if (status === 'content_duplicate_other_name') {
+    return 'content-duplicate';
+  }
+  return 'invalid';
+}
+
+function getCrossCopyPreviewText(text: string, maxLength = 180): string {
+  const compact = toStringSafe(text).replace(/\s+/g, ' ').trim();
+  if (!compact) {
+    return '(空内容)';
+  }
+  if (compact.length <= maxLength) {
+    return compact;
+  }
+  return `${compact.slice(0, maxLength)}...`;
+}
+
+function getCrossCopyEntryProfile(entry: WorldbookEntry): string {
+  return [
+    getEntryStatusLabel(entry),
+    `Keys ${entry.strategy.keys.length}/${entry.strategy.keys_secondary.keys.length}`,
+    `${getPositionTypeLabel(entry.position.type)} #${entry.position.order}`,
+    `${entry.recursion.prevent_incoming ? '🚫入' : '入✓'} ${entry.recursion.prevent_outgoing ? '🚫出' : '出✓'}`,
+    `p:${entry.probability}`,
+  ].join(' · ');
+}
+
+function getCrossCopyPrimaryTargetMatch(row: CrossCopyRow): WorldbookEntry | null {
+  if (row.target_summary.same_name_matches.length) {
+    return row.target_summary.same_name_matches[0];
+  }
+  if (row.target_summary.content_duplicate_other_name_matches.length) {
+    return row.target_summary.content_duplicate_other_name_matches[0];
+  }
+  return null;
+}
+
+function getCrossCopyRowDiffSummary(row: CrossCopyRow): string {
+  const target = getCrossCopyPrimaryTargetMatch(row);
+  if (!target) {
+    return '目标无直接命中';
+  }
+  const diff: string[] = [];
+  if (row.source_name_key !== normalizeCrossCopyNameKey(target.name)) {
+    diff.push('名称不同');
+  }
+  if (row.source_content_key !== normalizeCrossCopyContentKey(target.content)) {
+    diff.push('内容不同');
+  }
+  if (row.source_entry.strategy.type !== target.strategy.type) {
+    diff.push('策略不同');
+  }
+  if (row.source_entry.position.type !== target.position.type || row.source_entry.position.order !== target.position.order) {
+    diff.push('插入设置不同');
+  }
+  if (
+    row.source_entry.recursion.prevent_incoming !== target.recursion.prevent_incoming ||
+    row.source_entry.recursion.prevent_outgoing !== target.recursion.prevent_outgoing
+  ) {
+    diff.push('递归设置不同');
+  }
+  if (!diff.length) {
+    return '主要字段一致';
+  }
+  return diff.join(' / ');
+}
+
+function generateCrossCopyUniqueName(baseName: string, occupiedNameKeys: Set<string>): string {
+  const base = toStringSafe(baseName).trim() || '未命名条目';
+  const first = `${base} (复制)`;
+  if (!occupiedNameKeys.has(normalizeCrossCopyNameKey(first))) {
+    return first;
+  }
+  for (let index = 2; index < 2000; index += 1) {
+    const candidate = `${base} (复制${index})`;
+    if (!occupiedNameKeys.has(normalizeCrossCopyNameKey(candidate))) {
+      return candidate;
+    }
+  }
+  return `${base} (复制${Date.now()})`;
+}
+
+function getCrossCopyReservedNameKeys(excludeRowId = ''): Set<string> {
+  const occupied = new Set(crossCopyTargetBaselineEntries.value.map(entry => normalizeCrossCopyNameKey(entry.name)));
+  for (const row of crossCopyRows.value) {
+    if (row.id === excludeRowId || row.action !== 'rename_create') {
+      continue;
+    }
+    const key = normalizeCrossCopyNameKey(row.rename_name);
+    if (key) {
+      occupied.add(key);
+    }
+  }
+  return occupied;
+}
+
+function ensureCrossCopyRenameForRow(row: CrossCopyRow): void {
+  if (row.action !== 'rename_create') {
+    return;
+  }
+  const occupied = getCrossCopyReservedNameKeys(row.id);
+  const typed = toStringSafe(row.rename_name).trim();
+  if (!typed) {
+    row.rename_name = generateCrossCopyUniqueName(row.source_entry.name, occupied);
+    return;
+  }
+  const typedKey = normalizeCrossCopyNameKey(typed);
+  if (occupied.has(typedKey)) {
+    row.rename_name = generateCrossCopyUniqueName(typed, occupied);
+    return;
+  }
+  row.rename_name = typed;
+}
+
+function setCrossCopyModeActive(next: boolean): void {
+  crossCopyMode.value = next;
+  if (next) {
+    aiGeneratorMode.value = false;
+    tagEditorMode.value = false;
+    globalWorldbookMode.value = false;
+    closeFocusWorldbookMenu();
+    closeFocusToolsBand();
+    normalizeCrossCopyWorldbookSelection();
+    persistCrossCopyState();
+    return;
+  }
+  closeFocusWorldbookMenu();
+  closeFocusToolsBand();
+}
+
+function toggleCrossCopyMode(): void {
+  setCrossCopyModeActive(!crossCopyMode.value);
+}
+
+function resetCrossCopyCompare(reason = ''): void {
+  crossCopyRows.value = [];
+  crossCopySourceBaselineEntries.value = [];
+  crossCopyTargetBaselineEntries.value = [];
+  crossCopyCompareSummary.value = '';
+  crossCopyLastComparedAt.value = 0;
+  if (reason) {
+    crossCopyLastResultSummary.value = reason;
+  }
+}
+
+function buildCrossCopyRows(
+  sourceEntries: WorldbookEntry[],
+  targetEntries: WorldbookEntry[],
+  sameSourceTarget: boolean,
+): CrossCopyRow[] {
+  const byName = new Map<string, WorldbookEntry[]>();
+  const byContent = new Map<string, WorldbookEntry[]>();
+  for (const entry of targetEntries) {
+    const nameKey = normalizeCrossCopyNameKey(entry.name);
+    const contentKey = normalizeCrossCopyContentKey(entry.content);
+    const nameBucket = byName.get(nameKey) ?? [];
+    nameBucket.push(entry);
+    byName.set(nameKey, nameBucket);
+    const contentBucket = byContent.get(contentKey) ?? [];
+    contentBucket.push(entry);
+    byContent.set(contentKey, contentBucket);
+  }
+
+  const initialRows = sourceEntries.map((sourceEntry, sourceIndex) => {
+    const sourceNameKey = normalizeCrossCopyNameKey(sourceEntry.name);
+    const sourceContentKey = normalizeCrossCopyContentKey(sourceEntry.content);
+    const sameNameMatches = byName.get(sourceNameKey) ?? [];
+    const sameNameExactCount = sameNameMatches.filter(entry => normalizeCrossCopyContentKey(entry.content) === sourceContentKey).length;
+    const contentDuplicateOtherNameMatches = (byContent.get(sourceContentKey) ?? []).filter(entry => {
+      return normalizeCrossCopyNameKey(entry.name) !== sourceNameKey;
+    });
+
+    let status: CrossCopyRowStatus;
+    if (sameSourceTarget) {
+      status = 'invalid_same_source_target';
+    } else if (sameNameMatches.length) {
+      status = sameNameExactCount === sameNameMatches.length ? 'duplicate_exact' : 'same_name_changed';
+    } else if (contentDuplicateOtherNameMatches.length) {
+      status = 'content_duplicate_other_name';
+    } else {
+      status = 'new';
+    }
+
+    let note = '';
+    if (sameNameMatches.length > 1) {
+      note = `目标同名命中 ${sameNameMatches.length} 条，覆盖会全部替换`;
+    } else if (contentDuplicateOtherNameMatches.length) {
+      note = `检测到 ${contentDuplicateOtherNameMatches.length} 条异名同内容条目`;
+    }
+
+    let action: CrossCopyAction = 'create';
+    if (status === 'duplicate_exact' || status === 'content_duplicate_other_name' || status === 'invalid_same_source_target') {
+      action = 'skip';
+    } else if (status === 'same_name_changed') {
+      action = 'overwrite';
+    }
+
+    return {
+      id: createId('cross-copy-row'),
+      source_entry: normalizeEntry(klona(sourceEntry), sourceEntry.uid),
+      source_index: sourceIndex,
+      source_name_key: sourceNameKey,
+      source_content_key: sourceContentKey,
+      status,
+      selected: false,
+      action,
+      rename_name: '',
+      note,
+      details_open: false,
+      target_summary: {
+        same_name_matches: sameNameMatches.map(item => normalizeEntry(klona(item), item.uid)),
+        same_name_exact_count: sameNameExactCount,
+        content_duplicate_other_name_matches: contentDuplicateOtherNameMatches.map(item => normalizeEntry(klona(item), item.uid)),
+      },
+    } satisfies CrossCopyRow;
+  });
+
+  const occupied = new Set(targetEntries.map(entry => normalizeCrossCopyNameKey(entry.name)));
+  for (const row of initialRows) {
+    row.rename_name = generateCrossCopyUniqueName(row.source_entry.name, occupied);
+    occupied.add(normalizeCrossCopyNameKey(row.rename_name));
+  }
+  return initialRows;
+}
+
+function buildCrossCopyCompareSummary(rows: CrossCopyRow[], sourceCount: number, targetCount: number): string {
+  const counts = {
+    new: 0,
+    duplicate_exact: 0,
+    same_name_changed: 0,
+    content_duplicate_other_name: 0,
+    invalid_same_source_target: 0,
+  };
+  for (const row of rows) {
+    counts[row.status] += 1;
+  }
+  return [
+    `来源 ${sourceCount} 条`,
+    `目标 ${targetCount} 条`,
+    `新增 ${counts.new}`,
+    `同名更新 ${counts.same_name_changed}`,
+    `同名同内容 ${counts.duplicate_exact}`,
+    `异名同内容 ${counts.content_duplicate_other_name}`,
+  ].join(' | ');
+}
+
+async function readCrossCopySourceEntries(sourceName: string): Promise<WorldbookEntry[]> {
+  if (sourceName && sourceName === selectedWorldbookName.value && crossCopyUseDraftSourceWhenCurrent.value) {
+    return normalizeEntryList(draftEntries.value.map(entry => klona(entry)));
+  }
+  const raw = await getWorldbook(sourceName);
+  return normalizeEntryList(raw);
+}
+
+async function refreshCrossCopyComparison(): Promise<void> {
+  if (crossCopyCompareLoading.value) {
+    return;
+  }
+  if (!crossCopySourceWorldbook.value || !crossCopyTargetWorldbook.value) {
+    toastr.warning('请先选择来源和目标世界书');
+    return;
+  }
+  crossCopyCompareLoading.value = true;
+  try {
+    const sameSourceTarget = crossCopySourceWorldbook.value === crossCopyTargetWorldbook.value;
+    const [sourceEntries, targetEntries] = await Promise.all([
+      readCrossCopySourceEntries(crossCopySourceWorldbook.value),
+      getWorldbook(crossCopyTargetWorldbook.value),
+    ]);
+    const normalizedTarget = normalizeEntryList(targetEntries);
+    crossCopySourceBaselineEntries.value = sourceEntries.map(entry => normalizeEntry(klona(entry), entry.uid));
+    crossCopyTargetBaselineEntries.value = normalizedTarget.map(entry => normalizeEntry(klona(entry), entry.uid));
+    crossCopyRows.value = buildCrossCopyRows(crossCopySourceBaselineEntries.value, crossCopyTargetBaselineEntries.value, sameSourceTarget);
+    crossCopyCompareSummary.value = buildCrossCopyCompareSummary(
+      crossCopyRows.value,
+      crossCopySourceBaselineEntries.value.length,
+      crossCopyTargetBaselineEntries.value.length,
+    );
+    crossCopyLastComparedAt.value = Date.now();
+    if (sameSourceTarget) {
+      toastr.warning('来源和目标不能是同一个世界书');
+      crossCopyLastResultSummary.value = '来源与目标相同，已禁止执行复制';
+    } else {
+      setStatus(`跨书比较完成：${crossCopyCompareSummary.value}`);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    toastr.error(`对比失败: ${message}`);
+    crossCopyLastResultSummary.value = `对比失败：${message}`;
+  } finally {
+    crossCopyCompareLoading.value = false;
+  }
+}
+
+function setCrossCopySelectionForFiltered(selected: boolean): void {
+  for (const row of crossCopySourceRowsFiltered.value) {
+    if (row.status === 'invalid_same_source_target') {
+      row.selected = false;
+      continue;
+    }
+    row.selected = selected;
+  }
+}
+
+function setCrossCopySelectionForAll(selected: boolean): void {
+  for (const row of crossCopyRows.value) {
+    if (row.status === 'invalid_same_source_target') {
+      row.selected = false;
+      continue;
+    }
+    row.selected = selected;
+  }
+}
+
+function applyCrossCopyBulkAction(action = crossCopyBulkAction.value): void {
+  for (const row of crossCopyRows.value) {
+    if (!row.selected) {
+      continue;
+    }
+    row.action = action;
+    if (row.action === 'rename_create') {
+      ensureCrossCopyRenameForRow(row);
+    }
+  }
+}
+
+function applyCrossCopyActionByStatus(status: CrossCopyRowStatus, action: CrossCopyAction): void {
+  for (const row of crossCopyRows.value) {
+    if (!row.selected || row.status !== status) {
+      continue;
+    }
+    row.action = action;
+    if (row.action === 'rename_create') {
+      ensureCrossCopyRenameForRow(row);
+    }
+  }
+}
+
+function onCrossCopyRowActionChange(row: CrossCopyRow): void {
+  if (row.action === 'rename_create') {
+    ensureCrossCopyRenameForRow(row);
+  }
+}
+
+function onCrossCopyRowRenameBlur(row: CrossCopyRow): void {
+  ensureCrossCopyRenameForRow(row);
+}
+
+function pushSnapshotForWorldbook(worldbookName: string, entries: WorldbookEntry[], label: string): void {
+  if (!worldbookName) {
+    return;
+  }
+  const snapshot: WorldbookSnapshot = {
+    id: createId('snapshot'),
+    label,
+    ts: Date.now(),
+    entries: normalizeEntryList(entries.map(entry => klona(entry))),
+  };
+  updatePersistedState(state => {
+    const list = state.history[worldbookName] ?? [];
+    list.unshift(snapshot);
+    if (list.length > HISTORY_LIMIT) {
+      list.length = HISTORY_LIMIT;
+    }
+    state.history[worldbookName] = list;
+  });
+}
+
+async function applyCrossCopySelection(): Promise<void> {
+  if (!crossCopySourceWorldbook.value || !crossCopyTargetWorldbook.value) {
+    toastr.warning('请先选择来源与目标世界书');
+    return;
+  }
+  if (crossCopySourceWorldbook.value === crossCopyTargetWorldbook.value) {
+    toastr.warning('来源和目标不能相同');
+    return;
+  }
+  const selectedRows = crossCopyRows.value.filter(row => row.selected);
+  if (!selectedRows.length) {
+    toastr.warning('请至少勾选一条来源条目');
+    return;
+  }
+  if (crossCopyApplyLoading.value) {
+    return;
+  }
+
+  if (crossCopyTargetWorldbook.value === selectedWorldbookName.value && hasUnsavedChanges.value) {
+    setStatus('目标为当前世界书，正在自动保存未保存修改...');
+    await saveCurrentWorldbook();
+    if (hasUnsavedChanges.value) {
+      toastr.error('自动保存失败，请先处理保存问题后再执行复制');
+      return;
+    }
+  }
+
+  crossCopyApplyLoading.value = true;
+  try {
+    const targetName = crossCopyTargetWorldbook.value;
+    const targetBefore = normalizeEntryList(await getWorldbook(targetName));
+    if (crossCopySnapshotBeforeApply.value) {
+      pushSnapshotForWorldbook(targetName, targetBefore, '跨书复制前快照');
+    }
+
+    const duplicateDetectedCount = selectedRows.filter(row => {
+      return row.status === 'duplicate_exact' || row.status === 'content_duplicate_other_name';
+    }).length;
+
+    const stats = {
+      created: 0,
+      renamedCreated: 0,
+      overwritten: 0,
+      skipped: 0,
+      duplicateDetected: duplicateDetectedCount,
+    };
+
+    const orderedRows = crossCopyRows.value.filter(row => row.selected);
+    const updatedEntries = await updateWorldbookWith(targetName, worldbook => {
+      const next = normalizeEntryList(worldbook.map(entry => klona(entry)));
+      const occupied = new Set(next.map(entry => normalizeCrossCopyNameKey(entry.name)));
+      let nextUid = getNextUid(next);
+
+      for (const row of orderedRows) {
+        if (row.action === 'skip' || row.status === 'invalid_same_source_target') {
+          stats.skipped += 1;
+          continue;
+        }
+        const sourceEntry = normalizeEntry(klona(row.source_entry), row.source_entry.uid);
+
+        if (row.action === 'overwrite') {
+          let replaced = 0;
+          for (let index = 0; index < next.length; index += 1) {
+            if (normalizeCrossCopyNameKey(next[index].name) !== row.source_name_key) {
+              continue;
+            }
+            const uid = next[index].uid;
+            const replacement = normalizeEntry({ ...klona(sourceEntry), uid }, uid);
+            replacement.uid = uid;
+            next[index] = replacement;
+            replaced += 1;
+          }
+          if (replaced === 0) {
+            const uid = nextUid;
+            nextUid += 1;
+            const created = normalizeEntry({ ...klona(sourceEntry), uid }, uid);
+            created.uid = uid;
+            next.push(created);
+            stats.created += 1;
+            occupied.add(normalizeCrossCopyNameKey(created.name));
+          } else {
+            stats.overwritten += replaced;
+            occupied.add(row.source_name_key);
+          }
+          continue;
+        }
+
+        let createdName = sourceEntry.name;
+        if (row.action === 'rename_create') {
+          const typed = toStringSafe(row.rename_name).trim();
+          const typedKey = normalizeCrossCopyNameKey(typed);
+          if (!typed) {
+            createdName = generateCrossCopyUniqueName(sourceEntry.name, occupied);
+          } else if (!occupied.has(typedKey)) {
+            createdName = typed;
+          } else {
+            createdName = generateCrossCopyUniqueName(typed, occupied);
+          }
+          row.rename_name = createdName;
+          stats.renamedCreated += 1;
+        } else {
+          stats.created += 1;
+        }
+        const uid = nextUid;
+        nextUid += 1;
+        const created = normalizeEntry({ ...klona(sourceEntry), uid, name: createdName }, uid);
+        created.uid = uid;
+        next.push(created);
+        occupied.add(normalizeCrossCopyNameKey(createdName));
+      }
+
+      return next;
+    }, { render: 'immediate' });
+
+    if (targetName === selectedWorldbookName.value) {
+      const normalized = normalizeEntryList(updatedEntries.map(entry => klona(entry)));
+      draftEntries.value = klona(normalized);
+      originalEntries.value = klona(normalized);
+      ensureSelectedEntryExists();
+    }
+
+    crossCopyLastResultSummary.value = [
+      `执行完成`,
+      `新增 ${stats.created}`,
+      `另存新增 ${stats.renamedCreated}`,
+      `覆盖 ${stats.overwritten}`,
+      `跳过 ${stats.skipped}`,
+      `检测重复 ${stats.duplicateDetected}`,
+    ].join(' | ');
+    setStatus(`跨书复制完成：${crossCopyLastResultSummary.value}`);
+    toastr.success('跨书复制已完成');
+    await refreshCrossCopyComparison();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    toastr.error(`复制失败: ${message}`);
+    crossCopyLastResultSummary.value = `执行失败：${message}`;
+  } finally {
+    crossCopyApplyLoading.value = false;
+  }
 }
 
 function syncExtraTextWithSelection(): void {
@@ -5509,22 +6616,7 @@ function pushSnapshot(label: string): void {
   if (!selectedWorldbookName.value) {
     return;
   }
-  const worldbookName = selectedWorldbookName.value;
-  const snapshot: WorldbookSnapshot = {
-    id: createId('snapshot'),
-    label,
-    ts: Date.now(),
-    entries: klona(draftEntries.value),
-  };
-
-  updatePersistedState(state => {
-    const list = state.history[worldbookName] ?? [];
-    list.unshift(snapshot);
-    if (list.length > HISTORY_LIMIT) {
-      list.length = HISTORY_LIMIT;
-    }
-    state.history[worldbookName] = list;
-  });
+  pushSnapshotForWorldbook(selectedWorldbookName.value, draftEntries.value, label);
 }
 
 function createManualSnapshot(): void {
@@ -6106,6 +7198,8 @@ function toggleGlobalMode(): void {
   globalWorldbookMode.value = !globalWorldbookMode.value;
   if (globalWorldbookMode.value) {
     aiGeneratorMode.value = false;
+    tagEditorMode.value = false;
+    crossCopyMode.value = false;
     const synced = ensureSelectionForGlobalMode({
       source: 'manual',
       reason: '切换到全局模式',
@@ -7128,6 +8222,8 @@ async function loadWorldbook(name: string): Promise<void> {
 async function reloadWorldbookNames(preferred?: string, switchOptions: WorldbookSwitchOptions = {}): Promise<boolean> {
   const names = [...getWorldbookNames()].sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
   worldbookNames.value = names;
+  normalizeCrossCopyWorldbookSelection();
+  persistCrossCopyState();
 
   if (!names.length) {
     const switched = switchWorldbookSelection('', {
@@ -7175,6 +8271,7 @@ async function hardRefresh(options: HardRefreshOptions = {}): Promise<void> {
   const allowDirty = options.force || hasUnsavedChanges.value;
   persistedState.value = readPersistedState();
   syncSelectedGlobalPresetFromState();
+  applyCrossCopyStateFromPersisted();
   const reloaded = await reloadWorldbookNames(selectedWorldbookName.value || undefined, {
     source: options.source ?? 'auto',
     reason: options.reason ?? '刷新后同步世界书',
@@ -7727,6 +8824,7 @@ onMounted(() => {
   persistedState.value = readPersistedState();
   syncSelectedGlobalPresetFromState();
   applyLayoutStateFromPersisted();
+  applyCrossCopyStateFromPersisted();
   if (isFocusEditing.value) {
     resetFocusPanels();
   }
@@ -7956,6 +9054,337 @@ watch(hasUnsavedChanges, (val) => {
   width: 100%;
 }
 
+.cross-copy-panel {
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: 12px;
+  background: var(--wb-bg-panel);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.cross-copy-panel.mobile {
+  padding: 10px;
+  gap: 8px;
+}
+
+.cross-copy-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.cross-copy-head strong {
+  font-size: 15px;
+}
+
+.cross-copy-head span {
+  color: var(--wb-text-muted);
+  font-size: 12px;
+}
+
+.cross-copy-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 8px 10px;
+  align-items: center;
+}
+
+.cross-copy-panel.mobile .cross-copy-controls {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cross-copy-control-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.cross-copy-panel.mobile .cross-copy-control-actions {
+  justify-content: flex-start;
+}
+
+.cross-copy-inline-tip {
+  border-radius: 8px;
+  border: 1px solid var(--wb-border-subtle);
+  padding: 6px 8px;
+  font-size: 12px;
+  background: var(--wb-input-bg);
+}
+
+.cross-copy-inline-tip.warning {
+  color: #f59e0b;
+}
+
+.cross-copy-inline-tip.success {
+  color: #34d399;
+}
+
+.cross-copy-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  gap: 10px;
+  min-height: 0;
+  flex: 1;
+}
+
+.cross-copy-grid.mobile {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cross-copy-left,
+.cross-copy-right {
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.cross-copy-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.cross-copy-list-head strong {
+  font-size: 13px;
+}
+
+.cross-copy-list-head span {
+  color: var(--wb-text-muted);
+}
+
+.cross-copy-list-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cross-copy-mini-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cross-copy-source-list,
+.cross-copy-rows {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cross-copy-source-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: 8px;
+  padding: 7px 8px;
+  cursor: pointer;
+  background: var(--wb-input-bg);
+}
+
+.cross-copy-source-item.checked {
+  border-color: var(--wb-primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--wb-primary) 35%, transparent);
+}
+
+.cross-copy-source-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cross-copy-status-dot,
+.cross-copy-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.cross-copy-status-dot {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+}
+
+.cross-copy-status-badge {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.cross-copy-status-dot.new,
+.cross-copy-status-badge.new {
+  background: rgba(34, 197, 94, 0.2);
+  border-color: rgba(34, 197, 94, 0.5);
+  color: #22c55e;
+}
+
+.cross-copy-status-dot.changed,
+.cross-copy-status-badge.changed {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.5);
+  color: #60a5fa;
+}
+
+.cross-copy-status-dot.duplicate,
+.cross-copy-status-badge.duplicate {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.5);
+  color: #f59e0b;
+}
+
+.cross-copy-status-dot.content-duplicate,
+.cross-copy-status-badge.content-duplicate {
+  background: rgba(168, 85, 247, 0.22);
+  border-color: rgba(168, 85, 247, 0.5);
+  color: #c084fc;
+}
+
+.cross-copy-status-dot.invalid,
+.cross-copy-status-badge.invalid {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #f87171;
+}
+
+.cross-copy-row {
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: 10px;
+  padding: 8px;
+  background: var(--wb-input-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cross-copy-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.cross-copy-row-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cross-copy-row-title strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cross-copy-row-note {
+  color: var(--wb-text-muted);
+  font-size: 12px;
+}
+
+.cross-copy-row-actions {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+}
+
+.cross-copy-details summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--wb-text-muted);
+}
+
+.cross-copy-preview-grid {
+  margin-top: 6px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cross-copy-preview-card {
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.14);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.cross-copy-preview-card .name {
+  font-weight: 600;
+}
+
+.cross-copy-preview-card .meta {
+  color: var(--wb-text-muted);
+}
+
+.cross-copy-preview-card p {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cross-copy-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  border-top: 1px solid var(--wb-border-subtle);
+  padding-top: 8px;
+}
+
+.cross-copy-actions.mobile {
+  position: sticky;
+  bottom: 0;
+  background: var(--wb-bg-panel);
+  z-index: 4;
+  padding-bottom: 4px;
+}
+
+.cross-copy-bulk-box {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.cross-copy-bulk-box .text-input {
+  min-width: 120px;
+}
+
+@media (max-width: 1200px) {
+  .cross-copy-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cross-copy-row-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 780px) {
+  .cross-copy-preview-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .wb-header {
   display: flex;
   justify-content: space-between;
@@ -8151,6 +9580,8 @@ watch(hasUnsavedChanges, (val) => {
 .wb-focus-tools-band > .btn:nth-child(8) { animation-delay: 140ms; }
 .wb-focus-tools-band > .btn:nth-child(9) { animation-delay: 160ms; }
 .wb-focus-tools-band > .btn:nth-child(10) { animation-delay: 180ms; }
+.wb-focus-tools-band > .btn:nth-child(11) { animation-delay: 200ms; }
+.wb-focus-tools-band > .btn:nth-child(12) { animation-delay: 220ms; }
 
 @keyframes focus-tool-stagger {
   from {
