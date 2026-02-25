@@ -144,8 +144,12 @@
                 type="button"
                 class="entry-item"
                 :data-status="getEntryVisualStatus(entry)"
-                :class="{ selected: entry.uid === selectedEntryUid, disabled: !entry.enabled }"
-                @click="selectEntry(entry.uid)"
+                :class="{
+                  selected: selectedEntryUidSet.has(entry.uid),
+                  primary: entry.uid === selectedEntryUid,
+                  disabled: !entry.enabled,
+                }"
+                @click="selectEntry(entry.uid, $event)"
                 style="border: 1px solid var(--wb-border-subtle); border-radius: 8px; padding: 8px 10px; margin-bottom: 4px;"
               >
                 <div class="entry-item-head">
@@ -1333,7 +1337,7 @@
                 </label>
               </div>
               <div v-if="!isDesktopFocusMode" class="list-summary">
-                条目 {{ filteredEntries.length }} / {{ draftEntries.length }} | 启用 {{ enabledEntryCount }}
+                条目 {{ filteredEntries.length }} / {{ draftEntries.length }} | 启用 {{ enabledEntryCount }} | 选中 {{ selectedEntryCount }}
               </div>
               <TransitionGroup name="list" tag="div" class="list-scroll">
                 <button
@@ -1343,10 +1347,19 @@
                   class="entry-item"
                   :data-status="getEntryVisualStatus(entry)"
                   :class="{
-                    selected: entry.uid === selectedEntryUid,
+                    selected: selectedEntryUidSet.has(entry.uid),
+                    primary: entry.uid === selectedEntryUid,
+                    'drag-source': draggingEntryUids.includes(entry.uid),
+                    'drop-before': entryDropTargetUid === entry.uid && entryDropPosition === 'before',
+                    'drop-after': entryDropTargetUid === entry.uid && entryDropPosition === 'after',
                     disabled: !entry.enabled,
                   }"
-                  @click="selectEntry(entry.uid)"
+                  :draggable="!isMobile"
+                  @click="selectEntry(entry.uid, $event)"
+                  @dragstart="handleEntryDragStart(entry.uid, $event)"
+                  @dragover="handleEntryDragOver(entry.uid, $event)"
+                  @drop="handleEntryDrop(entry.uid, $event)"
+                  @dragend="handleEntryDragEnd"
                 >
                   <div class="entry-item-head">
                     <span class="entry-status-dot" :data-status="getEntryVisualStatus(entry)"></span>
@@ -3037,6 +3050,12 @@ const roleBindingSourceCandidates = ref<PresetRoleBinding[]>([]);
 const originalEntries = ref<WorldbookEntry[]>([]);
 const draftEntries = ref<WorldbookEntry[]>([]);
 const selectedEntryUid = ref<number | null>(null);
+const selectedEntryUids = ref<number[]>([]);
+const selectedEntryAnchorUid = ref<number | null>(null);
+const draggingEntryUids = ref<number[]>([]);
+const entryDropTargetUid = ref<number | null>(null);
+const entryDropPosition = ref<'before' | 'after' | null>(null);
+const suppressNextEntryClick = ref(false);
 const draftEntriesDigest = ref('[]');
 const originalEntriesDigest = ref('[]');
 
@@ -3153,6 +3172,9 @@ const selectedEntryIndex = computed(() => {
   }
   return draftEntries.value.findIndex(entry => entry.uid === selectedEntry.value?.uid);
 });
+
+const selectedEntryUidSet = computed(() => new Set(selectedEntryUids.value));
+const selectedEntryCount = computed(() => selectedEntryUids.value.length);
 
 const filteredEntries = computed(() => {
   const keyword = searchText.value.trim().toLowerCase();
@@ -3803,7 +3825,29 @@ watch(selectedWorldbookName, name => {
 
 watch(
   () => selectedEntryUid.value,
-  () => {
+  uid => {
+    if (uid === null) {
+      selectedEntryUids.value = [];
+      selectedEntryAnchorUid.value = null;
+      syncExtraTextWithSelection();
+      selectedKeysRaw.value = selectedKeysText.value;
+      selectedSecondaryKeysRaw.value = selectedSecondaryKeysText.value;
+      return;
+    }
+
+    const exists = draftEntries.value.some(entry => entry.uid === uid);
+    if (!exists) {
+      selectedEntryUids.value = [];
+      selectedEntryAnchorUid.value = null;
+      return;
+    }
+    if (!selectedEntryUids.value.includes(uid)) {
+      selectedEntryUids.value = [uid];
+    }
+    if (selectedEntryAnchorUid.value === null || !draftEntries.value.some(entry => entry.uid === selectedEntryAnchorUid.value)) {
+      selectedEntryAnchorUid.value = uid;
+    }
+
     syncExtraTextWithSelection();
     // Sync raw keyword text when entry selection changes
     selectedKeysRaw.value = selectedKeysText.value;
@@ -6790,31 +6834,231 @@ function findPreviousMatch(): void {
   runFind(-1);
 }
 
+function getOrderedSelectedEntryUids(): number[] {
+  if (!selectedEntryUids.value.length) {
+    return [];
+  }
+  const selected = new Set(selectedEntryUids.value);
+  return draftEntries.value
+    .filter(entry => selected.has(entry.uid))
+    .map(entry => entry.uid);
+}
+
 function ensureSelectedEntryExists(): void {
   if (!draftEntries.value.length) {
     selectedEntryUid.value = null;
+    selectedEntryUids.value = [];
+    selectedEntryAnchorUid.value = null;
     return;
   }
+
+  const validUidSet = new Set(draftEntries.value.map(entry => entry.uid));
+  selectedEntryUids.value = selectedEntryUids.value.filter((uid, index, list) => {
+    return validUidSet.has(uid) && list.indexOf(uid) === index;
+  });
+
   if (selectedEntryUid.value === null) {
     selectedEntryUid.value = draftEntries.value[0].uid;
-    return;
-  }
-  const exists = draftEntries.value.some(entry => entry.uid === selectedEntryUid.value);
-  if (!exists) {
+  } else if (!validUidSet.has(selectedEntryUid.value)) {
     selectedEntryUid.value = draftEntries.value[0].uid;
+  }
+
+  if (selectedEntryUid.value !== null && !selectedEntryUids.value.includes(selectedEntryUid.value)) {
+    selectedEntryUids.value.unshift(selectedEntryUid.value);
+  }
+
+  if (selectedEntryAnchorUid.value === null || !validUidSet.has(selectedEntryAnchorUid.value)) {
+    selectedEntryAnchorUid.value = selectedEntryUid.value;
   }
 }
 
-function selectEntry(uid: number): void {
-  selectedEntryUid.value = uid;
-  if (isMobile.value) {
-    mobileTab.value = 'edit';
+function selectEntry(uid: number, event?: MouseEvent): void {
+  if (suppressNextEntryClick.value) {
+    suppressNextEntryClick.value = false;
+    return;
   }
+
+  const entryExists = draftEntries.value.some(entry => entry.uid === uid);
+  if (!entryExists) {
+    return;
+  }
+
+  if (isMobile.value) {
+    selectedEntryUid.value = uid;
+    selectedEntryUids.value = [uid];
+    selectedEntryAnchorUid.value = uid;
+    mobileTab.value = 'edit';
+    return;
+  }
+
+  const ctrlLike = Boolean(event && (event.ctrlKey || event.metaKey));
+  const shiftLike = Boolean(event && event.shiftKey);
+
+  if (shiftLike && selectedEntryAnchorUid.value !== null) {
+    const from = filteredEntries.value.findIndex(entry => entry.uid === selectedEntryAnchorUid.value);
+    const to = filteredEntries.value.findIndex(entry => entry.uid === uid);
+    if (from >= 0 && to >= 0) {
+      const start = Math.min(from, to);
+      const end = Math.max(from, to);
+      const rangeUids = filteredEntries.value.slice(start, end + 1).map(entry => entry.uid);
+      if (ctrlLike) {
+        const merged = [...selectedEntryUids.value];
+        for (const currentUid of rangeUids) {
+          if (!merged.includes(currentUid)) {
+            merged.push(currentUid);
+          }
+        }
+        selectedEntryUids.value = merged;
+      } else {
+        selectedEntryUids.value = rangeUids;
+      }
+    } else {
+      selectedEntryUids.value = [uid];
+    }
+    selectedEntryUid.value = uid;
+    return;
+  }
+
+  if (ctrlLike) {
+    const current = [...selectedEntryUids.value];
+    const index = current.indexOf(uid);
+    if (index >= 0) {
+      if (current.length > 1) {
+        current.splice(index, 1);
+        selectedEntryUids.value = current;
+        if (selectedEntryUid.value === uid) {
+          selectedEntryUid.value = current[Math.max(0, index - 1)] ?? current[0] ?? uid;
+        }
+      } else {
+        selectedEntryUid.value = uid;
+        selectedEntryUids.value = [uid];
+      }
+    } else {
+      current.push(uid);
+      selectedEntryUids.value = current;
+      selectedEntryUid.value = uid;
+    }
+    selectedEntryAnchorUid.value = uid;
+    return;
+  }
+
+  selectedEntryUid.value = uid;
+  selectedEntryUids.value = [uid];
+  selectedEntryAnchorUid.value = uid;
+}
+
+function clearEntryDragState(): void {
+  draggingEntryUids.value = [];
+  entryDropTargetUid.value = null;
+  entryDropPosition.value = null;
+}
+
+function reorderEntriesByDrop(targetUid: number, position: 'before' | 'after'): boolean {
+  if (!draggingEntryUids.value.length) {
+    return false;
+  }
+  const movingSet = new Set(draggingEntryUids.value);
+  if (movingSet.has(targetUid)) {
+    return false;
+  }
+  const movingEntries = draftEntries.value.filter(entry => movingSet.has(entry.uid));
+  if (!movingEntries.length) {
+    return false;
+  }
+  const remaining = draftEntries.value.filter(entry => !movingSet.has(entry.uid));
+  let insertIndex = remaining.findIndex(entry => entry.uid === targetUid);
+  if (insertIndex < 0) {
+    insertIndex = remaining.length;
+  } else if (position === 'after') {
+    insertIndex += 1;
+  }
+  const next = [...remaining.slice(0, insertIndex), ...movingEntries, ...remaining.slice(insertIndex)];
+  const unchanged = next.every((entry, index) => entry.uid === draftEntries.value[index]?.uid);
+  if (unchanged) {
+    return false;
+  }
+
+  draftEntries.value = next;
+  selectedEntryUids.value = movingEntries.map(entry => entry.uid);
+  if (!selectedEntryUid.value || !selectedEntryUids.value.includes(selectedEntryUid.value)) {
+    selectedEntryUid.value = selectedEntryUids.value[0] ?? null;
+  }
+  if (selectedEntryUid.value !== null) {
+    selectedEntryAnchorUid.value = selectedEntryUid.value;
+  }
+  return true;
+}
+
+function handleEntryDragStart(uid: number, event: DragEvent): void {
+  if (isMobile.value) {
+    return;
+  }
+  const orderedSelected = getOrderedSelectedEntryUids();
+  if (orderedSelected.includes(uid) && orderedSelected.length > 1) {
+    draggingEntryUids.value = orderedSelected;
+  } else {
+    selectedEntryUid.value = uid;
+    selectedEntryUids.value = [uid];
+    selectedEntryAnchorUid.value = uid;
+    draggingEntryUids.value = [uid];
+  }
+  entryDropTargetUid.value = null;
+  entryDropPosition.value = null;
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(uid));
+  }
+}
+
+function handleEntryDragOver(uid: number, event: DragEvent): void {
+  if (!draggingEntryUids.value.length) {
+    return;
+  }
+  event.preventDefault();
+  const element = event.currentTarget as HTMLElement | null;
+  if (!element) {
+    return;
+  }
+  const rect = element.getBoundingClientRect();
+  const offsetY = event.clientY - rect.top;
+  entryDropTargetUid.value = uid;
+  entryDropPosition.value = offsetY > rect.height / 2 ? 'after' : 'before';
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move';
+  }
+}
+
+function handleEntryDrop(uid: number, event: DragEvent): void {
+  event.preventDefault();
+  if (!draggingEntryUids.value.length) {
+    return;
+  }
+  const changed = reorderEntriesByDrop(uid, entryDropPosition.value ?? 'after');
+  clearEntryDragState();
+  if (changed) {
+    setStatus(`已拖拽排序 ${selectedEntryUids.value.length || 1} 个条目`);
+  }
+  suppressNextEntryClick.value = true;
+  setTimeout(() => {
+    suppressNextEntryClick.value = false;
+  }, 0);
+}
+
+function handleEntryDragEnd(): void {
+  clearEntryDragState();
+  suppressNextEntryClick.value = true;
+  setTimeout(() => {
+    suppressNextEntryClick.value = false;
+  }, 0);
 }
 
 function goBackToList(): void {
   selectedEntryUid.value = null;
-  mobileTab.value = 'list';
+  selectedEntryUids.value = [];
+  selectedEntryAnchorUid.value = null;
+  if (isMobile.value) {
+    mobileTab.value = 'list';
+  }
 }
 
 function createEntrySnapshotRecord(
@@ -7162,33 +7406,95 @@ function duplicateSelectedEntry(): void {
 }
 
 function removeSelectedEntry(): void {
-  if (!selectedEntry.value || selectedEntryIndex.value < 0) {
+  const selectedUids = getOrderedSelectedEntryUids();
+  if (!selectedUids.length) {
     return;
   }
-  if (!confirm(`确定删除条目 "${selectedEntry.value.name}" ?`)) {
+  const entriesByUid = new Map(draftEntries.value.map(entry => [entry.uid, entry] as const));
+  const selectedEntries = selectedUids
+    .map(uid => entriesByUid.get(uid))
+    .filter((entry): entry is WorldbookEntry => Boolean(entry));
+  if (!selectedEntries.length) {
     return;
   }
-  pushEntrySnapshot('删除前快照', selectedEntry.value);
-  draftEntries.value.splice(selectedEntryIndex.value, 1);
+
+  const confirmText = selectedEntries.length === 1
+    ? `确定删除条目 "${selectedEntries[0].name}" ?`
+    : `确定删除选中的 ${selectedEntries.length} 个条目？`;
+  if (!confirm(confirmText)) {
+    return;
+  }
+
+  pushEntrySnapshotsBulk(
+    selectedEntries.map(entry => ({
+      label: '删除前快照',
+      uid: entry.uid,
+      name: entry.name,
+      entry,
+    })),
+  );
+
+  const removeSet = new Set(selectedUids);
+  draftEntries.value = draftEntries.value.filter(entry => !removeSet.has(entry.uid));
+  selectedEntryUids.value = [];
+
   if (isMobile.value) {
     selectedEntryUid.value = null;
+    selectedEntryAnchorUid.value = null;
   } else {
     ensureSelectedEntryExists();
   }
-  setStatus('已删除条目');
+  setStatus(selectedEntries.length === 1 ? '已删除条目' : `已删除 ${selectedEntries.length} 个条目`);
 }
 
 function moveSelectedEntry(direction: -1 | 1): void {
-  if (selectedEntryIndex.value < 0) {
+  const selectedUids = getOrderedSelectedEntryUids();
+  if (!selectedUids.length) {
     return;
   }
-  const target = selectedEntryIndex.value + direction;
-  if (target < 0 || target >= draftEntries.value.length) {
+  const selectedSet = new Set(selectedUids);
+  let moved = false;
+
+  if (direction < 0) {
+    for (const uid of selectedUids) {
+      const index = draftEntries.value.findIndex(entry => entry.uid === uid);
+      if (index <= 0) {
+        continue;
+      }
+      const prev = draftEntries.value[index - 1];
+      if (selectedSet.has(prev.uid)) {
+        continue;
+      }
+      const [entry] = draftEntries.value.splice(index, 1);
+      draftEntries.value.splice(index - 1, 0, entry);
+      moved = true;
+    }
+  } else {
+    for (let i = selectedUids.length - 1; i >= 0; i -= 1) {
+      const uid = selectedUids[i];
+      const index = draftEntries.value.findIndex(entry => entry.uid === uid);
+      if (index < 0 || index >= draftEntries.value.length - 1) {
+        continue;
+      }
+      const next = draftEntries.value[index + 1];
+      if (selectedSet.has(next.uid)) {
+        continue;
+      }
+      const [entry] = draftEntries.value.splice(index, 1);
+      draftEntries.value.splice(index + 1, 0, entry);
+      moved = true;
+    }
+  }
+
+  if (!moved) {
     return;
   }
-  const [entry] = draftEntries.value.splice(selectedEntryIndex.value, 1);
-  draftEntries.value.splice(target, 0, entry);
-  selectedEntryUid.value = entry.uid;
+
+  selectedEntryUids.value = getOrderedSelectedEntryUids();
+  if (!selectedEntryUid.value || !selectedEntryUids.value.includes(selectedEntryUid.value)) {
+    selectedEntryUid.value = selectedEntryUids.value[0] ?? null;
+  }
+  setStatus(selectedUids.length > 1 ? `已移动 ${selectedUids.length} 个条目` : '已移动条目');
 }
 
 function normalizeAllEntries(): void {
@@ -10741,10 +11047,42 @@ watch(hasUnsavedChanges, (val) => {
 }
 
 .entry-item.selected {
+  background: color-mix(in srgb, var(--wb-primary-soft) 65%, transparent);
+  border-color: color-mix(in srgb, var(--wb-primary) 70%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--wb-primary) 55%, transparent), 0 4px 14px rgba(0,0,0,0.12);
+  transform: translateY(-1px);
+}
+
+.entry-item.selected.primary {
   background: var(--wb-primary-soft);
   border-color: var(--wb-primary);
   box-shadow: 0 0 0 1px var(--wb-primary), 0 4px 20px rgba(0,0,0,0.15);
   transform: translateY(-1px);
+}
+
+.entry-item.drag-source {
+  opacity: 0.82;
+}
+
+.entry-item.drop-before::after,
+.entry-item.drop-after::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--wb-primary-light);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--wb-primary-light) 65%, transparent);
+  pointer-events: none;
+}
+
+.entry-item.drop-before::after {
+  top: -2px;
+}
+
+.entry-item.drop-after::after {
+  bottom: -2px;
 }
 
 .entry-item.disabled {
