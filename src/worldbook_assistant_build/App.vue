@@ -419,28 +419,9 @@
                           @blur="onCrossCopyRowRenameBlur(row)"
                         />
                       </div>
-                      <details class="cross-copy-details">
-                        <summary>查看对比明细</summary>
-                        <div class="cross-copy-preview-grid">
-                          <div class="cross-copy-preview-card">
-                            <strong>来源</strong>
-                            <span class="name">{{ row.source_entry.name || `条目 ${row.source_entry.uid}` }}</span>
-                            <span class="meta">{{ getCrossCopyEntryProfile(row.source_entry) }}</span>
-                            <p>{{ getCrossCopyPreviewText(row.source_entry.content) }}</p>
-                          </div>
-                          <div class="cross-copy-preview-card">
-                            <strong>目标命中</strong>
-                            <template v-if="getCrossCopyPrimaryTargetMatch(row)">
-                              <span class="name">{{ getCrossCopyPrimaryTargetMatch(row)?.name }}</span>
-                              <span class="meta">{{ getCrossCopyEntryProfile(getCrossCopyPrimaryTargetMatch(row) as WorldbookEntry) }}</span>
-                              <p>{{ getCrossCopyPreviewText((getCrossCopyPrimaryTargetMatch(row) as WorldbookEntry).content) }}</p>
-                            </template>
-                            <template v-else>
-                              <span class="meta">无直接命中条目</span>
-                            </template>
-                          </div>
-                        </div>
-                      </details>
+                      <button class="btn mini cross-copy-detail-trigger" type="button" @click="openCrossCopyDiff(row)">
+                        ▷ 查看对比明细
+                      </button>
                     </article>
                     <div v-if="!crossCopyRowsFiltered.length" class="empty-note">当前筛选下无条目</div>
                   </div>
@@ -1313,28 +1294,9 @@
                         @blur="onCrossCopyRowRenameBlur(row)"
                       />
                     </div>
-                    <details class="cross-copy-details">
-                      <summary>查看对比明细</summary>
-                      <div class="cross-copy-preview-grid">
-                        <div class="cross-copy-preview-card">
-                          <strong>来源</strong>
-                          <span class="name">{{ row.source_entry.name || `条目 ${row.source_entry.uid}` }}</span>
-                          <span class="meta">{{ getCrossCopyEntryProfile(row.source_entry) }}</span>
-                          <p>{{ getCrossCopyPreviewText(row.source_entry.content) }}</p>
-                        </div>
-                        <div class="cross-copy-preview-card">
-                          <strong>目标命中</strong>
-                          <template v-if="getCrossCopyPrimaryTargetMatch(row)">
-                            <span class="name">{{ getCrossCopyPrimaryTargetMatch(row)?.name }}</span>
-                            <span class="meta">{{ getCrossCopyEntryProfile(getCrossCopyPrimaryTargetMatch(row) as WorldbookEntry) }}</span>
-                            <p>{{ getCrossCopyPreviewText((getCrossCopyPrimaryTargetMatch(row) as WorldbookEntry).content) }}</p>
-                          </template>
-                          <template v-else>
-                            <span class="meta">无直接命中条目</span>
-                          </template>
-                        </div>
-                      </div>
-                    </details>
+                    <button class="btn mini cross-copy-detail-trigger" type="button" @click="openCrossCopyDiff(row)">
+                      ▷ 查看对比明细
+                    </button>
                   </article>
                   <div v-if="!crossCopyRowsFiltered.length" class="empty-note">当前筛选下无条目</div>
                 </div>
@@ -2000,6 +1962,65 @@
         </div>
       </div>
     </div>
+
+          <div v-if="showCrossCopyDiffModal && crossCopyDiffRow" class="wb-modal-backdrop" @click.self="closeCrossCopyDiff">
+            <div class="wb-history-modal cross-copy-diff-modal">
+              <div class="wb-history-modal-header">
+                <div>
+                  <strong>📚 跨书条目对比</strong>
+                  <span>{{ crossCopyDiffHeaderText }}</span>
+                </div>
+                <div class="wb-history-modal-actions">
+                  <span class="cross-copy-status-badge" :class="getCrossCopyStatusBadgeClass(crossCopyDiffRow.status)">
+                    {{ getCrossCopyStatusLabel(crossCopyDiffRow.status) }}
+                  </span>
+                  <button class="btn mini" type="button" @click="closeCrossCopyDiff">关闭</button>
+                </div>
+              </div>
+
+              <div class="cross-copy-diff-main">
+                <div class="cross-copy-preview-grid cross-copy-preview-grid-modal">
+                  <div class="cross-copy-preview-card">
+                    <strong>来源</strong>
+                    <span class="name">{{ crossCopyDiffRow.source_entry.name || `条目 ${crossCopyDiffRow.source_entry.uid}` }}</span>
+                    <span class="meta">{{ getCrossCopyEntryProfile(crossCopyDiffRow.source_entry) }}</span>
+                    <p>{{ getCrossCopyPreviewText(crossCopyDiffRow.source_entry.content, 260) }}</p>
+                  </div>
+                  <div class="cross-copy-preview-card">
+                    <strong>目标命中</strong>
+                    <template v-if="crossCopyDiffTargetEntry">
+                      <span class="name">{{ crossCopyDiffTargetEntry.name || `条目 ${crossCopyDiffTargetEntry.uid}` }}</span>
+                      <span class="meta">{{ getCrossCopyEntryProfile(crossCopyDiffTargetEntry) }}</span>
+                      <p>{{ getCrossCopyPreviewText(crossCopyDiffTargetEntry.content, 260) }}</p>
+                    </template>
+                    <template v-else>
+                      <span class="meta">无直接命中条目（右侧为空）</span>
+                      <p class="cross-copy-diff-empty">该条目在目标世界书中将按“新建”逻辑处理。</p>
+                    </template>
+                  </div>
+                </div>
+
+                <section class="wb-history-diff-wrap">
+                  <div class="wb-history-diff-head">
+                    <div>{{ crossCopyDiffSummary }}</div>
+                    <div v-if="crossCopyDiffRow.target_summary.same_name_matches.length > 1" class="cross-copy-diff-note">
+                      同名命中 {{ crossCopyDiffRow.target_summary.same_name_matches.length }} 条（右侧展示首条）
+                    </div>
+                  </div>
+                  <div class="wb-history-diff-grid">
+                    <div>
+                      <div class="wb-history-diff-title">Left / 来源条目</div>
+                      <div class="wb-history-diff-body" v-html="crossCopyDiffResult.leftHtml"></div>
+                    </div>
+                    <div>
+                      <div class="wb-history-diff-title">Right / 目标条目</div>
+                      <div class="wb-history-diff-body" v-html="crossCopyDiffResult.rightHtml"></div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>
 
           <div v-if="showEntryHistoryModal" class="wb-modal-backdrop" @click.self="showEntryHistoryModal = false">
             <div class="wb-history-modal">
@@ -2991,6 +3012,8 @@ const findHitIndex = ref(-1);
 const statusMessage = ref('就绪');
 const isBusy = ref(false);
 const isSaving = ref(false);
+const showCrossCopyDiffModal = ref(false);
+const crossCopyDiffRowId = ref('');
 const showEntryHistoryModal = ref(false);
 const showWorldbookHistoryModal = ref(false);
 const entryHistoryLeftId = ref('');
@@ -3291,6 +3314,48 @@ const crossCopyCanCompare = computed(() =>
 const crossCopyCanApply = computed(() =>
   crossCopyCanCompare.value && crossCopySelectedRows.value.length > 0 && !crossCopyApplyLoading.value,
 );
+
+const crossCopyDiffRow = computed(() => {
+  if (!crossCopyDiffRowId.value) {
+    return null;
+  }
+  return crossCopyRows.value.find(row => row.id === crossCopyDiffRowId.value) ?? null;
+});
+
+const crossCopyDiffTargetEntry = computed(() => {
+  if (!crossCopyDiffRow.value) {
+    return null;
+  }
+  return getCrossCopyPrimaryTargetMatch(crossCopyDiffRow.value);
+});
+
+const crossCopyDiffResult = computed(() => {
+  return buildDiffHtml(
+    serializeWorldbookEntryForDiff(crossCopyDiffRow.value?.source_entry ?? null),
+    serializeWorldbookEntryForDiff(crossCopyDiffTargetEntry.value),
+  );
+});
+
+const crossCopyDiffSummary = computed(() => {
+  if (!crossCopyDiffRow.value) {
+    return '未选择对比条目';
+  }
+  if (!crossCopyDiffTargetEntry.value) {
+    return '目标无直接命中，右侧为空';
+  }
+  return getCrossCopyRowDiffSummary(crossCopyDiffRow.value);
+});
+
+const crossCopyDiffHeaderText = computed(() => {
+  if (!crossCopyDiffRow.value) {
+    return '-';
+  }
+  const sourceName = crossCopyDiffRow.value.source_entry.name || `条目 ${crossCopyDiffRow.value.source_entry.uid}`;
+  const targetName = crossCopyDiffTargetEntry.value
+    ? (crossCopyDiffTargetEntry.value.name || `条目 ${crossCopyDiffTargetEntry.value.uid}`)
+    : '无命中条目';
+  return `${sourceName}  ↔  ${targetName}`;
+});
 
 const globalAddCandidates = computed(() => {
   const keyword = globalAddSearchText.value.trim().toLowerCase();
@@ -3728,6 +3793,12 @@ watch(
 
 watch(crossCopySnapshotBeforeApply, () => {
   persistCrossCopyState();
+});
+
+watch(crossCopyDiffRow, row => {
+  if (!row && showCrossCopyDiffModal.value) {
+    closeCrossCopyDiff();
+  }
 });
 
 watch(mobileTab, tab => {
@@ -5528,7 +5599,20 @@ function ensureCrossCopyRenameForRow(row: CrossCopyRow): void {
   row.rename_name = typed;
 }
 
+function openCrossCopyDiff(row: CrossCopyRow): void {
+  crossCopyDiffRowId.value = row.id;
+  showCrossCopyDiffModal.value = true;
+}
+
+function closeCrossCopyDiff(): void {
+  showCrossCopyDiffModal.value = false;
+  crossCopyDiffRowId.value = '';
+}
+
 function setCrossCopyModeActive(next: boolean): void {
+  if (!next) {
+    closeCrossCopyDiff();
+  }
   crossCopyMode.value = next;
   if (next) {
     aiGeneratorMode.value = false;
@@ -5549,6 +5633,7 @@ function toggleCrossCopyMode(): void {
 }
 
 function resetCrossCopyCompare(reason = ''): void {
+  closeCrossCopyDiff();
   crossCopyRows.value = [];
   crossCopySourceBaselineEntries.value = [];
   crossCopyTargetBaselineEntries.value = [];
@@ -6030,11 +6115,10 @@ function escapeHtml(text: string): string {
     .replaceAll("'", '&#39;');
 }
 
-function serializeEntryVersionForDiff(view: EntryVersionView | null): string {
-  if (!view) {
+function serializeWorldbookEntryForDiff(entry: WorldbookEntry | null): string {
+  if (!entry) {
     return '';
   }
-  const entry = view.entry;
   const payload = {
     uid: entry.uid,
     name: entry.name,
@@ -6048,6 +6132,10 @@ function serializeEntryVersionForDiff(view: EntryVersionView | null): string {
     extra: entry.extra ?? null,
   };
   return JSON.stringify(payload, null, 2);
+}
+
+function serializeEntryVersionForDiff(view: EntryVersionView | null): string {
+  return serializeWorldbookEntryForDiff(view?.entry ?? null);
 }
 
 function serializeWorldbookVersionForDiff(view: WorldbookVersionView | null): string {
@@ -9304,8 +9392,8 @@ watch(hasUnsavedChanges, (val) => {
   grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
 }
 
-.cross-copy-details summary {
-  cursor: pointer;
+.cross-copy-detail-trigger {
+  align-self: flex-start;
   font-size: 12px;
   color: var(--wb-text-muted);
 }
@@ -9340,6 +9428,35 @@ watch(hasUnsavedChanges, (val) => {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.cross-copy-diff-modal {
+  width: min(1320px, 100%);
+  max-height: min(92vh, 1020px);
+}
+
+.cross-copy-diff-main {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cross-copy-preview-grid.cross-copy-preview-grid-modal {
+  margin-top: 0;
+  padding: 10px;
+  border-bottom: 1px solid var(--wb-border-main);
+  background: var(--wb-bg-panel);
+}
+
+.cross-copy-diff-empty {
+  color: var(--wb-text-muted);
+}
+
+.cross-copy-diff-note {
+  color: var(--wb-text-muted);
+  font-size: 11px;
 }
 
 .cross-copy-actions {
