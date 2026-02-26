@@ -833,7 +833,6 @@
             :class="{
               'focus-bindings': isDesktopFocusMode,
               'copy-workspace': crossCopyMode && !globalWorldbookMode && !isDesktopFocusMode,
-              'global-mode-active': globalWorldbookMode,
             }"
           >
             <div v-if="!isDesktopFocusMode && crossCopyMode" class="wb-copy-workspace-head">
@@ -11669,10 +11668,6 @@ watch(hasUnsavedChanges, (val) => {
   background: transparent;
 }
 
-.wb-bindings.global-mode-active {
-  min-height: 0;
-}
-
 .wb-copy-workspace-head {
   display: flex;
   align-items: center;
@@ -11740,10 +11735,6 @@ watch(hasUnsavedChanges, (val) => {
   padding: 12px;
   display: grid;
   gap: 12px;
-  max-height: min(56vh, 640px);
-  max-height: min(56dvh, 640px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
 }
 
 .global-mode-head {
@@ -12094,7 +12085,9 @@ watch(hasUnsavedChanges, (val) => {
 }
 
 .wb-main-layout.global-mode-visible {
-  min-height: clamp(280px, 34vh, 520px);
+  flex: 0 0 auto;
+  height: auto;
+  min-height: clamp(360px, 46vh, 700px);
 }
 
 .wb-assistant-root.focus-cine-locked .wb-main-layout {
