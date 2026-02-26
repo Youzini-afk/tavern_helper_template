@@ -1421,7 +1421,7 @@
                   <span>{{ crossCopyRows.length }} 条</span>
                 </div>
                 <div class="cross-copy-list-tools">
-                  <input v-model="crossCopySearchText" data-copy-hero="find_btn" type="text" class="text-input" placeholder="搜索来源名称 / 内容" />
+                  <input v-model="crossCopySearchText" type="text" class="text-input" placeholder="搜索来源名称 / 内容" />
                   <div class="cross-copy-mini-actions">
                     <button class="btn mini" type="button" :disabled="!crossCopySourceRowsFiltered.length" @click="setCrossCopySelectionForFiltered(true)">全选显示</button>
                     <button class="btn mini" type="button" :disabled="!crossCopyRows.length" @click="setCrossCopySelectionForAll(false)">全不选</button>
