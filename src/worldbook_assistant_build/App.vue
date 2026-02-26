@@ -833,6 +833,7 @@
             :class="{
               'focus-bindings': isDesktopFocusMode,
               'copy-workspace': crossCopyMode && !globalWorldbookMode && !isDesktopFocusMode,
+              'global-mode-active': globalWorldbookMode,
             }"
           >
             <div v-if="!isDesktopFocusMode && crossCopyMode" class="wb-copy-workspace-head">
@@ -1433,7 +1434,7 @@
             </div>
           </section>
 
-          <section v-show="!aiGeneratorMode && !tagEditorMode && !crossCopyMode" ref="mainLayoutRef" class="wb-main-layout" :class="{ 'focus-mode': isDesktopFocusMode }" :style="mainLayoutStyle">
+          <section v-show="!aiGeneratorMode && !tagEditorMode && !crossCopyMode" ref="mainLayoutRef" class="wb-main-layout" :class="{ 'focus-mode': isDesktopFocusMode, 'global-mode-visible': globalWorldbookMode }" :style="mainLayoutStyle">
             <aside v-show="!showMobileEditor" class="wb-entry-list" :class="{ focus: isDesktopFocusMode }">
               <div v-if="!isDesktopFocusMode" class="list-search">
                 <input v-model="searchText" type="text" class="text-input" placeholder="搜索名称 / 内容 / 关键词" />
@@ -11668,6 +11669,10 @@ watch(hasUnsavedChanges, (val) => {
   background: transparent;
 }
 
+.wb-bindings.global-mode-active {
+  min-height: 0;
+}
+
 .wb-copy-workspace-head {
   display: flex;
   align-items: center;
@@ -11735,6 +11740,10 @@ watch(hasUnsavedChanges, (val) => {
   padding: 12px;
   display: grid;
   gap: 12px;
+  max-height: min(56vh, 640px);
+  max-height: min(56dvh, 640px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .global-mode-head {
@@ -12082,6 +12091,10 @@ watch(hasUnsavedChanges, (val) => {
   gap: 0;
   align-items: stretch;
   transition: grid-template-columns 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wb-main-layout.global-mode-visible {
+  min-height: clamp(280px, 34vh, 520px);
 }
 
 .wb-assistant-root.focus-cine-locked .wb-main-layout {
