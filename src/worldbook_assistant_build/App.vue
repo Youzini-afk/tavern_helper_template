@@ -20,15 +20,63 @@
                     <span class="worldbook-picker-arrow">▾</span>
                   </button>
                   <div v-if="worldbookPickerOpen" class="worldbook-picker-dropdown">
-                    <div v-if="tagDefinitions.length" class="worldbook-picker-tags">
-                      <button
-                        v-for="tag in tagDefinitions" :key="tag.id"
-                        class="tag-filter-chip"
-                        :class="{ active: activeTagFilter === tag.id }"
-                        :style="{ '--tag-color': tag.color }"
-                        type="button"
-                        @click="activeTagFilter = activeTagFilter === tag.id ? '' : tag.id"
-                      >{{ tag.name }}</button>
+                    <div v-if="tagDefinitions.length" class="worldbook-picker-tags tree-mode">
+                      <div class="tag-filter-toolbar">
+                        <button class="btn mini tag-filter-open" type="button" @click="tagFilterPanelOpen = !tagFilterPanelOpen">🏷 标签筛选</button>
+                        <span class="tag-filter-summary">{{ tagFilterSummary }}</span>
+                        <select v-model="tagFilterLogic" class="text-input tag-filter-select">
+                          <option value="or">OR</option>
+                          <option value="and">AND</option>
+                        </select>
+                        <select v-model="tagFilterMatchMode" class="text-input tag-filter-select">
+                          <option value="descendants">子树</option>
+                          <option value="exact">精确</option>
+                        </select>
+                        <button class="btn mini" type="button" :disabled="!selectedTagFilterIds.length" @click="clearTagFilterSelection">清空</button>
+                      </div>
+                      <Transition name="tag-filter-panel">
+                        <div v-if="tagFilterPanelOpen" class="tag-filter-panel" :class="{ mobile: isMobile }">
+                          <input v-model="tagFilterSearchText" type="text" class="text-input tag-filter-search" placeholder="搜索标签名称 / 路径..." />
+                          <div v-if="selectedTagFilterIds.length" class="tag-filter-selected-list">
+                            <button
+                              v-for="tagId in selectedTagFilterIds"
+                              :key="`tag-selected-mobile-${tagId}`"
+                              class="tag-filter-selected-chip"
+                              type="button"
+                              @click="toggleTagFilterSelection(tagId)"
+                            >
+                              {{ tagPathMap.get(tagId) ?? tagId }} ×
+                            </button>
+                          </div>
+                          <div v-if="isMobile" class="tag-flat-list">
+                            <label
+                              v-for="tag in tagAssignOptions.filter(item => !tagFilterSearchText.trim() || item.path.toLowerCase().includes(tagFilterSearchText.trim().toLowerCase()))"
+                              :key="`tag-flat-mobile-${tag.id}`"
+                              class="tag-flat-item"
+                              :style="{ '--tag-color': tag.color }"
+                            >
+                              <input type="checkbox" :checked="selectedTagFilterIdSet.has(tag.id)" @change="toggleTagFilterSelection(tag.id)" />
+                              <span>{{ tag.path }}</span>
+                            </label>
+                            <div v-if="!tagAssignOptions.length" class="empty-note">暂无标签</div>
+                          </div>
+                          <div v-else class="tag-tree-list">
+                            <div v-for="row in tagTreeRows" :key="`tag-tree-mobile-${row.id}`" class="tag-tree-row" :style="{ '--depth': row.depth, '--tag-color': row.color }">
+                              <button
+                                v-if="row.hasChildren"
+                                class="tag-tree-toggle"
+                                type="button"
+                                @click.stop="toggleTagTreeExpanded(row.id)"
+                              >{{ tagTreeExpandedIds.includes(row.id) || tagFilterSearchText.trim() ? '▾' : '▸' }}</button>
+                              <span v-else class="tag-tree-toggle placeholder"></span>
+                              <input type="checkbox" :checked="selectedTagFilterIdSet.has(row.id)" @change="toggleTagFilterSelection(row.id)" />
+                              <span class="tag-tree-name">{{ row.name }}</span>
+                              <span class="tag-tree-path">{{ row.path }}</span>
+                            </div>
+                            <div v-if="!tagTreeRows.length" class="empty-note">没有匹配的标签</div>
+                          </div>
+                        </div>
+                      </Transition>
                     </div>
                     <input
                       v-model="worldbookPickerSearchText"
@@ -575,57 +623,106 @@
           <!-- Tab: 标签 -->
           <Transition name="mobile-tab">
           <div v-show="mobileTab === 'tags'" class="mobile-pane">
-            <section class="tag-editor-panel" style="padding:12px;">
-              <div style="font-size:16px;font-weight:700;margin-bottom:12px;">🏷️ 标签管理</div>
-              <div style="display:flex;gap:6px;margin-bottom:12px;">
-                <input v-model="tagNewName" type="text" class="text-input" placeholder="新标签名称" @keydown.enter.prevent="tagCreate" style="flex:1;" />
-                <button class="btn" type="button" @click="tagCreate">创建</button>
-                <button class="btn danger" type="button" @click="tagResetAll" :disabled="!tagDefinitions.length">清除全部</button>
+            <section class="tag-editor-panel mobile-tag-editor">
+              <div class="tag-editor-title">🏷️ 标签管理</div>
+              <div class="tag-create-panel">
+                <div class="tag-create-row">
+                  <input
+                    v-model="tagNewName"
+                    type="text"
+                    class="text-input"
+                    placeholder="新标签名称"
+                    @keydown.enter.prevent="tagCreate"
+                  />
+                  <button class="btn" type="button" @click="tagCreate">创建</button>
+                  <button class="btn danger" type="button" @click="tagResetAll" :disabled="!tagDefinitions.length">清除全部</button>
+                </div>
+                <label class="field tag-parent-field">
+                  <span>父标签（可选）</span>
+                  <select v-model="tagNewParentId" class="text-input">
+                    <option value="">根级</option>
+                    <option v-for="option in tagAssignOptions" :key="`new-parent-mobile-${option.id}`" :value="option.id">
+                      {{ option.path }}
+                    </option>
+                  </select>
+                </label>
               </div>
-              <div v-if="tagDefinitions.length" style="margin-bottom:16px;">
-                <div style="font-size:13px;font-weight:600;margin-bottom:6px;">已建标签</div>
-                <div style="display:flex;flex-wrap:wrap;gap:6px;">
-                  <div v-for="tag in tagDefinitions" :key="tag.id" class="tag-editor-item" :style="{ '--tag-color': tag.color }">
-                    <span class="tag-editor-dot" :style="{ background: tag.color }"></span>
+
+              <div v-if="tagDefinitions.length" class="tag-editor-tree-wrap">
+                <div class="tag-editor-subtitle">标签树</div>
+                <div class="tag-editor-tree-list">
+                  <div v-for="row in tagManagementRows" :key="`tag-mobile-row-${row.id}`" class="tag-editor-tree-item" :style="{ '--tag-color': row.color, '--depth': row.depth }">
+                    <span class="tag-editor-indent"></span>
+                    <span class="tag-editor-dot" :style="{ background: row.color }"></span>
                     <input
-                      :value="tag.name"
+                      :value="tagDefinitionMap.get(row.id)?.name ?? ''"
                       class="tag-editor-name-input"
-                      @blur="tagRename(tag.id, ($event.target as HTMLInputElement).value)"
+                      @blur="tagRename(row.id, ($event.target as HTMLInputElement).value)"
                       @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
                     />
+                    <select
+                      class="text-input tag-parent-select"
+                      :value="tagDefinitionMap.get(row.id)?.parent_id ?? ''"
+                      @change="tagSetParent(row.id, ($event.target as HTMLSelectElement).value || null)"
+                    >
+                      <option value="">根级</option>
+                      <option
+                        v-for="option in tagAssignOptions"
+                        :key="`tag-parent-mobile-${row.id}-${option.id}`"
+                        :value="option.id"
+                        :disabled="isTagParentOptionDisabled(row.id, option.id)"
+                      >
+                        {{ option.path }}
+                      </option>
+                    </select>
                     <div class="tag-color-picker">
                       <button
-                        v-for="c in TAG_COLORS" :key="c"
+                        v-for="c in TAG_COLORS"
+                        :key="`mobile-color-${row.id}-${c}`"
                         class="tag-color-dot"
-                        :class="{ active: tag.color === c }"
+                        :class="{ active: row.color === c }"
                         :style="{ background: c }"
                         type="button"
-                        @click="tagSetColor(tag.id, c)"
+                        @click="tagSetColor(row.id, c)"
                       ></button>
                     </div>
-                    <button class="tag-delete-btn" type="button" @click="tagDelete(tag.id)">×</button>
+                    <button class="tag-delete-btn" type="button" @click="tagDelete(row.id)">×</button>
                   </div>
                 </div>
               </div>
-              <div v-if="tagDefinitions.length">
-                <div style="font-size:13px;font-weight:600;margin-bottom:6px;">世界书分配</div>
-                <input v-model="tagAssignSearch" type="text" class="text-input" placeholder="搜索世界书..." style="margin-bottom:8px;" />
-                <div class="tag-assign-list">
-                  <div v-for="name in tagAssignWorldbooks" :key="name" class="tag-assign-row">
+
+              <div v-if="tagDefinitions.length" class="tag-assign-panel">
+                <div class="tag-editor-subtitle">世界书分配</div>
+                <div class="tag-assign-controls">
+                  <label class="field">
+                    <span>当前分配标签</span>
+                    <select v-model="tagAssignTargetId" class="text-input">
+                      <option value="">请选择标签</option>
+                      <option v-for="option in tagAssignOptions" :key="`assign-mobile-${option.id}`" :value="option.id">
+                        {{ option.path }}
+                      </option>
+                    </select>
+                  </label>
+                  <input v-model="tagAssignSearch" type="text" class="text-input" placeholder="搜索世界书..." />
+                </div>
+                <div class="tag-assign-list compact">
+                  <button
+                    v-for="name in tagAssignWorldbooks"
+                    :key="`assign-mobile-wb-${name}`"
+                    class="tag-assign-row toggle"
+                    :class="{ active: tagAssignTargetId ? (tagAssignments[name] ?? []).includes(tagAssignTargetId) : false }"
+                    type="button"
+                    :disabled="!tagAssignTargetId"
+                    @click="tagToggleAssignmentForSelectedTag(name)"
+                  >
                     <span class="tag-assign-name" :title="name">{{ name }}</span>
-                    <div class="tag-assign-chips">
-                      <button
-                        v-for="tag in tagDefinitions" :key="tag.id"
-                        class="tag-assign-chip"
-                        :class="{ active: (tagAssignments[name] ?? []).includes(tag.id) }"
-                        :style="{ '--tag-color': tag.color }"
-                        type="button"
-                        @click="tagToggleAssignment(name, tag.id)"
-                      >{{ tag.name }}</button>
-                    </div>
-                  </div>
+                    <span class="tag-assign-state">{{ tagAssignTargetId && (tagAssignments[name] ?? []).includes(tagAssignTargetId) ? '已分配' : '未分配' }}</span>
+                    <span class="tag-assign-paths">{{ getWorldbookTagPathSummary(name) }}</span>
+                  </button>
+                  <div v-if="!tagAssignWorldbooks.length" class="empty-note">没有匹配的世界书</div>
                 </div>
               </div>
+
               <div v-else class="empty-note" style="margin-top:16px;">暂无标签，请先创建</div>
             </section>
           </div>
@@ -670,15 +767,51 @@
                   <span class="worldbook-picker-trigger-arrow">{{ worldbookPickerOpen ? '▴' : '▾' }}</span>
                 </button>
                 <div v-if="worldbookPickerOpen" class="worldbook-picker-dropdown">
-                  <div v-if="tagDefinitions.length" class="worldbook-picker-tags">
-                    <button
-                      v-for="tag in tagDefinitions" :key="tag.id"
-                      class="tag-filter-chip"
-                      :class="{ active: activeTagFilter === tag.id }"
-                      :style="{ '--tag-color': tag.color }"
-                      type="button"
-                      @click="activeTagFilter = activeTagFilter === tag.id ? '' : tag.id"
-                    >{{ tag.name }}</button>
+                  <div v-if="tagDefinitions.length" class="worldbook-picker-tags tree-mode">
+                    <div class="tag-filter-toolbar">
+                      <button class="btn mini tag-filter-open" type="button" @click="tagFilterPanelOpen = !tagFilterPanelOpen">🏷 标签筛选</button>
+                      <span class="tag-filter-summary">{{ tagFilterSummary }}</span>
+                      <select v-model="tagFilterLogic" class="text-input tag-filter-select">
+                        <option value="or">OR</option>
+                        <option value="and">AND</option>
+                      </select>
+                      <select v-model="tagFilterMatchMode" class="text-input tag-filter-select">
+                        <option value="descendants">子树</option>
+                        <option value="exact">精确</option>
+                      </select>
+                      <button class="btn mini" type="button" :disabled="!selectedTagFilterIds.length" @click="clearTagFilterSelection">清空</button>
+                    </div>
+                    <Transition name="tag-filter-panel">
+                      <div v-if="tagFilterPanelOpen" class="tag-filter-panel">
+                        <input v-model="tagFilterSearchText" type="text" class="text-input tag-filter-search" placeholder="搜索标签名称 / 路径..." />
+                        <div v-if="selectedTagFilterIds.length" class="tag-filter-selected-list">
+                          <button
+                            v-for="tagId in selectedTagFilterIds"
+                            :key="`tag-selected-desktop-${tagId}`"
+                            class="tag-filter-selected-chip"
+                            type="button"
+                            @click="toggleTagFilterSelection(tagId)"
+                          >
+                            {{ tagPathMap.get(tagId) ?? tagId }} ×
+                          </button>
+                        </div>
+                        <div class="tag-tree-list">
+                          <div v-for="row in tagTreeRows" :key="`tag-tree-desktop-${row.id}`" class="tag-tree-row" :style="{ '--depth': row.depth, '--tag-color': row.color }">
+                            <button
+                              v-if="row.hasChildren"
+                              class="tag-tree-toggle"
+                              type="button"
+                              @click.stop="toggleTagTreeExpanded(row.id)"
+                            >{{ tagTreeExpandedIds.includes(row.id) || tagFilterSearchText.trim() ? '▾' : '▸' }}</button>
+                            <span v-else class="tag-tree-toggle placeholder"></span>
+                            <input type="checkbox" :checked="selectedTagFilterIdSet.has(row.id)" @change="toggleTagFilterSelection(row.id)" />
+                            <span class="tag-tree-name">{{ row.name }}</span>
+                            <span class="tag-tree-path">{{ row.path }}</span>
+                          </div>
+                          <div v-if="!tagTreeRows.length" class="empty-note">没有匹配的标签</div>
+                        </div>
+                      </div>
+                    </Transition>
                   </div>
                   <input
                     ref="worldbookPickerSearchInputRef"
@@ -735,15 +868,51 @@
                       <span class="worldbook-picker-trigger-arrow">{{ worldbookPickerOpen ? '▴' : '▾' }}</span>
                     </button>
                     <div v-if="worldbookPickerOpen" class="worldbook-picker-dropdown">
-                      <div v-if="tagDefinitions.length" class="worldbook-picker-tags">
-                        <button
-                          v-for="tag in tagDefinitions" :key="`focus-tag-${tag.id}`"
-                          class="tag-filter-chip"
-                          :class="{ active: activeTagFilter === tag.id }"
-                          :style="{ '--tag-color': tag.color }"
-                          type="button"
-                          @click="activeTagFilter = activeTagFilter === tag.id ? '' : tag.id"
-                        >{{ tag.name }}</button>
+                      <div v-if="tagDefinitions.length" class="worldbook-picker-tags tree-mode">
+                        <div class="tag-filter-toolbar">
+                          <button class="btn mini tag-filter-open" type="button" @click="tagFilterPanelOpen = !tagFilterPanelOpen">🏷 标签筛选</button>
+                          <span class="tag-filter-summary">{{ tagFilterSummary }}</span>
+                          <select v-model="tagFilterLogic" class="text-input tag-filter-select">
+                            <option value="or">OR</option>
+                            <option value="and">AND</option>
+                          </select>
+                          <select v-model="tagFilterMatchMode" class="text-input tag-filter-select">
+                            <option value="descendants">子树</option>
+                            <option value="exact">精确</option>
+                          </select>
+                          <button class="btn mini" type="button" :disabled="!selectedTagFilterIds.length" @click="clearTagFilterSelection">清空</button>
+                        </div>
+                        <Transition name="tag-filter-panel">
+                          <div v-if="tagFilterPanelOpen" class="tag-filter-panel">
+                            <input v-model="tagFilterSearchText" type="text" class="text-input tag-filter-search" placeholder="搜索标签名称 / 路径..." />
+                            <div v-if="selectedTagFilterIds.length" class="tag-filter-selected-list">
+                              <button
+                                v-for="tagId in selectedTagFilterIds"
+                                :key="`tag-selected-focus-${tagId}`"
+                                class="tag-filter-selected-chip"
+                                type="button"
+                                @click="toggleTagFilterSelection(tagId)"
+                              >
+                                {{ tagPathMap.get(tagId) ?? tagId }} ×
+                              </button>
+                            </div>
+                            <div class="tag-tree-list">
+                              <div v-for="row in tagTreeRows" :key="`tag-tree-focus-${row.id}`" class="tag-tree-row" :style="{ '--depth': row.depth, '--tag-color': row.color }">
+                                <button
+                                  v-if="row.hasChildren"
+                                  class="tag-tree-toggle"
+                                  type="button"
+                                  @click.stop="toggleTagTreeExpanded(row.id)"
+                                >{{ tagTreeExpandedIds.includes(row.id) || tagFilterSearchText.trim() ? '▾' : '▸' }}</button>
+                                <span v-else class="tag-tree-toggle placeholder"></span>
+                                <input type="checkbox" :checked="selectedTagFilterIdSet.has(row.id)" @change="toggleTagFilterSelection(row.id)" />
+                                <span class="tag-tree-name">{{ row.name }}</span>
+                                <span class="tag-tree-path">{{ row.path }}</span>
+                              </div>
+                              <div v-if="!tagTreeRows.length" class="empty-note">没有匹配的标签</div>
+                            </div>
+                          </div>
+                        </Transition>
                       </div>
                       <input
                         ref="worldbookPickerSearchInputRef"
@@ -1273,55 +1442,101 @@
 
           <!-- 标签编辑模式 -->
           <section v-if="tagEditorMode" class="tag-editor-panel" style="padding:16px;">
-            <div style="font-size:18px;font-weight:700;margin-bottom:14px;">🏷️ 标签管理</div>
-            <div style="display:flex;gap:8px;margin-bottom:14px;">
-              <input v-model="tagNewName" type="text" class="text-input" placeholder="新标签名称" @keydown.enter.prevent="tagCreate" style="flex:1;max-width:260px;" />
-              <button class="btn" type="button" @click="tagCreate">创建</button>
-              <button class="btn danger" type="button" @click="tagResetAll" :disabled="!tagDefinitions.length">清除全部</button>
+            <div class="tag-editor-title">🏷️ 标签管理</div>
+            <div class="tag-create-panel desktop">
+              <div class="tag-create-row">
+                <input
+                  v-model="tagNewName"
+                  type="text"
+                  class="text-input"
+                  placeholder="新标签名称"
+                  @keydown.enter.prevent="tagCreate"
+                />
+                <select v-model="tagNewParentId" class="text-input tag-parent-select">
+                  <option value="">根级</option>
+                  <option v-for="option in tagAssignOptions" :key="`new-parent-desktop-${option.id}`" :value="option.id">
+                    {{ option.path }}
+                  </option>
+                </select>
+                <button class="btn" type="button" @click="tagCreate">创建</button>
+                <button class="btn danger" type="button" @click="tagResetAll" :disabled="!tagDefinitions.length">清除全部</button>
+              </div>
             </div>
-            <div v-if="tagDefinitions.length" style="display:flex;gap:24px;flex-wrap:wrap;">
-              <div style="flex:0 0 auto;min-width:240px;max-width:360px;">
-                <div style="font-size:14px;font-weight:600;margin-bottom:8px;">已建标签</div>
-                <TransitionGroup name="list" tag="div" style="display:flex;flex-direction:column;gap:6px;">
-                  <div v-for="tag in tagDefinitions" :key="tag.id" class="tag-editor-item" :style="{ '--tag-color': tag.color }">
-                    <span class="tag-editor-dot" :style="{ background: tag.color }"></span>
+            <div v-if="tagDefinitions.length" class="tag-editor-layout">
+              <div class="tag-editor-tree-wrap">
+                <div class="tag-editor-subtitle">标签树</div>
+                <TransitionGroup name="list" tag="div" class="tag-editor-tree-list">
+                  <div v-for="row in tagManagementRows" :key="`tag-desktop-row-${row.id}`" class="tag-editor-tree-item" :style="{ '--tag-color': row.color, '--depth': row.depth }">
+                    <span class="tag-editor-indent"></span>
+                    <span class="tag-editor-dot" :style="{ background: row.color }"></span>
                     <input
-                      :value="tag.name"
+                      :value="tagDefinitionMap.get(row.id)?.name ?? ''"
                       class="tag-editor-name-input"
-                      @blur="tagRename(tag.id, ($event.target as HTMLInputElement).value)"
+                      @blur="tagRename(row.id, ($event.target as HTMLInputElement).value)"
                       @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
                     />
+                    <select
+                      class="text-input tag-parent-select"
+                      :value="tagDefinitionMap.get(row.id)?.parent_id ?? ''"
+                      @change="tagSetParent(row.id, ($event.target as HTMLSelectElement).value || null)"
+                    >
+                      <option value="">根级</option>
+                      <option
+                        v-for="option in tagAssignOptions"
+                        :key="`tag-parent-desktop-${row.id}-${option.id}`"
+                        :value="option.id"
+                        :disabled="isTagParentOptionDisabled(row.id, option.id)"
+                      >
+                        {{ option.path }}
+                      </option>
+                    </select>
                     <div class="tag-color-picker">
                       <button
-                        v-for="c in TAG_COLORS" :key="c"
+                        v-for="c in TAG_COLORS"
+                        :key="`desktop-color-${row.id}-${c}`"
                         class="tag-color-dot"
-                        :class="{ active: tag.color === c }"
+                        :class="{ active: row.color === c }"
                         :style="{ background: c }"
                         type="button"
-                        @click="tagSetColor(tag.id, c)"
+                        @click="tagSetColor(row.id, c)"
                       ></button>
                     </div>
-                    <button class="tag-delete-btn" type="button" @click="tagDelete(tag.id)">×</button>
+                    <button class="tag-delete-btn" type="button" @click="tagDelete(row.id)">×</button>
                   </div>
                 </TransitionGroup>
               </div>
-              <div style="flex:1;min-width:300px;">
-                <div style="font-size:14px;font-weight:600;margin-bottom:8px;">世界书分配</div>
-                <input v-model="tagAssignSearch" type="text" class="text-input" placeholder="搜索世界书..." style="margin-bottom:8px;" />
+              <div class="tag-assign-panel">
+                <div class="tag-editor-subtitle">世界书分配</div>
+                <div class="tag-assign-controls">
+                  <label class="field">
+                    <span>当前分配标签</span>
+                    <select v-model="tagAssignTargetId" class="text-input">
+                      <option value="">请选择标签</option>
+                      <option v-for="option in tagAssignOptions" :key="`assign-desktop-${option.id}`" :value="option.id">
+                        {{ option.path }}
+                      </option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>搜索世界书</span>
+                    <input v-model="tagAssignSearch" type="text" class="text-input" placeholder="搜索世界书..." />
+                  </label>
+                </div>
                 <div class="tag-assign-list">
-                  <div v-for="name in tagAssignWorldbooks" :key="name" class="tag-assign-row">
+                  <button
+                    v-for="name in tagAssignWorldbooks"
+                    :key="`assign-desktop-wb-${name}`"
+                    class="tag-assign-row toggle"
+                    :class="{ active: tagAssignTargetId ? (tagAssignments[name] ?? []).includes(tagAssignTargetId) : false }"
+                    type="button"
+                    :disabled="!tagAssignTargetId"
+                    @click="tagToggleAssignmentForSelectedTag(name)"
+                  >
                     <span class="tag-assign-name" :title="name">{{ name }}</span>
-                    <div class="tag-assign-chips">
-                      <button
-                        v-for="tag in tagDefinitions" :key="tag.id"
-                        class="tag-assign-chip"
-                        :class="{ active: (tagAssignments[name] ?? []).includes(tag.id) }"
-                        :style="{ '--tag-color': tag.color }"
-                        type="button"
-                        @click="tagToggleAssignment(name, tag.id)"
-                      >{{ tag.name }}</button>
-                    </div>
-                  </div>
+                    <span class="tag-assign-state">{{ tagAssignTargetId && (tagAssignments[name] ?? []).includes(tagAssignTargetId) ? '已分配' : '未分配' }}</span>
+                    <span class="tag-assign-paths">{{ getWorldbookTagPathSummary(name) }}</span>
+                  </button>
+                  <div v-if="!tagAssignWorldbooks.length" class="empty-note">没有匹配的世界书</div>
                 </div>
               </div>
             </div>
@@ -3269,11 +3484,22 @@ interface WorldbookTagDefinition {
   id: string;
   name: string;
   color: string;
+  parent_id: string | null;
+  sort: number;
 }
 
 interface WorldbookTagState {
   definitions: WorldbookTagDefinition[];
   assignments: Record<string, string[]>;
+}
+
+type TagFilterLogic = 'or' | 'and';
+type TagFilterMatchMode = 'exact' | 'descendants';
+
+interface TagFilterState {
+  selected_ids: string[];
+  logic: TagFilterLogic;
+  match_mode: TagFilterMatchMode;
 }
 
 interface AIApiConfig {
@@ -3304,6 +3530,7 @@ interface PersistedState {
   theme: ThemeKey;
   ai_chat: AIGeneratorState;
   worldbook_tags: WorldbookTagState;
+  tag_filter: TagFilterState;
   extract_ignore_tags: string[];
   ai_api_config: AIApiConfig;
   show_ai_chat: boolean;
@@ -3724,9 +3951,13 @@ if (typeof window !== 'undefined') {
 const showMobileEditor = computed(() => isMobile.value && selectedEntryUid.value !== null);
 const mobileTab = ref<'list' | 'edit' | 'settings' | 'copy' | 'ai' | 'tags'>('list');
 const tagEditorMode = ref(false);
-const activeTagFilter = ref('');
+const tagFilterPanelOpen = ref(false);
+const tagFilterSearchText = ref('');
 const tagNewName = ref('');
+const tagNewParentId = ref('');
 const tagAssignSearch = ref('');
+const tagAssignTargetId = ref('');
+const tagTreeExpandedIds = ref<string[]>([]);
 
 const bindings = reactive({
   global: [] as string[],
@@ -3933,21 +4164,272 @@ const roleBindingCandidates = computed<RoleBindingCandidate[]>(() => {
 const tagDefinitions = computed(() => persistedState.value.worldbook_tags.definitions);
 const tagAssignments = computed(() => persistedState.value.worldbook_tags.assignments);
 
+const tagFilterState = computed(() => normalizeTagFilterState(persistedState.value.tag_filter));
+const selectedTagFilterIds = computed<string[]>({
+  get: () => tagFilterState.value.selected_ids,
+  set(value) {
+    const valid = [...new Set(value.map(id => toStringSafe(id).trim()).filter(Boolean))];
+    updatePersistedState(state => {
+      state.tag_filter.selected_ids = valid;
+    });
+  },
+});
+const tagFilterLogic = computed<TagFilterLogic>({
+  get: () => tagFilterState.value.logic,
+  set(value) {
+    updatePersistedState(state => {
+      state.tag_filter.logic = value === 'and' ? 'and' : 'or';
+    });
+  },
+});
+const tagFilterMatchMode = computed<TagFilterMatchMode>({
+  get: () => tagFilterState.value.match_mode,
+  set(value) {
+    updatePersistedState(state => {
+      state.tag_filter.match_mode = value === 'exact' ? 'exact' : 'descendants';
+    });
+  },
+});
+
+interface TagTreeRow {
+  id: string;
+  name: string;
+  path: string;
+  depth: number;
+  hasChildren: boolean;
+  parentId: string | null;
+  color: string;
+}
+
+const tagDefinitionMap = computed(() => {
+  const map = new Map<string, WorldbookTagDefinition>();
+  for (const def of tagDefinitions.value) {
+    map.set(def.id, def);
+  }
+  return map;
+});
+
+const tagChildrenMap = computed(() => {
+  const buckets = new Map<string | null, WorldbookTagDefinition[]>();
+  for (const def of tagDefinitions.value) {
+    const parentId = def.parent_id && tagDefinitionMap.value.has(def.parent_id) ? def.parent_id : null;
+    const list = buckets.get(parentId) ?? [];
+    list.push({ ...def, parent_id: parentId });
+    buckets.set(parentId, list);
+  }
+  for (const list of buckets.values()) {
+    list.sort((left, right) => {
+      const sortDiff = left.sort - right.sort;
+      if (sortDiff !== 0) {
+        return sortDiff;
+      }
+      return left.name.localeCompare(right.name, 'zh-Hans-CN');
+    });
+  }
+  return buckets;
+});
+
+const tagRootIds = computed(() => (tagChildrenMap.value.get(null) ?? []).map(item => item.id));
+
+function getTagPathLabel(tagId: string): string {
+  const map = tagDefinitionMap.value;
+  const names: string[] = [];
+  const seen = new Set<string>();
+  let cursor: string | null = tagId;
+  while (cursor && map.has(cursor) && !seen.has(cursor)) {
+    seen.add(cursor);
+    const current = map.get(cursor)!;
+    names.push(current.name);
+    cursor = current.parent_id && map.has(current.parent_id) ? current.parent_id : null;
+  }
+  return names.reverse().join('/');
+}
+
+const tagPathMap = computed(() => {
+  const map = new Map<string, string>();
+  for (const def of tagDefinitions.value) {
+    map.set(def.id, getTagPathLabel(def.id));
+  }
+  return map;
+});
+
+function collectDescendants(tagId: string): Set<string> {
+  const result = new Set<string>([tagId]);
+  const queue = [tagId];
+  while (queue.length) {
+    const current = queue.shift()!;
+    const children = tagChildrenMap.value.get(current) ?? [];
+    for (const child of children) {
+      if (result.has(child.id)) {
+        continue;
+      }
+      result.add(child.id);
+      queue.push(child.id);
+    }
+  }
+  return result;
+}
+
+const tagDescendantsMap = computed(() => {
+  const map = new Map<string, Set<string>>();
+  for (const def of tagDefinitions.value) {
+    map.set(def.id, collectDescendants(def.id));
+  }
+  return map;
+});
+
+const selectedTagFilterIdSet = computed(() => new Set(selectedTagFilterIds.value));
+
+const tagFilterSummary = computed(() => {
+  const ids = selectedTagFilterIds.value.filter(id => tagDefinitionMap.value.has(id));
+  if (!ids.length) {
+    return '未筛选';
+  }
+  const firstPath = tagPathMap.value.get(ids[0]) ?? '未命名标签';
+  if (ids.length === 1) {
+    return firstPath;
+  }
+  return `${firstPath} +${ids.length - 1}`;
+});
+
+const tagTreeRows = computed<TagTreeRow[]>(() => {
+  const rows: TagTreeRow[] = [];
+  const keyword = tagFilterSearchText.value.trim().toLowerCase();
+  const expanded = new Set(tagTreeExpandedIds.value);
+  const walk = (parentId: string | null, depth: number): void => {
+    const children = tagChildrenMap.value.get(parentId) ?? [];
+    for (const child of children) {
+      const path = tagPathMap.value.get(child.id) ?? child.name;
+      const row: TagTreeRow = {
+        id: child.id,
+        name: child.name,
+        path,
+        depth,
+        hasChildren: (tagChildrenMap.value.get(child.id) ?? []).length > 0,
+        parentId: child.parent_id,
+        color: child.color,
+      };
+      const hit = !keyword || row.name.toLowerCase().includes(keyword) || row.path.toLowerCase().includes(keyword);
+      if (hit) {
+        rows.push(row);
+      }
+      const shouldWalkChildren = keyword ? true : expanded.has(child.id);
+      if (shouldWalkChildren) {
+        walk(child.id, depth + 1);
+      }
+    }
+  };
+  walk(null, 0);
+  return rows;
+});
+
+const tagManagementRows = computed<TagTreeRow[]>(() => {
+  const rows: TagTreeRow[] = [];
+  const walk = (parentId: string | null, depth: number): void => {
+    const children = tagChildrenMap.value.get(parentId) ?? [];
+    for (const child of children) {
+      rows.push({
+        id: child.id,
+        name: child.name,
+        path: tagPathMap.value.get(child.id) ?? child.name,
+        depth,
+        hasChildren: (tagChildrenMap.value.get(child.id) ?? []).length > 0,
+        parentId: child.parent_id,
+        color: child.color,
+      });
+      walk(child.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+  return rows;
+});
+
+const tagAssignOptions = computed(() => {
+  return tagManagementRows.value.map(row => ({
+    id: row.id,
+    name: row.name,
+    path: row.path,
+    color: row.color,
+  }));
+});
+
 function getWorldbookTags(worldbookName: string): WorldbookTagDefinition[] {
   const ids = tagAssignments.value[worldbookName] ?? [];
-  return tagDefinitions.value.filter(d => ids.includes(d.id));
+  const defs = tagDefinitions.value.filter(d => ids.includes(d.id));
+  return defs.sort((left, right) => {
+    const leftPath = tagPathMap.value.get(left.id) ?? left.name;
+    const rightPath = tagPathMap.value.get(right.id) ?? right.name;
+    return leftPath.localeCompare(rightPath, 'zh-Hans-CN');
+  });
+}
+
+function getWorldbookTagPathSummary(worldbookName: string): string {
+  const tags = getWorldbookTags(worldbookName);
+  if (!tags.length) {
+    return '未分配标签';
+  }
+  const paths = tags.map(tag => tagPathMap.value.get(tag.id) ?? tag.name);
+  if (paths.length <= 2) {
+    return paths.join(' · ');
+  }
+  return `${paths[0]} · ${paths[1]} +${paths.length - 2}`;
+}
+
+function toggleTagFilterSelection(tagId: string): void {
+  const current = new Set(selectedTagFilterIds.value);
+  if (current.has(tagId)) {
+    current.delete(tagId);
+  } else {
+    current.add(tagId);
+  }
+  selectedTagFilterIds.value = Array.from(current);
+}
+
+function clearTagFilterSelection(): void {
+  selectedTagFilterIds.value = [];
+}
+
+function toggleTagTreeExpanded(tagId: string): void {
+  const set = new Set(tagTreeExpandedIds.value);
+  if (set.has(tagId)) {
+    set.delete(tagId);
+  } else {
+    set.add(tagId);
+  }
+  tagTreeExpandedIds.value = Array.from(set);
+}
+
+function isWorldbookMatchedByTagFilter(worldbookName: string): boolean {
+  const selected = selectedTagFilterIds.value.filter(id => tagDefinitionMap.value.has(id));
+  if (!selected.length) {
+    return true;
+  }
+  const assigned = new Set(tagAssignments.value[worldbookName] ?? []);
+  const candidateSets = selected.map(id => {
+    if (tagFilterMatchMode.value === 'exact') {
+      return new Set<string>([id]);
+    }
+    return tagDescendantsMap.value.get(id) ?? new Set<string>([id]);
+  });
+  const hasIntersection = (candidate: Set<string>) => {
+    for (const id of candidate) {
+      if (assigned.has(id)) {
+        return true;
+      }
+    }
+    return false;
+  };
+  if (tagFilterLogic.value === 'and') {
+    return candidateSets.every(set => hasIntersection(set));
+  }
+  return candidateSets.some(set => hasIntersection(set));
 }
 
 const filteredSelectableWorldbookNames = computed(() => {
   let names = selectableWorldbookNames.value;
-  // 标签筛选
-  if (activeTagFilter.value) {
-    names = names.filter(name => {
-      const ids = tagAssignments.value[name] ?? [];
-      return ids.includes(activeTagFilter.value);
-    });
+  if (selectedTagFilterIds.value.length) {
+    names = names.filter(name => isWorldbookMatchedByTagFilter(name));
   }
-  // 搜索筛选
   const keyword = worldbookPickerSearchText.value.trim().toLowerCase();
   if (keyword) {
     names = names.filter(name => name.toLowerCase().includes(keyword));
@@ -4959,6 +5441,37 @@ watch(mobileTab, tab => {
   crossCopyMobileStep.value = 1;
 });
 
+watch(worldbookPickerOpen, opened => {
+  if (opened) {
+    if (!tagTreeExpandedIds.value.length) {
+      tagTreeExpandedIds.value = [...tagRootIds.value];
+    }
+    return;
+  }
+  tagFilterPanelOpen.value = false;
+  tagFilterSearchText.value = '';
+});
+
+watch(tagDefinitions, () => {
+  ensureTagAssignTargetSelected();
+  if (tagNewParentId.value && !tagDefinitionMap.value.has(tagNewParentId.value)) {
+    tagNewParentId.value = '';
+  }
+  const selectedFiltered = selectedTagFilterIds.value.filter(id => tagDefinitionMap.value.has(id));
+  const selectedChanged = selectedFiltered.length !== selectedTagFilterIds.value.length || selectedFiltered.some((id, index) => id !== selectedTagFilterIds.value[index]);
+  if (selectedChanged) {
+    selectedTagFilterIds.value = selectedFiltered;
+  }
+  const expandedFiltered = tagTreeExpandedIds.value.filter(id => tagDefinitionMap.value.has(id));
+  const expandedChanged = expandedFiltered.length !== tagTreeExpandedIds.value.length || expandedFiltered.some((id, index) => id !== tagTreeExpandedIds.value[index]);
+  if (expandedChanged) {
+    tagTreeExpandedIds.value = expandedFiltered;
+  }
+  if (!tagTreeExpandedIds.value.length) {
+    tagTreeExpandedIds.value = [...tagRootIds.value];
+  }
+}, { deep: true, immediate: true });
+
 watch(isMobile, mobile => {
   if (mobile) {
     return;
@@ -5606,6 +6119,14 @@ function createDefaultCrossCopyPersistState(): CrossCopyPersistState {
   };
 }
 
+function createDefaultTagFilterState(): TagFilterState {
+  return {
+    selected_ids: [],
+    logic: 'or',
+    match_mode: 'descendants',
+  };
+}
+
 function normalizeMultiEditPersistState(input: unknown): MultiEditPersistState {
   const fallback = createDefaultMultiEditPersistState();
   const raw = asRecord(input);
@@ -5641,6 +6162,22 @@ function normalizeCrossCopyPersistState(input: unknown): CrossCopyPersistState {
   };
 }
 
+function normalizeTagFilterState(input: unknown): TagFilterState {
+  const fallback = createDefaultTagFilterState();
+  const raw = asRecord(input);
+  if (!raw) {
+    return fallback;
+  }
+  const selected = Array.isArray(raw.selected_ids)
+    ? raw.selected_ids.map(id => toStringSafe(id).trim()).filter(Boolean)
+    : [];
+  return {
+    selected_ids: [...new Set(selected)],
+    logic: raw.logic === 'and' ? 'and' : fallback.logic,
+    match_mode: raw.match_mode === 'exact' ? 'exact' : fallback.match_mode,
+  };
+}
+
 function normalizeLayoutState(input: unknown): LayoutState {
   const fallback = createDefaultLayoutState();
   const raw = asRecord(input);
@@ -5667,6 +6204,7 @@ function createDefaultPersistedState(): PersistedState {
     theme: 'ocean',
     ai_chat: { sessions: [], activeSessionId: null },
     worldbook_tags: { definitions: [], assignments: {} },
+    tag_filter: createDefaultTagFilterState(),
     extract_ignore_tags: ['think', 'thinking', 'recap', 'content', 'details', 'summary'],
     show_ai_chat: false,
     multi_edit: createDefaultMultiEditPersistState(),
@@ -5818,14 +6356,30 @@ function normalizePersistedState(input: unknown): PersistedState {
   // 标签数据规范化
   const rawTags = asRecord(root.worldbook_tags);
   const tagDefs: WorldbookTagDefinition[] = [];
+  const tagIdSet = new Set<string>();
   if (rawTags && Array.isArray(rawTags.definitions)) {
-    for (const d of rawTags.definitions) {
+    rawTags.definitions.forEach((d, index) => {
       const dr = asRecord(d);
-      if (!dr) continue;
+      if (!dr) return;
       const id = toStringSafe(dr.id).trim();
       const name = toStringSafe(dr.name).trim();
-      if (!id || !name) continue;
-      tagDefs.push({ id, name, color: toStringSafe(dr.color, TAG_COLORS[0]) });
+      if (!id || !name || tagIdSet.has(id)) return;
+      const parentIdRaw = toStringSafe(dr.parent_id).trim();
+      const parentId = parentIdRaw || null;
+      tagDefs.push({
+        id,
+        name,
+        color: toStringSafe(dr.color, TAG_COLORS[0]),
+        parent_id: parentId,
+        sort: Math.max(0, Math.floor(toNumberSafe(dr.sort, index))),
+      });
+      tagIdSet.add(id);
+    });
+  }
+  const tagIdSetFromDefs = new Set(tagDefs.map(tag => tag.id));
+  for (const def of tagDefs) {
+    if (def.parent_id && !tagIdSetFromDefs.has(def.parent_id)) {
+      def.parent_id = null;
     }
   }
   const tagAssignmentsRaw = asRecord(rawTags?.assignments);
@@ -5833,10 +6387,15 @@ function normalizePersistedState(input: unknown): PersistedState {
   if (tagAssignmentsRaw) {
     for (const [wbName, ids] of Object.entries(tagAssignmentsRaw)) {
       if (Array.isArray(ids)) {
-        tagAssignmentsNorm[wbName] = ids.map(id => toStringSafe(id)).filter(Boolean);
+        const normalizedIds = [...new Set(ids.map(id => toStringSafe(id)).filter(id => tagIdSetFromDefs.has(id)))];
+        if (normalizedIds.length) {
+          tagAssignmentsNorm[wbName] = normalizedIds;
+        }
       }
     }
   }
+  const normalizedTagFilter = normalizeTagFilterState(root.tag_filter);
+  normalizedTagFilter.selected_ids = normalizedTagFilter.selected_ids.filter(id => tagIdSetFromDefs.has(id));
 
   return {
     last_worldbook: toStringSafe(root.last_worldbook),
@@ -5848,6 +6407,7 @@ function normalizePersistedState(input: unknown): PersistedState {
     theme: (toStringSafe(root.theme) as ThemeKey) || 'ocean',
     ai_chat: aiChat,
     worldbook_tags: { definitions: tagDefs.slice(0, TAG_LIMIT), assignments: tagAssignmentsNorm },
+    tag_filter: normalizedTagFilter,
     extract_ignore_tags: Array.isArray(root.extract_ignore_tags)
       ? root.extract_ignore_tags.map((t: unknown) => toStringSafe(t).trim().toLowerCase()).filter(Boolean)
       : ['thinking', 'recap', 'content', 'details', 'summary'],
@@ -6651,38 +7211,181 @@ function tagToggleMode(): void {
   }
 }
 
+function normalizeTagNameKey(name: string): string {
+  return toStringSafe(name).trim().toLowerCase();
+}
+
+function ensureTagAssignTargetSelected(): void {
+  if (tagAssignTargetId.value && tagDefinitionMap.value.has(tagAssignTargetId.value)) {
+    return;
+  }
+  tagAssignTargetId.value = tagAssignOptions.value[0]?.id ?? '';
+}
+
+function isTagDescendantOf(targetId: string, potentialAncestorId: string): boolean {
+  if (!targetId || !potentialAncestorId) {
+    return false;
+  }
+  let cursor = tagDefinitionMap.value.get(targetId)?.parent_id ?? null;
+  const seen = new Set<string>();
+  while (cursor && !seen.has(cursor)) {
+    if (cursor === potentialAncestorId) {
+      return true;
+    }
+    seen.add(cursor);
+    cursor = tagDefinitionMap.value.get(cursor)?.parent_id ?? null;
+  }
+  return false;
+}
+
+function collectTagSubtreeIds(rootId: string): string[] {
+  const ids: string[] = [];
+  const queue: string[] = [rootId];
+  const seen = new Set<string>();
+  while (queue.length) {
+    const current = queue.shift()!;
+    if (seen.has(current)) {
+      continue;
+    }
+    seen.add(current);
+    ids.push(current);
+    const children = tagChildrenMap.value.get(current) ?? [];
+    for (const child of children) {
+      queue.push(child.id);
+    }
+  }
+  return ids;
+}
+
+function tagSetParent(tagId: string, parentId: string | null): void {
+  const normalizedParent = parentId && tagDefinitionMap.value.has(parentId) ? parentId : null;
+  const current = tagDefinitionMap.value.get(tagId);
+  if (!current) {
+    return;
+  }
+  if (normalizedParent === tagId || (normalizedParent && isTagDescendantOf(normalizedParent, tagId))) {
+    toastr.warning('不能将标签移动到自己或其子节点下');
+    return;
+  }
+  const siblingExists = tagDefinitions.value.some(def => {
+    if (def.id === tagId) {
+      return false;
+    }
+    const parentSame = (def.parent_id ?? null) === normalizedParent;
+    return parentSame && normalizeTagNameKey(def.name) === normalizeTagNameKey(current.name);
+  });
+  if (siblingExists) {
+    toastr.warning('同一父节点下已存在同名标签');
+    return;
+  }
+  updatePersistedState(state => {
+    const defs = state.worldbook_tags.definitions;
+    const target = defs.find(def => def.id === tagId);
+    if (!target) {
+      return;
+    }
+    target.parent_id = normalizedParent;
+    const siblingSorts = defs
+      .filter(def => def.id !== tagId && (def.parent_id ?? null) === normalizedParent)
+      .map(def => Math.max(0, Math.floor(toNumberSafe(def.sort, 0))));
+    const nextSort = siblingSorts.length ? Math.max(...siblingSorts) + 1 : 0;
+    target.sort = nextSort;
+  });
+}
+
+function isTagParentOptionDisabled(tagId: string, parentId: string): boolean {
+  if (!parentId) {
+    return false;
+  }
+  if (parentId === tagId) {
+    return true;
+  }
+  return isTagDescendantOf(parentId, tagId);
+}
+
 function tagCreate(): void {
   const name = tagNewName.value.trim();
   if (!name) return;
+  const parentId = tagNewParentId.value && tagDefinitionMap.value.has(tagNewParentId.value) ? tagNewParentId.value : null;
   updatePersistedState(state => {
     if (state.worldbook_tags.definitions.length >= TAG_LIMIT) return;
-    if (state.worldbook_tags.definitions.some(d => d.name === name)) return;
+    const siblingDup = state.worldbook_tags.definitions.some(def => {
+      const sameParent = (def.parent_id ?? null) === parentId;
+      return sameParent && normalizeTagNameKey(def.name) === normalizeTagNameKey(name);
+    });
+    if (siblingDup) return;
     const colorIndex = state.worldbook_tags.definitions.length % TAG_COLORS.length;
+    const siblingSorts = state.worldbook_tags.definitions
+      .filter(def => (def.parent_id ?? null) === parentId)
+      .map(def => Math.max(0, Math.floor(toNumberSafe(def.sort, 0))));
+    const nextSort = siblingSorts.length ? Math.max(...siblingSorts) + 1 : 0;
     state.worldbook_tags.definitions.push({
       id: createId('wbtag'),
       name,
       color: TAG_COLORS[colorIndex],
+      parent_id: parentId,
+      sort: nextSort,
     });
   });
   tagNewName.value = '';
+  ensureTagAssignTargetSelected();
 }
 
 function tagDelete(tagId: string): void {
+  const target = tagDefinitionMap.value.get(tagId);
+  if (!target) {
+    return;
+  }
+  const hasChildren = (tagChildrenMap.value.get(tagId) ?? []).length > 0;
+  let cascadeDelete = false;
+  if (hasChildren) {
+    cascadeDelete = confirm(`标签 "${target.name}" 有子标签。\n确定：级联删除整棵\n取消：删除父标签并上提子标签`);
+  }
+  const deleteIds = cascadeDelete ? collectTagSubtreeIds(tagId) : [tagId];
+  const deleteSet = new Set(deleteIds);
   updatePersistedState(state => {
-    state.worldbook_tags.definitions = state.worldbook_tags.definitions.filter(d => d.id !== tagId);
+    if (!cascadeDelete) {
+      const parent = state.worldbook_tags.definitions.find(def => def.id === tagId)?.parent_id ?? null;
+      for (const def of state.worldbook_tags.definitions) {
+        if (def.parent_id === tagId) {
+          def.parent_id = parent;
+        }
+      }
+    }
+    state.worldbook_tags.definitions = state.worldbook_tags.definitions.filter(def => !deleteSet.has(def.id));
     for (const key of Object.keys(state.worldbook_tags.assignments)) {
-      state.worldbook_tags.assignments[key] = state.worldbook_tags.assignments[key].filter(id => id !== tagId);
-      if (!state.worldbook_tags.assignments[key].length) {
+      const remained = (state.worldbook_tags.assignments[key] ?? []).filter(id => !deleteSet.has(id));
+      if (remained.length) {
+        state.worldbook_tags.assignments[key] = remained;
+      } else {
         delete state.worldbook_tags.assignments[key];
       }
     }
+    state.tag_filter.selected_ids = (state.tag_filter.selected_ids ?? []).filter(id => !deleteSet.has(id));
   });
-  if (activeTagFilter.value === tagId) activeTagFilter.value = '';
+  if (tagAssignTargetId.value && deleteSet.has(tagAssignTargetId.value)) {
+    tagAssignTargetId.value = '';
+    ensureTagAssignTargetSelected();
+  }
 }
 
 function tagRename(tagId: string, newName: string): void {
   const trimmed = newName.trim();
   if (!trimmed) return;
+  const target = tagDefinitionMap.value.get(tagId);
+  if (!target) {
+    return;
+  }
+  const hasConflict = tagDefinitions.value.some(def => {
+    if (def.id === tagId) {
+      return false;
+    }
+    return (def.parent_id ?? null) === (target.parent_id ?? null) && normalizeTagNameKey(def.name) === normalizeTagNameKey(trimmed);
+  });
+  if (hasConflict) {
+    toastr.warning('同一父节点下已存在同名标签');
+    return;
+  }
   updatePersistedState(state => {
     const def = state.worldbook_tags.definitions.find(d => d.id === tagId);
     if (def) def.name = trimmed;
@@ -6710,12 +7413,22 @@ function tagToggleAssignment(worldbookName: string, tagId: string): void {
   });
 }
 
+function tagToggleAssignmentForSelectedTag(worldbookName: string): void {
+  const tagId = tagAssignTargetId.value;
+  if (!tagId) {
+    return;
+  }
+  tagToggleAssignment(worldbookName, tagId);
+}
+
 function tagResetAll(): void {
   if (!confirm('确定要清除所有标签和分配吗？')) return;
   updatePersistedState(state => {
     state.worldbook_tags = { definitions: [], assignments: {} };
+    state.tag_filter = createDefaultTagFilterState();
   });
-  activeTagFilter.value = '';
+  tagAssignTargetId.value = '';
+  tagNewParentId.value = '';
 }
 
 function setStatus(message: string): void {
@@ -15909,30 +16622,223 @@ watch(hasUnsavedChanges, (val) => {
   gap: 4px;
   padding: 6px 8px 2px;
 }
-.tag-filter-chip {
-  display: inline-flex;
+.worldbook-picker-tags.tree-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--wb-border-subtle);
+  background: rgba(12, 24, 52, 0.72);
+}
+
+.tag-filter-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) auto auto auto;
   align-items: center;
-  padding: 2px 10px;
-  border-radius: 12px;
+  gap: 6px;
+}
+
+.tag-filter-open {
+  white-space: nowrap;
+}
+
+.tag-filter-summary {
   font-size: 12px;
-  font-weight: 500;
-  border: 1.5px solid var(--tag-color, #3b82f6);
-  background: transparent;
-  color: var(--tag-color, #3b82f6);
+  color: var(--wb-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-filter-select {
+  height: 28px;
+  min-width: 66px;
+  font-size: 12px;
+  padding: 3px 8px;
+}
+
+.tag-filter-panel-enter-active,
+.tag-filter-panel-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.tag-filter-panel-enter-from,
+.tag-filter-panel-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+.tag-filter-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--wb-border-subtle);
+  background: rgba(7, 18, 40, 0.86);
+  padding: 8px;
+}
+
+.tag-filter-search {
+  height: 30px;
+  font-size: 12px;
+}
+
+.tag-filter-selected-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 74px;
+  overflow: auto;
+}
+
+.tag-filter-selected-chip {
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  background: rgba(37, 99, 235, 0.2);
+  color: #bfdbfe;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
   cursor: pointer;
-  transition: all .15s;
 }
-.tag-filter-chip.active {
-  background: var(--tag-color, #3b82f6);
-  color: #fff;
+
+.tag-tree-list,
+.tag-flat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow: auto;
+  padding-right: 2px;
 }
-.tag-filter-chip:hover {
-  opacity: .85;
+
+.tag-tree-row {
+  display: grid;
+  grid-template-columns: 16px 16px minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  padding-left: calc(6px + var(--depth, 0) * 12px);
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
 }
+
+.tag-tree-toggle {
+  border: none;
+  background: transparent;
+  color: var(--wb-text-dim);
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  line-height: 1;
+}
+
+.tag-tree-toggle.placeholder {
+  display: inline-block;
+}
+
+.tag-tree-name {
+  color: var(--tag-color, #60a5fa);
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-tree-path {
+  color: var(--wb-text-dim);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-flat-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--tag-color, #60a5fa);
+  font-size: 12px;
+}
+
 .tag-editor-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   overflow-y: auto;
   max-height: 100%;
 }
+
+.tag-editor-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.tag-create-panel {
+  border-radius: 10px;
+  border: 1px solid var(--wb-border-subtle);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px;
+}
+
+.tag-create-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.tag-create-row .text-input {
+  min-width: 180px;
+  flex: 1 1 220px;
+}
+
+.tag-parent-field {
+  margin-top: 8px;
+}
+
+.tag-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(340px, 1.2fr);
+  gap: 16px;
+  min-height: 0;
+}
+
+.tag-editor-subtitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--wb-text-main);
+}
+
+.tag-editor-tree-wrap,
+.tag-assign-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--wb-border-subtle);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px;
+  min-height: 0;
+}
+
+.tag-editor-tree-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
 .tag-editor-item {
   display: flex;
   align-items: center;
@@ -15942,6 +16848,23 @@ watch(hasUnsavedChanges, (val) => {
   background: rgba(255,255,255,.04);
   border: 1px solid rgba(255,255,255,.08);
 }
+
+.tag-editor-tree-item {
+  display: grid;
+  grid-template-columns: auto 12px minmax(120px, 1fr) minmax(160px, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.tag-editor-indent {
+  width: calc(var(--depth, 0) * 14px);
+  height: 1px;
+}
+
 .tag-editor-dot {
   width: 12px;
   height: 12px;
@@ -15961,6 +16884,13 @@ watch(hasUnsavedChanges, (val) => {
 .tag-editor-name-input:focus {
   border-bottom-color: #60a5fa;
 }
+
+.tag-parent-select {
+  min-width: 140px;
+  font-size: 12px;
+  height: 30px;
+}
+
 .tag-color-picker {
   display: flex;
   gap: 3px;
@@ -15993,54 +16923,153 @@ watch(hasUnsavedChanges, (val) => {
 .tag-delete-btn:hover {
   opacity: 1;
 }
+
+.tag-assign-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .tag-assign-list {
-  max-height: 400px;
+  max-height: 55vh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
+
+.tag-assign-list.compact {
+  max-height: 42vh;
+}
+
 .tag-assign-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
   align-items: center;
-  gap: 8px;
-  padding: 4px 6px;
-  border-radius: 6px;
-  background: rgba(255,255,255,.03);
+  gap: 4px 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  text-align: left;
 }
+
+.tag-assign-row.toggle {
+  cursor: pointer;
+}
+
+.tag-assign-row.toggle.active {
+  border-color: rgba(59, 130, 246, 0.6);
+  background: rgba(37, 99, 235, 0.18);
+}
+
 .tag-assign-name {
   font-size: 13px;
-  min-width: 100px;
-  max-width: 200px;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex-shrink: 0;
+  min-width: 0;
 }
-.tag-assign-chips {
+
+.tag-assign-state {
+  font-size: 11px;
+  color: #93c5fd;
+  border: 1px solid rgba(147, 197, 253, 0.45);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.tag-assign-paths {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--wb-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-tag-editor .tag-editor-title {
+  font-size: 16px;
+}
+
+.mobile-tag-editor .tag-create-row .text-input {
+  flex: 1 1 100%;
+}
+
+.mobile-tag-editor .tag-editor-tree-list {
+  max-height: 42vh;
+}
+
+.mobile-tag-editor .tag-editor-tree-item {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-}
-.tag-assign-chip {
-  display: inline-flex;
   align-items: center;
-  padding: 1px 8px;
-  border-radius: 10px;
-  font-size: 11px;
-  border: 1px solid var(--tag-color, #3b82f6);
-  background: transparent;
-  color: var(--tag-color, #3b82f6);
-  cursor: pointer;
-  transition: all .15s;
-  opacity: .5;
 }
-.tag-assign-chip.active {
-  background: var(--tag-color, #3b82f6);
-  color: #fff;
-  opacity: 1;
+
+.mobile-tag-editor .tag-editor-indent {
+  width: calc(var(--depth, 0) * 10px);
 }
-.tag-assign-chip:hover {
-  opacity: .85;
+
+.mobile-tag-editor .tag-editor-name-input {
+  flex: 1 1 120px;
+  min-width: 100px;
+}
+
+.mobile-tag-editor .tag-parent-select {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 1360px) {
+  .tag-filter-toolbar {
+    grid-template-columns: auto minmax(100px, 1fr) auto;
+    grid-auto-rows: auto;
+  }
+  .tag-filter-summary {
+    grid-column: 2 / 4;
+  }
+}
+
+@media (max-width: 1200px) {
+  .tag-editor-layout {
+    grid-template-columns: 1fr;
+  }
+  .tag-assign-controls {
+    grid-template-columns: 1fr;
+  }
+  .tag-editor-tree-item {
+    grid-template-columns: auto 12px minmax(0, 1fr);
+  }
+  .tag-editor-tree-item .tag-parent-select {
+    grid-column: 3 / 4;
+  }
+  .tag-editor-tree-item .tag-color-picker {
+    grid-column: 2 / 4;
+  }
+  .tag-editor-tree-item .tag-delete-btn {
+    grid-column: 1 / 2;
+    justify-self: end;
+  }
+}
+
+@media (max-width: 760px) {
+  .tag-filter-toolbar {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .tag-filter-select {
+    min-width: 58px;
+  }
+  .tag-tree-row {
+    grid-template-columns: 14px 14px minmax(0, 1fr);
+  }
+  .tag-tree-path {
+    grid-column: 3 / 4;
+  }
+  .tag-assign-list,
+  .tag-assign-list.compact {
+    max-height: 38vh;
+  }
 }
 </style>
