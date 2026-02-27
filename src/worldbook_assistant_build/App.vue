@@ -5602,7 +5602,7 @@ function createDefaultCrossCopyPersistState(): CrossCopyPersistState {
     snapshot_before_apply: true,
     desktop_left_width: CROSS_COPY_DESKTOP_LEFT_DEFAULT,
     controls_collapsed: true,
-    workspace_tools_expanded: false,
+    workspace_tools_expanded: true,
   };
 }
 
@@ -5635,7 +5635,9 @@ function normalizeCrossCopyPersistState(input: unknown): CrossCopyPersistState {
       CROSS_COPY_DESKTOP_LEFT_MAX,
     ),
     controls_collapsed: raw.controls_collapsed !== false,
-    workspace_tools_expanded: raw.workspace_tools_expanded === true,
+    workspace_tools_expanded: raw.workspace_tools_expanded === undefined
+      ? fallback.workspace_tools_expanded
+      : raw.workspace_tools_expanded === true,
   };
 }
 
@@ -7144,7 +7146,7 @@ function setCrossCopyModeActive(next: boolean): void {
   }
   crossCopyMode.value = next;
   if (next) {
-    crossCopyWorkspaceToolsExpanded.value = false;
+    crossCopyWorkspaceToolsExpanded.value = true;
     aiGeneratorMode.value = false;
     tagEditorMode.value = false;
     globalWorldbookMode.value = false;
