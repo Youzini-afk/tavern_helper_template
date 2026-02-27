@@ -2195,6 +2195,13 @@
               />
               <span>多选联动时同步高级字段 / extra JSON</span>
             </label>
+            <label class="field" style="margin-top:8px;">
+              <span>父标签删除策略</span>
+              <select class="text-input" :value="persistedState.tag_editor.delete_parent_mode" @change="setTagDeleteParentMode(($event.target as HTMLSelectElement).value)">
+                <option value="promote">删除父标签并上提子标签</option>
+                <option value="cascade">级联删除整棵标签树</option>
+              </select>
+            </label>
             <div style="font-size:11px;color:var(--wb-text-muted,#64748b);margin-top:4px;">开启后将在工具栏和移动端 Tab 中显示 AI 对话入口</div>
             <label class="field" style="margin-top:8px;">
               <span>主题</span>
@@ -3063,6 +3070,12 @@ interface MultiEditPersistState {
   sync_extra_json: boolean;
 }
 
+type TagDeleteParentMode = 'promote' | 'cascade';
+
+interface TagEditorPersistState {
+  delete_parent_mode: TagDeleteParentMode;
+}
+
 interface CrossCopyPersistState {
   last_source_worldbook: string;
   last_target_worldbook: string;
@@ -3535,6 +3548,7 @@ interface PersistedState {
   ai_api_config: AIApiConfig;
   show_ai_chat: boolean;
   multi_edit: MultiEditPersistState;
+  tag_editor: TagEditorPersistState;
   layout: LayoutState;
   cross_copy: CrossCopyPersistState;
 }
@@ -6107,6 +6121,12 @@ function createDefaultMultiEditPersistState(): MultiEditPersistState {
   };
 }
 
+function createDefaultTagEditorPersistState(): TagEditorPersistState {
+  return {
+    delete_parent_mode: 'promote',
+  };
+}
+
 function createDefaultCrossCopyPersistState(): CrossCopyPersistState {
   return {
     last_source_worldbook: '',
@@ -6162,6 +6182,17 @@ function normalizeCrossCopyPersistState(input: unknown): CrossCopyPersistState {
   };
 }
 
+function normalizeTagEditorPersistState(input: unknown): TagEditorPersistState {
+  const fallback = createDefaultTagEditorPersistState();
+  const raw = asRecord(input);
+  if (!raw) {
+    return fallback;
+  }
+  return {
+    delete_parent_mode: raw.delete_parent_mode === 'cascade' ? 'cascade' : fallback.delete_parent_mode,
+  };
+}
+
 function normalizeTagFilterState(input: unknown): TagFilterState {
   const fallback = createDefaultTagFilterState();
   const raw = asRecord(input);
@@ -6208,6 +6239,7 @@ function createDefaultPersistedState(): PersistedState {
     extract_ignore_tags: ['think', 'thinking', 'recap', 'content', 'details', 'summary'],
     show_ai_chat: false,
     multi_edit: createDefaultMultiEditPersistState(),
+    tag_editor: createDefaultTagEditorPersistState(),
     ai_api_config: {
       mode: 'tavern',
       use_main_api: true,
@@ -6413,6 +6445,7 @@ function normalizePersistedState(input: unknown): PersistedState {
       : ['thinking', 'recap', 'content', 'details', 'summary'],
     show_ai_chat: root.show_ai_chat === true,
     multi_edit: normalizeMultiEditPersistState(root.multi_edit),
+    tag_editor: normalizeTagEditorPersistState(root.tag_editor),
     ai_api_config: (() => {
       const raw = asRecord(root.ai_api_config);
       if (!raw) return createDefaultPersistedState().ai_api_config;
@@ -7303,6 +7336,13 @@ function isTagParentOptionDisabled(tagId: string, parentId: string): boolean {
   return isTagDescendantOf(parentId, tagId);
 }
 
+function setTagDeleteParentMode(modeRaw: string): void {
+  const mode: TagDeleteParentMode = modeRaw === 'cascade' ? 'cascade' : 'promote';
+  updatePersistedState(state => {
+    state.tag_editor.delete_parent_mode = mode;
+  });
+}
+
 function tagCreate(): void {
   const name = tagNewName.value.trim();
   if (!name) return;
@@ -7337,10 +7377,7 @@ function tagDelete(tagId: string): void {
     return;
   }
   const hasChildren = (tagChildrenMap.value.get(tagId) ?? []).length > 0;
-  let cascadeDelete = false;
-  if (hasChildren) {
-    cascadeDelete = confirm(`标签 "${target.name}" 有子标签。\n确定：级联删除整棵\n取消：删除父标签并上提子标签`);
-  }
+  const cascadeDelete = hasChildren && persistedState.value.tag_editor.delete_parent_mode === 'cascade';
   const deleteIds = cascadeDelete ? collectTagSubtreeIds(tagId) : [tagId];
   const deleteSet = new Set(deleteIds);
   updatePersistedState(state => {
