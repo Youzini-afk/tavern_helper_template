@@ -3584,9 +3584,7 @@ interface FindHit {
 interface EntryConfigPatch {
   enabled: boolean;
   strategy_type: StrategyType;
-  keys: WorldbookEntry['strategy']['keys'];
   keys_secondary_logic: SecondaryLogic;
-  keys_secondary: WorldbookEntry['strategy']['keys_secondary']['keys'];
   scan_depth: WorldbookEntry['strategy']['scan_depth'];
   position_type: PositionType;
   position_order: number;
@@ -5041,9 +5039,7 @@ function extractEntryConfigPatch(entry: WorldbookEntry, includeExtra: boolean): 
   return {
     enabled: entry.enabled,
     strategy_type: entry.strategy.type,
-    keys: klona(entry.strategy.keys),
     keys_secondary_logic: entry.strategy.keys_secondary.logic,
-    keys_secondary: klona(entry.strategy.keys_secondary.keys),
     scan_depth: entry.strategy.scan_depth,
     position_type: entry.position.type,
     position_order: Math.floor(toNumberSafe(entry.position.order, 100)),
@@ -5064,9 +5060,7 @@ function applyEntryConfigPatch(entry: WorldbookEntry, patch: EntryConfigPatch, i
   entry.enabled = patch.enabled;
 
   entry.strategy.type = patch.strategy_type;
-  entry.strategy.keys = normalizeKeywordList(klona(patch.keys));
   entry.strategy.keys_secondary.logic = normalizeSecondaryLogic(patch.keys_secondary_logic);
-  entry.strategy.keys_secondary.keys = normalizeKeywordList(klona(patch.keys_secondary));
   entry.strategy.scan_depth = normalizeScanDepth(patch.scan_depth);
 
   entry.position.type = normalizePositionType(patch.position_type);
@@ -5175,7 +5169,7 @@ function syncSelectedEntryConfigToMultiSelection(nextPatch: EntryConfigPatch, pr
   }
 
   if (changedCount > 0) {
-    setStatus(`已同步配置到 ${changedCount} 个条目（名称/内容未同步）`);
+    setStatus(`已同步配置到 ${changedCount} 个条目（名称/内容/关键词未同步）`);
   }
 }
 
