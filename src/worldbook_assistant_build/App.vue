@@ -3152,7 +3152,6 @@ interface WorldbookSwitchOptions {
 }
 
 interface HardRefreshOptions {
-  force?: boolean;
   source?: SelectionSource;
   reason?: string;
   preferContextSelection?: boolean;
@@ -3690,6 +3689,7 @@ const CROSS_COPY_DESKTOP_LEFT_MIN = 240;
 const CROSS_COPY_DESKTOP_LEFT_MAX = 440;
 const CROSS_COPY_SPLITTER_SIZE = 8;
 const CROSS_COPY_RIGHT_MIN = 360;
+const ENTRIES_DIGEST_DEBOUNCE_MS = 120;
 const MOBILE_MULTI_LONG_PRESS_MS = 420;
 const MOBILE_MULTI_LONG_PRESS_MOVE_PX = 12;
 
@@ -3881,6 +3881,7 @@ const selectedKeysRaw = ref('');
 const selectedSecondaryKeysRaw = ref('');
 let keysDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let secondaryKeysDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let entriesDigestTimer: ReturnType<typeof setTimeout> | null = null;
 let worldbookLoadRequestId = 0;
 let pendingWorldbookLoadCount = 0;
 const globalAddSearchText = ref('');
@@ -5252,9 +5253,6 @@ function switchWorldbookSelection(nextName: string, options: WorldbookSwitchOpti
 }
 
 function ensureRefreshAllowed(options: HardRefreshOptions = {}): boolean {
-  if (options.force) {
-    return true;
-  }
   const ok = confirmDiscardUnsavedChanges({ source: options.source, reason: options.reason ?? '刷新数据' });
   if (!ok) {
     setStatus(options.source === 'auto' ? '已取消自动刷新，保留未保存修改' : '已取消刷新，保留未保存修改');
@@ -5262,21 +5260,32 @@ function ensureRefreshAllowed(options: HardRefreshOptions = {}): boolean {
   return ok;
 }
 
-watch(
-  draftEntries,
-  entries => {
-    draftEntriesDigest.value = JSON.stringify(entries);
-  },
-  { deep: true, immediate: true, flush: 'sync' },
-);
+function syncEntriesDigestNow(): void {
+  if (entriesDigestTimer) {
+    clearTimeout(entriesDigestTimer);
+    entriesDigestTimer = null;
+  }
+  draftEntriesDigest.value = JSON.stringify(draftEntries.value);
+  originalEntriesDigest.value = JSON.stringify(originalEntries.value);
+}
 
-watch(
-  originalEntries,
-  entries => {
-    originalEntriesDigest.value = JSON.stringify(entries);
-  },
-  { deep: true, immediate: true, flush: 'sync' },
-);
+function scheduleEntriesDigestSync(delay = ENTRIES_DIGEST_DEBOUNCE_MS): void {
+  if (delay <= 0) {
+    syncEntriesDigestNow();
+    return;
+  }
+  if (entriesDigestTimer) {
+    clearTimeout(entriesDigestTimer);
+  }
+  entriesDigestTimer = setTimeout(() => {
+    entriesDigestTimer = null;
+    syncEntriesDigestNow();
+  }, delay);
+}
+
+watch([draftEntries, originalEntries], () => {
+  scheduleEntriesDigestSync();
+}, { deep: true, immediate: true, flush: 'post' });
 
 watch(selectedWorldbookName, name => {
   closeWorldbookPicker();
@@ -7341,13 +7350,25 @@ function tagCreate(): void {
   const name = tagNewName.value.trim();
   if (!name) return;
   const parentId = tagNewParentId.value && tagDefinitionMap.value.has(tagNewParentId.value) ? tagNewParentId.value : null;
+  const currentDefs = persistedState.value.worldbook_tags.definitions;
+  if (currentDefs.length >= TAG_LIMIT) {
+    const message = `标签数量已达上限（${TAG_LIMIT}）`;
+    toastr.warning(message);
+    setStatus(message);
+    return;
+  }
+  const siblingDup = currentDefs.some(def => {
+    const sameParent = (def.parent_id ?? null) === parentId;
+    return sameParent && normalizeTagNameKey(def.name) === normalizeTagNameKey(name);
+  });
+  if (siblingDup) {
+    const message = '同一父节点下已存在同名标签';
+    toastr.warning(message);
+    setStatus(message);
+    return;
+  }
+  let created = false;
   updatePersistedState(state => {
-    if (state.worldbook_tags.definitions.length >= TAG_LIMIT) return;
-    const siblingDup = state.worldbook_tags.definitions.some(def => {
-      const sameParent = (def.parent_id ?? null) === parentId;
-      return sameParent && normalizeTagNameKey(def.name) === normalizeTagNameKey(name);
-    });
-    if (siblingDup) return;
     const colorIndex = state.worldbook_tags.definitions.length % TAG_COLORS.length;
     const siblingSorts = state.worldbook_tags.definitions
       .filter(def => (def.parent_id ?? null) === parentId)
@@ -7360,9 +7381,17 @@ function tagCreate(): void {
       parent_id: parentId,
       sort: nextSort,
     });
+    created = true;
   });
+  if (!created) {
+    const message = '创建标签失败，请重试';
+    toastr.warning(message);
+    setStatus(message);
+    return;
+  }
   tagNewName.value = '';
   ensureTagAssignTargetSelected();
+  setStatus(`已创建标签：${name}`);
 }
 
 function tagDelete(tagId: string): void {
@@ -8270,6 +8299,7 @@ async function applyCrossCopySelection(): Promise<void> {
       const normalized = normalizeEntryList(updatedEntries.map(entry => klona(entry)));
       draftEntries.value = klona(normalized);
       originalEntries.value = klona(normalized);
+      syncEntriesDigestNow();
       ensureSelectedEntryExists();
     }
 
@@ -9946,7 +9976,7 @@ async function onImportChange(event: Event): Promise<void> {
     if (!response.ok) {
       throw new Error(`原生导入失败: HTTP ${response.status}`);
     }
-    await hardRefresh({ force: true, source: 'manual', reason: '导入后刷新' });
+    await hardRefresh({ source: 'manual', reason: '导入后刷新' });
     toastr.success('已按酒馆原生方式导入');
   } finally {
     if (target) {
@@ -10022,7 +10052,7 @@ function ensureSelectionForGlobalMode(options: WorldbookSwitchOptions = {}): boo
 }
 
 function trySelectWorldbookByContext(
-  options: { preferWhenEmptyOnly?: boolean; force?: boolean; source?: SelectionSource } = {},
+  options: { preferWhenEmptyOnly?: boolean; source?: SelectionSource } = {},
 ): boolean {
   if (globalWorldbookMode.value) {
     return false;
@@ -10037,7 +10067,6 @@ function trySelectWorldbookByContext(
   const switched = switchWorldbookSelection(candidate, {
     source: options.source ?? 'auto',
     reason: '自动定位上下文世界书',
-    allowDirty: options.force,
     silentOnCancel: true,
   });
   if (!switched) {
@@ -10071,7 +10100,7 @@ function toggleGlobalMode(): void {
     return;
   }
   if (!selectedWorldbookName.value) {
-    trySelectWorldbookByContext({ force: true, source: 'manual' });
+    trySelectWorldbookByContext({ source: 'manual' });
   }
   setStatus('已切换到上下文世界书模式');
 }
@@ -11340,6 +11369,7 @@ async function loadWorldbook(name: string): Promise<void> {
     const normalized = normalizeEntryList(rawEntries);
     draftEntries.value = klona(normalized);
     originalEntries.value = klona(normalized);
+    syncEntriesDigestNow();
     ensureSelectedEntryExists();
     setStatus(`已加载 "${name}"，条目 ${normalized.length}`);
   } catch (error) {
@@ -11406,7 +11436,7 @@ async function hardRefresh(options: HardRefreshOptions = {}): Promise<void> {
   if (!ensureRefreshAllowed(options)) {
     return;
   }
-  const allowDirty = options.force || hasUnsavedChanges.value;
+  const allowDirty = hasUnsavedChanges.value;
   persistedState.value = readPersistedState();
   syncSelectedGlobalPresetFromState();
   applyCrossCopyStateFromPersisted();
@@ -11440,7 +11470,6 @@ async function hardRefresh(options: HardRefreshOptions = {}): Promise<void> {
   } else {
     trySelectWorldbookByContext({
       preferWhenEmptyOnly: options.preferContextSelection !== true,
-      force: allowDirty,
       source: options.source ?? 'auto',
     });
   }
@@ -11463,6 +11492,7 @@ async function saveCurrentWorldbook(): Promise<void> {
     const savedEntrySnapshotCount = pushEntrySnapshotsBulk(pendingEntrySnapshots);
     await replaceWorldbook(selectedWorldbookName.value, klona(draftEntries.value), { render: 'immediate' });
     originalEntries.value = klona(draftEntries.value);
+    syncEntriesDigestNow();
     pushSnapshot('保存后快照');
     await refreshBindings();
     toastr.success(`已保存: ${selectedWorldbookName.value}`);
@@ -11908,7 +11938,7 @@ function stopPaneResize(): void {
 }
 
 function onPanelRefresh(): void {
-  void hardRefresh({ force: true, source: 'manual', reason: '手动刷新' });
+  void hardRefresh({ source: 'manual', reason: '手动刷新' });
 }
 
 function onPanelSave(): void {
@@ -11922,6 +11952,7 @@ function discardUnsavedDraft(): void {
     return;
   }
   draftEntries.value = klona(originalEntries.value);
+  syncEntriesDigestNow();
   ensureSelectedEntryExists();
   resetFindState();
   setStatus('已放弃未保存修改');
@@ -12017,7 +12048,6 @@ onMounted(() => {
   handleFloatingWindowResize();
   updateHostPanelTheme();
   void hardRefresh({
-    force: true,
     source: 'manual',
     reason: '初始化加载',
     preferContextSelection: true,
@@ -12033,6 +12063,10 @@ onUnmounted(() => {
   copyCineLocked.value = false;
   copyCinePhase.value = 'idle';
   clearCopyCineArtifacts();
+  if (entriesDigestTimer) {
+    clearTimeout(entriesDigestTimer);
+    entriesDigestTimer = null;
+  }
   if (keysDebounceTimer) {
     clearTimeout(keysDebounceTimer);
     keysDebounceTimer = null;
