@@ -52,6 +52,44 @@ function createInitialSettings(): Preset['settings'] {
   return {} as Preset['settings'];
 }
 
+function normalizePromptEntry(prompt: PresetPrompt, fallbackIndex: number): PresetPrompt {
+  const next = { ...prompt };
+  const fallbackId = `prompt_${fallbackIndex + 1}`;
+  if (typeof next.id !== 'string' || !next.id.trim()) {
+    next.id = fallbackId;
+  }
+  if (typeof next.name !== 'string' || !next.name.trim()) {
+    next.name = next.id;
+  }
+  if (typeof next.enabled !== 'boolean') {
+    next.enabled = true;
+  }
+  if (next.role !== 'system' && next.role !== 'user' && next.role !== 'assistant') {
+    next.role = 'system';
+  }
+  return next as PresetPrompt;
+}
+
+function normalizePresetForAssistant(preset: Preset): Preset {
+  const next = clonePreset(preset);
+  const activePrompts = Array.isArray(next.prompts) ? next.prompts : [];
+  const unusedPrompts = Array.isArray(next.prompts_unused) ? next.prompts_unused : [];
+
+  const normalizedActive = activePrompts.map((prompt, index) => normalizePromptEntry(prompt, index));
+  if (normalizedActive.length > 0) {
+    next.prompts = normalizedActive;
+    return next;
+  }
+
+  if (unusedPrompts.length > 0) {
+    next.prompts = unusedPrompts.map((prompt, index) => normalizePromptEntry(prompt, index));
+    return next;
+  }
+
+  next.prompts = [];
+  return next;
+}
+
 export const usePresetAssistantStore = defineStore('preset-assistant', () => {
   const assistantState = ref(readAssistantState());
   const initialSettings = createInitialSettings();
@@ -345,7 +383,7 @@ export const usePresetAssistantStore = defineStore('preset-assistant', () => {
     const nextPreviews: Record<string, PresetPreviewInfo> = {};
     for (const name of names) {
       try {
-        const preset = getPreset(name);
+        const preset = normalizePresetForAssistant(getPreset(name));
         nextPreviews[name] = {
           prompt_count: preset.prompts.length,
           enabled_prompt_count: preset.prompts.filter(prompt => prompt.enabled).length,
@@ -377,7 +415,7 @@ export const usePresetAssistantStore = defineStore('preset-assistant', () => {
     }
     loadingPreset.value = true;
     try {
-      const preset = getPreset(name);
+      const preset = normalizePresetForAssistant(getPreset(name));
       selectedPresetName.value = name;
       selectedPreset.value = clonePreset(preset);
       resetBrowseSettingsDraftFromPreset(preset);
@@ -513,7 +551,7 @@ export const usePresetAssistantStore = defineStore('preset-assistant', () => {
       return;
     }
     try {
-      const hostPreset = getPreset(targetName);
+      const hostPreset = normalizePresetForAssistant(getPreset(targetName));
       selectedPreset.value = clonePreset(hostPreset);
       updatePresetPreview(targetName, hostPreset);
       clearBrowsePromptSelection();

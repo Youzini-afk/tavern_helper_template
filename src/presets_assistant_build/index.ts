@@ -37,11 +37,12 @@ function ensurePanelStyle(): void {
 #${PANEL_ID} {
   position: fixed;
   z-index: 10020;
-  left: 40px;
+  left: 50%;
+  transform: translateX(-50%);
   top: 10px;
-  width: min(1640px, calc(100vw - 80px));
+  width: min(1080px, calc(100vw - 36px));
   height: calc(100vh - 20px);
-  min-width: 980px;
+  min-width: 720px;
   min-height: 620px;
   max-width: calc(100vw - 12px);
   max-height: calc(100vh - 12px);
@@ -127,6 +128,7 @@ function ensurePanelStyle(): void {
 @media (max-width: 960px) {
   #${PANEL_ID} {
     left: 0;
+    transform: none;
     top: 0;
     width: 100vw;
     height: 100vh;
@@ -190,6 +192,7 @@ function enablePanelDrag(panel: HTMLDivElement): void {
     const nextTop = Math.min(maxTop, Math.max(6, event.clientY - offsetY));
     panel.style.left = `${nextLeft}px`;
     panel.style.top = `${nextTop}px`;
+    panel.style.transform = 'none';
     panel.style.right = 'auto';
     panel.style.bottom = 'auto';
   };
@@ -216,6 +219,7 @@ function enablePanelDrag(panel: HTMLDivElement): void {
     dragging = true;
     panel.style.left = `${rect.left}px`;
     panel.style.top = `${rect.top}px`;
+    panel.style.transform = 'none';
     panel.style.right = 'auto';
     panel.style.bottom = 'auto';
     hostWin.document.addEventListener('mousemove', onMove, true);
