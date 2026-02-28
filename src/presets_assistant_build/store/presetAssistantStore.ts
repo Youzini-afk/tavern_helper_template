@@ -70,7 +70,205 @@ function normalizePromptEntry(prompt: PresetPrompt, fallbackIndex: number): Pres
   return next as PresetPrompt;
 }
 
+function getBuiltinPromptManager(): Record<string, unknown> | null {
+  const root = globalThis as Record<string, unknown>;
+  const contexts: Array<Record<string, unknown> | null> = [
+    root,
+    (root.parent as Record<string, unknown>) ?? null,
+    (root.top as Record<string, unknown>) ?? null,
+    (root.window as Record<string, unknown>) ?? null,
+  ];
+  for (const context of contexts) {
+    if (!context || typeof context !== 'object') {
+      continue;
+    }
+    const builtinValue = context.builtin as Record<string, unknown> | undefined;
+    if (!builtinValue || typeof builtinValue !== 'object') {
+      continue;
+    }
+    const promptManager = builtinValue.promptManager as Record<string, unknown> | undefined;
+    if (promptManager && typeof promptManager === 'object') {
+      return promptManager;
+    }
+  }
+  return null;
+}
+
+function toPromptCollection(raw: unknown): unknown[] {
+  if (Array.isArray(raw)) {
+    return raw;
+  }
+  if (!raw || typeof raw !== 'object') {
+    return [];
+  }
+  const record = raw as Record<string, unknown>;
+  if (Array.isArray(record.collection)) {
+    return record.collection;
+  }
+  if (Array.isArray(record.prompts)) {
+    return record.prompts;
+  }
+  return [];
+}
+
+function toPromptRole(raw: unknown): PresetPrompt['role'] {
+  return raw === 'assistant' || raw === 'user' ? raw : 'system';
+}
+
+function toPromptPosition(raw: Record<string, unknown>): PresetPrompt['position'] {
+  const rawPosition = raw.position;
+  if (rawPosition && typeof rawPosition === 'object') {
+    const position = rawPosition as Record<string, unknown>;
+    if (position.type === 'in_chat') {
+      return {
+        type: 'in_chat',
+        depth: Number.isFinite(position.depth)
+          ? Math.max(0, Number(position.depth))
+          : Number.isFinite(raw.injection_depth)
+            ? Math.max(0, Number(raw.injection_depth))
+            : 4,
+        order: Number.isFinite(position.order)
+          ? Number(position.order)
+          : Number.isFinite(raw.injection_order)
+            ? Number(raw.injection_order)
+            : 100,
+      };
+    }
+    if (position.type === 'relative') {
+      return { type: 'relative' };
+    }
+  }
+
+  const explicitType = raw.position_type;
+  if (explicitType === 'in_chat') {
+    return {
+      type: 'in_chat',
+      depth: Number.isFinite(raw.injection_depth) ? Math.max(0, Number(raw.injection_depth)) : 4,
+      order: Number.isFinite(raw.injection_order) ? Number(raw.injection_order) : 100,
+    };
+  }
+
+  const injectionPosition = Number(raw.injection_position);
+  if (Number.isFinite(injectionPosition) && injectionPosition === 1) {
+    return {
+      type: 'in_chat',
+      depth: Number.isFinite(raw.injection_depth) ? Math.max(0, Number(raw.injection_depth)) : 4,
+      order: Number.isFinite(raw.injection_order) ? Number(raw.injection_order) : 100,
+    };
+  }
+
+  return { type: 'relative' };
+}
+
+function coercePromptFromUnknown(rawPrompt: unknown, index: number): PresetPrompt | null {
+  if (!rawPrompt || typeof rawPrompt !== 'object') {
+    return null;
+  }
+  const raw = rawPrompt as Record<string, unknown>;
+  const idCandidate = [raw.identifier, raw.id, raw.key, raw.name].find(value => typeof value === 'string');
+  const nameCandidate = [raw.name, raw.title, raw.identifier, raw.id].find(value => typeof value === 'string');
+  const roleCandidate = [raw.role, raw.injection_role].find(value => typeof value === 'string');
+  const contentCandidate = [raw.content, raw.prompt, raw.text, raw.value].find(value => typeof value === 'string');
+  const enabledCandidate = raw.enabled;
+  const disabledCandidate = raw.disabled;
+
+  const id = typeof idCandidate === 'string' && idCandidate.trim() ? idCandidate : `pm_${index + 1}`;
+  const name = typeof nameCandidate === 'string' && nameCandidate.trim() ? nameCandidate : id;
+  const enabled =
+    typeof enabledCandidate === 'boolean'
+      ? enabledCandidate
+      : typeof disabledCandidate === 'boolean'
+        ? !disabledCandidate
+        : true;
+  const prompt: PresetPrompt = {
+    id,
+    name,
+    enabled,
+    role: toPromptRole(roleCandidate),
+    position: toPromptPosition(raw),
+    content: typeof contentCandidate === 'string' ? contentCandidate : '',
+  };
+  return normalizePromptEntry(prompt, index);
+}
+
+function dedupePrompts(prompts: PresetPrompt[]): PresetPrompt[] {
+  const seen = new Set<string>();
+  const unique: PresetPrompt[] = [];
+  for (const prompt of prompts) {
+    const key = `${prompt.id}::${prompt.role}::${prompt.name}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(prompt);
+  }
+  return unique;
+}
+
+function getPromptsFromPromptManagerCollection(): PresetPrompt[] {
+  try {
+    const promptManager = getBuiltinPromptManager();
+    if (!promptManager) {
+      return [];
+    }
+    const getter = promptManager.getPromptCollection;
+    const fromGetter = toPromptCollection(typeof getter === 'function' ? getter.call(promptManager) : null);
+    const directCollection = toPromptCollection(promptManager.collection);
+    const directPrompts = toPromptCollection(promptManager.prompts);
+    const promptCollection = toPromptCollection(promptManager.promptCollection);
+    const mergedRaw = [...fromGetter, ...directCollection, ...directPrompts, ...promptCollection];
+    if (mergedRaw.length < 1) {
+      return [];
+    }
+    const prompts = mergedRaw
+      .map((item, index) => coercePromptFromUnknown(item, index))
+      .filter((item): item is PresetPrompt => Boolean(item));
+    return dedupePrompts(prompts);
+  } catch (error) {
+    console.warn('[PresetAssistant] prompt manager collection unavailable:', error);
+    return [];
+  }
+}
+
+function getPromptsFromPromptManagerMessages(): PresetPrompt[] {
+  try {
+    const promptManager = getBuiltinPromptManager();
+    if (!promptManager) {
+      return [];
+    }
+    const messagesRaw = promptManager.messages;
+    if (!Array.isArray(messagesRaw) || messagesRaw.length < 1) {
+      return [];
+    }
+    const latestWithCollection = [...messagesRaw]
+      .reverse()
+      .find(item => item && typeof item === 'object' && Array.isArray((item as Record<string, unknown>).collection));
+    if (!latestWithCollection || typeof latestWithCollection !== 'object') {
+      return [];
+    }
+    const collection = toPromptCollection((latestWithCollection as Record<string, unknown>).collection);
+    if (collection.length < 1) {
+      return [];
+    }
+    const prompts = collection
+      .map((item, index) => coercePromptFromUnknown(item, index))
+      .filter((item): item is PresetPrompt => Boolean(item));
+    return dedupePrompts(prompts);
+  } catch (error) {
+    console.warn('[PresetAssistant] prompt manager messages unavailable:', error);
+    return [];
+  }
+}
+
 function getFallbackPromptsFromHost(): PresetPrompt[] {
+  const promptManagerPrompts = getPromptsFromPromptManagerCollection();
+  if (promptManagerPrompts.length > 0) {
+    return promptManagerPrompts;
+  }
+  const messagePrompts = getPromptsFromPromptManagerMessages();
+  if (messagePrompts.length > 0) {
+    return messagePrompts;
+  }
   try {
     const inUse = getPreset('in_use');
     if (Array.isArray(inUse.prompts) && inUse.prompts.length > 0) {
