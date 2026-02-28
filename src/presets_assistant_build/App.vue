@@ -301,10 +301,16 @@ watch(
   color: var(--pa-text-1);
   font-size: 13px;
   line-height: 1.45;
+  position: relative;
+  pointer-events: auto;
   background:
     radial-gradient(circle at 10% 8%, rgba(49, 89, 182, 0.25), transparent 42%),
     radial-gradient(circle at 88% 16%, rgba(18, 96, 164, 0.2), transparent 35%),
     linear-gradient(168deg, var(--pa-bg-0), var(--pa-bg-1) 44%, var(--pa-bg-2));
+}
+
+.preset-root :is(button, input, select, textarea, summary, label, a) {
+  pointer-events: auto;
 }
 
 .top,

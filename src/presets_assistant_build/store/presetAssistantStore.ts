@@ -35,6 +35,13 @@ interface PresetPreviewInfo {
 
 const SAVE_FEEDBACK_MS = 1200;
 const EDIT_LIVE_APPLY_DELAY_MS = 260;
+const DEFAULT_PROMPT_ORDER_CHARACTER_ID = 100001;
+const KNOWN_PROMPT_ORDER_DUMMY_IDS = [100001, 100000];
+
+interface PromptOrderEntry {
+  identifier: string;
+  enabled: boolean;
+}
 
 function createInitialSettings(): Preset['settings'] {
   const globalDefault = (globalThis as { default_preset?: Preset }).default_preset;
@@ -70,20 +77,40 @@ function normalizePromptEntry(prompt: PresetPrompt, fallbackIndex: number): Pres
   return next as PresetPrompt;
 }
 
-function getBuiltinPromptManager(): Record<string, unknown> | null {
+function toRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function getWindowContexts(): Array<Record<string, unknown>> {
   const root = globalThis as Record<string, unknown>;
-  const contexts: Array<Record<string, unknown> | null> = [root];
+  const contexts: Array<Record<string, unknown>> = [];
+
+  function pushContext(context: unknown): void {
+    if (!context || typeof context !== 'object') {
+      return;
+    }
+    if (contexts.includes(context as Record<string, unknown>)) {
+      return;
+    }
+    contexts.push(context as Record<string, unknown>);
+  }
+
+  pushContext(root);
   for (const accessor of ['parent', 'top', 'window'] as const) {
     try {
-      const context = root[accessor] as Record<string, unknown> | null | undefined;
-      if (context && typeof context === 'object') {
-        contexts.push(context);
-      }
+      pushContext(root[accessor]);
     } catch {
       // Cross-origin frame access can throw; ignore and continue.
     }
   }
 
+  return contexts;
+}
+
+function getBuiltinPromptManager(): Record<string, unknown> | null {
   function pickPromptManagerFromContext(context: Record<string, unknown>): Record<string, unknown> | null {
     const directBuiltin = context.builtin as Record<string, unknown> | undefined;
     if (directBuiltin && typeof directBuiltin === 'object') {
@@ -104,13 +131,15 @@ function getBuiltinPromptManager(): Record<string, unknown> | null {
       }
     }
 
+    const directPromptManager = context.promptManager as Record<string, unknown> | undefined;
+    if (directPromptManager && typeof directPromptManager === 'object') {
+      return directPromptManager;
+    }
+
     return null;
   }
 
-  for (const context of contexts) {
-    if (!context || typeof context !== 'object') {
-      continue;
-    }
+  for (const context of getWindowContexts()) {
     try {
       const promptManager = pickPromptManagerFromContext(context);
       if (promptManager) {
@@ -148,6 +177,181 @@ function toPromptArray(raw: unknown): unknown[] {
     return [];
   }
   return Object.values(raw as Record<string, unknown>).filter(value => value && typeof value === 'object');
+}
+
+function resolvePromptSourceContainers(source: unknown): Array<Record<string, unknown>> {
+  const raw = toRecord(source);
+  if (!raw) {
+    return [];
+  }
+  const containers: Array<Record<string, unknown>> = [];
+
+  function pushContainer(value: unknown): void {
+    const record = toRecord(value);
+    if (!record || containers.includes(record)) {
+      return;
+    }
+    containers.push(record);
+  }
+
+  pushContainer(raw);
+  pushContainer(raw.settings);
+  pushContainer(raw.data);
+  pushContainer(raw.preset);
+  const nestedPreset = toRecord(raw.preset);
+  if (nestedPreset) {
+    pushContainer(nestedPreset.settings);
+    pushContainer(nestedPreset.data);
+  }
+  return containers;
+}
+
+function getPromptOrderActiveCharacterId(): string {
+  try {
+    const promptManager = getBuiltinPromptManager();
+    const activeCharacter = toRecord(promptManager?.activeCharacter);
+    const activeId = activeCharacter?.id;
+    if (typeof activeId === 'string' && activeId.trim()) {
+      return activeId.trim();
+    }
+    if (Number.isFinite(activeId)) {
+      return String(activeId);
+    }
+  } catch {
+    // Ignore and continue to the next source.
+  }
+
+  for (const context of getWindowContexts()) {
+    try {
+      const sillyTavern = toRecord(context.SillyTavern);
+      const getter = sillyTavern?.getContext ?? context.getContext;
+      if (typeof getter !== 'function') {
+        continue;
+      }
+      const hostContext = toRecord(getter.call(sillyTavern ?? context));
+      const characterId = hostContext?.characterId;
+      if (typeof characterId === 'string' && characterId.trim()) {
+        return characterId.trim();
+      }
+      if (Number.isFinite(characterId)) {
+        return String(characterId);
+      }
+    } catch {
+      // Ignore invalid contexts and continue searching.
+    }
+  }
+
+  return '';
+}
+
+function coercePromptOrderEntry(raw: unknown): PromptOrderEntry | null {
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+  const record = raw as Record<string, unknown>;
+  const identifierRaw = record.identifier ?? record.id ?? record.key ?? record.name;
+  const identifier = typeof identifierRaw === 'string' ? identifierRaw.trim() : '';
+  if (!identifier) {
+    return null;
+  }
+  const enabled =
+    typeof record.enabled === 'boolean' ? record.enabled : typeof record.disabled === 'boolean' ? !record.disabled : true;
+  return { identifier, enabled };
+}
+
+function toPromptOrderEntries(rawOrder: unknown): PromptOrderEntry[] {
+  if (!Array.isArray(rawOrder)) {
+    return [];
+  }
+  return rawOrder.map(entry => coercePromptOrderEntry(entry)).filter((entry): entry is PromptOrderEntry => Boolean(entry));
+}
+
+function pickPromptOrderContainer(rawPromptOrder: unknown): Record<string, unknown> | null {
+  if (!Array.isArray(rawPromptOrder)) {
+    return null;
+  }
+  const orderContainers = rawPromptOrder.filter(
+    item => item && typeof item === 'object' && Array.isArray((item as Record<string, unknown>).order),
+  ) as Record<string, unknown>[];
+  if (orderContainers.length < 1) {
+    return null;
+  }
+
+  const activeCharacterId = getPromptOrderActiveCharacterId();
+  if (activeCharacterId) {
+    const matchedActive = orderContainers.find(container => String(container.character_id ?? '') === activeCharacterId);
+    if (matchedActive) {
+      return matchedActive;
+    }
+  }
+
+  const knownDummy = orderContainers.find(container => KNOWN_PROMPT_ORDER_DUMMY_IDS.includes(Number(container.character_id)));
+  if (knownDummy) {
+    return knownDummy;
+  }
+
+  const withEntries = orderContainers.find(container => Array.isArray(container.order) && container.order.length > 0);
+  if (withEntries) {
+    return withEntries;
+  }
+
+  return orderContainers[0] ?? null;
+}
+
+function extractPromptOrderEntries(rawPromptOrder: unknown): PromptOrderEntry[] {
+  if (Array.isArray(rawPromptOrder)) {
+    const direct = toPromptOrderEntries(rawPromptOrder);
+    if (direct.length > 0) {
+      return direct;
+    }
+    const container = pickPromptOrderContainer(rawPromptOrder);
+    if (container && Array.isArray(container.order)) {
+      return toPromptOrderEntries(container.order);
+    }
+    return [];
+  }
+
+  const record = toRecord(rawPromptOrder);
+  if (!record) {
+    return [];
+  }
+  if (Array.isArray(record.order)) {
+    return extractPromptOrderEntries(record.order);
+  }
+  if (Array.isArray(record.prompt_order)) {
+    return extractPromptOrderEntries(record.prompt_order);
+  }
+  return [];
+}
+
+function collectRawPresetPromptSource(source: unknown): {
+  prompts: unknown[];
+  unused: unknown[];
+  order: PromptOrderEntry[];
+} {
+  const containers = resolvePromptSourceContainers(source);
+  let prompts: unknown[] = [];
+  let unused: unknown[] = [];
+  let order: PromptOrderEntry[] = [];
+
+  for (const container of containers) {
+    if (prompts.length < 1 && unused.length < 1) {
+      const nextPrompts = toPromptArray(container.prompts);
+      const nextUnused = toPromptArray(container.prompts_unused);
+      if (nextPrompts.length > 0 || nextUnused.length > 0) {
+        prompts = nextPrompts;
+        unused = nextUnused;
+      }
+    }
+    if (order.length < 1) {
+      const nextOrder = extractPromptOrderEntries(container.prompt_order);
+      if (nextOrder.length > 0) {
+        order = nextOrder;
+      }
+    }
+  }
+
+  return { prompts, unused, order };
 }
 
 function toPromptRole(raw: unknown): PresetPrompt['role'] {
@@ -244,42 +448,35 @@ function dedupePrompts(prompts: PresetPrompt[]): PresetPrompt[] {
   return unique;
 }
 
-function extractPromptsFromPresetSource(source: unknown): PresetPrompt[] {
-  if (!source || typeof source !== 'object') {
-    return [];
+function extractPromptsFromPresetSource(source: unknown, fallbackPrompts: PresetPrompt[] = []): PresetPrompt[] {
+  const fallbackById = new Map<string, PresetPrompt>();
+  for (const prompt of fallbackPrompts) {
+    const normalized = normalizePromptEntry(prompt, fallbackById.size);
+    fallbackById.set(normalized.id, normalized);
   }
-  const raw = source as Record<string, unknown>;
-  const rawPrompts = toPromptArray(raw.prompts);
-  const rawUnused = toPromptArray(raw.prompts_unused);
+
+  const { prompts: rawPrompts, unused: rawUnused, order: rawOrder } = collectRawPresetPromptSource(source);
   const merged = dedupePrompts(
     [...rawPrompts, ...rawUnused]
       .map((item, index) => coercePromptFromUnknown(item, index))
       .filter((item): item is PresetPrompt => Boolean(item)),
   );
-  const rawPromptOrder = Array.isArray(raw.prompt_order) ? raw.prompt_order : [];
-  const orderContainer = rawPromptOrder.find(
-    item => item && typeof item === 'object' && Array.isArray((item as Record<string, unknown>).order),
-  ) as Record<string, unknown> | undefined;
-  const rawOrder = orderContainer && Array.isArray(orderContainer.order) ? orderContainer.order : [];
   if (merged.length < 1 && rawOrder.length > 0) {
     return dedupePrompts(
       rawOrder
         .map((entry, index) => {
-          if (!entry || typeof entry !== 'object') {
-            return null;
-          }
-          const item = entry as Record<string, unknown>;
-          const identifier = typeof item.identifier === 'string' && item.identifier.trim() ? item.identifier : '';
+          const identifier = entry.identifier;
           if (!identifier) {
             return null;
           }
+          const fallback = fallbackById.get(identifier);
           const prompt: PresetPrompt = {
             id: identifier,
-            name: identifier,
-            enabled: typeof item.enabled === 'boolean' ? item.enabled : true,
-            role: 'system',
-            position: { type: 'relative' },
-            content: '',
+            name: fallback?.name ?? identifier,
+            enabled: entry.enabled,
+            role: fallback?.role ?? 'system',
+            position: fallback?.position ?? { type: 'relative' },
+            content: fallback?.content ?? '',
           };
           return normalizePromptEntry(prompt, index);
         })
@@ -305,21 +502,26 @@ function extractPromptsFromPresetSource(source: unknown): PresetPrompt[] {
   const consumed = new Set<PresetPrompt>();
   const ordered: PresetPrompt[] = [];
   for (const entry of rawOrder) {
-    if (!entry || typeof entry !== 'object') {
-      continue;
-    }
-    const orderItem = entry as Record<string, unknown>;
-    const identifier = typeof orderItem.identifier === 'string' ? orderItem.identifier : '';
+    const identifier = entry.identifier;
     if (!identifier) {
       continue;
     }
     const queue = promptsById.get(identifier);
-    const prompt = queue?.shift();
+    let prompt = queue?.shift();
+    const fromMerged = Boolean(prompt);
+    if (!prompt) {
+      const fallback = fallbackById.get(identifier);
+      if (fallback) {
+        prompt = normalizePromptEntry(fallback, ordered.length);
+      }
+    }
     if (!prompt) {
       continue;
     }
-    consumed.add(prompt);
-    const enabled = typeof orderItem.enabled === 'boolean' ? orderItem.enabled : prompt.enabled;
+    if (fromMerged) {
+      consumed.add(prompt);
+    }
+    const enabled = entry.enabled;
     ordered.push(
       normalizePromptEntry(
         {
@@ -349,7 +551,8 @@ function getPromptsFromPromptManagerCollection(): PresetPrompt[] {
     const directCollection = toPromptCollection(promptManager.collection);
     const directPrompts = toPromptCollection(promptManager.prompts);
     const promptCollection = toPromptCollection(promptManager.promptCollection);
-    const mergedRaw = [...fromGetter, ...directCollection, ...directPrompts, ...promptCollection];
+    const settingsPrompts = toPromptCollection(toRecord(promptManager.serviceSettings)?.prompts);
+    const mergedRaw = [...fromGetter, ...directCollection, ...directPrompts, ...promptCollection, ...settingsPrompts];
     if (mergedRaw.length < 1) {
       return [];
     }
@@ -393,6 +596,102 @@ function getPromptsFromPromptManagerMessages(): PresetPrompt[] {
   }
 }
 
+function getPromptsFromSillyTavernContext(): PresetPrompt[] {
+  for (const context of getWindowContexts()) {
+    try {
+      const sillyTavern = toRecord(context.SillyTavern);
+      const getter = sillyTavern?.getContext ?? context.getContext;
+      if (typeof getter !== 'function') {
+        continue;
+      }
+      const hostContext = toRecord(getter.call(sillyTavern ?? context));
+      if (!hostContext) {
+        continue;
+      }
+      const chatCompletionSettings =
+        toRecord(hostContext.chatCompletionSettings) ??
+        toRecord(hostContext.oai_settings) ??
+        toRecord(hostContext.openai_settings);
+      if (!chatCompletionSettings) {
+        continue;
+      }
+
+      const prompts = extractPromptsFromPresetSource({ settings: chatCompletionSettings });
+      if (prompts.length > 0) {
+        return prompts;
+      }
+    } catch {
+      // Ignore invalid contexts and continue searching.
+    }
+  }
+  return [];
+}
+
+function getPromptsFromPromptManagerDom(): PresetPrompt[] {
+  const prompts: PresetPrompt[] = [];
+  for (const context of getWindowContexts()) {
+    try {
+      const documentRef = context.document as Document | undefined;
+      if (!documentRef) {
+        continue;
+      }
+      const listElement = documentRef.querySelector('#completion_prompt_manager_list');
+      if (!listElement) {
+        continue;
+      }
+      const rows = Array.from(listElement.querySelectorAll('li[data-pm-identifier]'));
+      for (const [index, row] of rows.entries()) {
+        const element = row as HTMLElement;
+        const identifier = (element.dataset.pmIdentifier ?? '').trim();
+        if (!identifier) {
+          continue;
+        }
+
+        const rawName = element.dataset.pmName ?? '';
+        let name = rawName;
+        if (name) {
+          try {
+            name = decodeURIComponent(name);
+          } catch {
+            // Keep raw value if decode fails.
+          }
+        }
+        if (!name) {
+          const namedNode = element.querySelector('[data-pm-name]');
+          name = (namedNode?.textContent ?? '').trim() || identifier;
+        }
+
+        const disabledClassList = [
+          'completion_prompt_manager_prompt_disabled',
+          'openai_prompt_manager_prompt_disabled',
+          'prompt_manager_prompt_disabled',
+        ];
+        const isDisabled = disabledClassList.some(className => element.classList.contains(className));
+        prompts.push(
+          normalizePromptEntry(
+            {
+              id: identifier,
+              name,
+              enabled: !isDisabled,
+              role: 'system',
+              position: { type: 'relative' },
+              content: '',
+            },
+            index,
+          ),
+        );
+      }
+
+      if (prompts.length > 0) {
+        return dedupePrompts(prompts);
+      }
+    } catch {
+      // Ignore invalid contexts and continue searching.
+    }
+  }
+  return [];
+}
+
 function getFallbackPromptsFromHost(): PresetPrompt[] {
   const promptManagerPrompts = getPromptsFromPromptManagerCollection();
   if (promptManagerPrompts.length > 0) {
@@ -402,9 +701,17 @@ function getFallbackPromptsFromHost(): PresetPrompt[] {
   if (messagePrompts.length > 0) {
     return messagePrompts;
   }
+  const contextPrompts = getPromptsFromSillyTavernContext();
+  if (contextPrompts.length > 0) {
+    return contextPrompts;
+  }
+  const domPrompts = getPromptsFromPromptManagerDom();
+  if (domPrompts.length > 0) {
+    return domPrompts;
+  }
   try {
     const inUse = getPreset('in_use');
-    const promptsFromInUse = extractPromptsFromPresetSource(inUse);
+    const promptsFromInUse = extractPromptsFromPresetSource(inUse, contextPrompts);
     if (promptsFromInUse.length > 0) {
       return promptsFromInUse;
     }
@@ -413,7 +720,7 @@ function getFallbackPromptsFromHost(): PresetPrompt[] {
   }
   const globalDefault = (globalThis as { default_preset?: Preset }).default_preset;
   if (globalDefault) {
-    const promptsFromDefault = extractPromptsFromPresetSource(globalDefault);
+    const promptsFromDefault = extractPromptsFromPresetSource(globalDefault, contextPrompts);
     if (promptsFromDefault.length > 0) {
       return promptsFromDefault;
     }
@@ -423,7 +730,7 @@ function getFallbackPromptsFromHost(): PresetPrompt[] {
 
 function normalizePresetForAssistant(preset: Preset, fallbackPrompts: PresetPrompt[] = []): Preset {
   const next = clonePreset(preset);
-  const normalizedPrompts = extractPromptsFromPresetSource(next);
+  const normalizedPrompts = extractPromptsFromPresetSource(next, fallbackPrompts);
   if (normalizedPrompts.length > 0) {
     next.prompts = normalizedPrompts;
     return next;
@@ -436,6 +743,124 @@ function normalizePresetForAssistant(preset: Preset, fallbackPrompts: PresetProm
 
   next.prompts = [];
   return next;
+}
+
+function buildRawPromptDefinitionLookup(preset: Preset): Map<string, Record<string, unknown>> {
+  const lookup = new Map<string, Record<string, unknown>>();
+  for (const container of resolvePromptSourceContainers(preset)) {
+    const rawPrompts = toPromptArray(container.prompts);
+    for (const rawPrompt of rawPrompts) {
+      if (!rawPrompt || typeof rawPrompt !== 'object') {
+        continue;
+      }
+      const record = rawPrompt as Record<string, unknown>;
+      const identifierRaw = record.identifier ?? record.id ?? record.key ?? record.name;
+      const identifier = typeof identifierRaw === 'string' ? identifierRaw.trim() : '';
+      if (!identifier || lookup.has(identifier)) {
+        continue;
+      }
+      lookup.set(identifier, { ...record });
+    }
+  }
+  return lookup;
+}
+
+function toRawPromptDefinition(prompt: PresetPrompt, base?: Record<string, unknown>): Record<string, unknown> {
+  const next = base ? { ...base } : {};
+  next.identifier = prompt.id;
+  next.id = typeof next.id === 'string' && next.id ? next.id : prompt.id;
+  next.name = prompt.name;
+  next.role = prompt.role;
+  next.injection_role = prompt.role;
+  next.content = prompt.content;
+  next.prompt = prompt.content;
+  next.enabled = prompt.enabled;
+  next.system_prompt = prompt.role === 'system';
+  if (prompt.position.type === 'in_chat') {
+    next.injection_position = 1;
+    next.injection_depth = prompt.position.depth;
+    next.injection_order = prompt.position.order;
+  } else {
+    next.injection_position = 0;
+    delete next.injection_depth;
+    delete next.injection_order;
+  }
+  return next;
+}
+
+function applyPromptDefinitionsToRecord(record: Record<string, unknown>, definitions: Record<string, unknown>[]): void {
+  const current = record.prompts;
+  if (_.isPlainObject(current) && !Array.isArray(current)) {
+    const mapped: Record<string, unknown> = {};
+    for (const definition of definitions) {
+      const identifierRaw = definition.identifier ?? definition.id ?? definition.name;
+      const identifier = typeof identifierRaw === 'string' ? identifierRaw.trim() : '';
+      if (!identifier) {
+        continue;
+      }
+      mapped[identifier] = { ...definition };
+    }
+    record.prompts = mapped;
+    return;
+  }
+  record.prompts = definitions.map(item => ({ ...item }));
+}
+
+function applyPromptOrderToRecord(
+  record: Record<string, unknown>,
+  orderEntries: PromptOrderEntry[],
+  activeCharacterId: string,
+): void {
+  const normalizedOrderEntries = orderEntries.map(entry => ({ identifier: entry.identifier, enabled: entry.enabled }));
+  const rawPromptOrder = record.prompt_order;
+
+  if (Array.isArray(rawPromptOrder)) {
+    const directOrderEntries = toPromptOrderEntries(rawPromptOrder);
+    if (directOrderEntries.length > 0) {
+      record.prompt_order = normalizedOrderEntries;
+      return;
+    }
+
+    const selectedContainer = pickPromptOrderContainer(rawPromptOrder);
+    if (selectedContainer) {
+      selectedContainer.order = normalizedOrderEntries;
+      return;
+    }
+
+    const characterId = Number(activeCharacterId);
+    const nextCharacterId = Number.isFinite(characterId) ? characterId : DEFAULT_PROMPT_ORDER_CHARACTER_ID;
+    record.prompt_order = [{ character_id: nextCharacterId, order: normalizedOrderEntries }];
+    return;
+  }
+
+  const promptOrderRecord = toRecord(rawPromptOrder);
+  if (promptOrderRecord && Array.isArray(promptOrderRecord.order)) {
+    promptOrderRecord.order = normalizedOrderEntries;
+    return;
+  }
+
+  const characterId = Number(activeCharacterId);
+  const nextCharacterId = Number.isFinite(characterId) ? characterId : DEFAULT_PROMPT_ORDER_CHARACTER_ID;
+  record.prompt_order = [{ character_id: nextCharacterId, order: normalizedOrderEntries }];
+}
+
+function syncPresetPromptStructures(preset: Preset): void {
+  const prompts = Array.isArray(preset.prompts)
+    ? preset.prompts.map((prompt, index) => normalizePromptEntry(prompt, index))
+    : [];
+  const definitionLookup = buildRawPromptDefinitionLookup(preset);
+  const definitions = prompts.map(prompt => toRawPromptDefinition(prompt, definitionLookup.get(prompt.id)));
+  const orderEntries = prompts.map(prompt => ({ identifier: prompt.id, enabled: prompt.enabled }));
+  const activeCharacterId = getPromptOrderActiveCharacterId();
+  const presetRecord = preset as unknown as Record<string, unknown>;
+  applyPromptDefinitionsToRecord(presetRecord, definitions);
+  applyPromptOrderToRecord(presetRecord, orderEntries, activeCharacterId);
+
+  const settings = toRecord(presetRecord.settings);
+  if (settings) {
+    applyPromptDefinitionsToRecord(settings, definitions);
+    applyPromptOrderToRecord(settings, orderEntries, activeCharacterId);
+  }
 }
 
 export const usePresetAssistantStore = defineStore('preset-assistant', () => {
@@ -864,9 +1289,11 @@ export const usePresetAssistantStore = defineStore('preset-assistant', () => {
   }
 
   async function persistPresetByName(name: string, nextPreset: Preset, render: ReplacePresetRender): Promise<void> {
-    await replacePreset(name, nextPreset, { render });
+    const presetToPersist = clonePreset(nextPreset);
+    syncPresetPromptStructures(presetToPersist);
+    await replacePreset(name, presetToPersist, { render });
     if (name === loadedPresetName.value) {
-      await replacePreset('in_use', clonePreset(nextPreset), { render: 'debounced' });
+      await replacePreset('in_use', clonePreset(presetToPersist), { render: 'debounced' });
     }
   }
 
@@ -1213,7 +1640,9 @@ export const usePresetAssistantStore = defineStore('preset-assistant', () => {
       return;
     }
     try {
-      await replacePreset('in_use', clonePreset(editDraft.value), { render: 'debounced' });
+      const next = clonePreset(editDraft.value);
+      syncPresetPromptStructures(next);
+      await replacePreset('in_use', next, { render: 'debounced' });
     } catch (error) {
       console.warn('[PresetAssistant] live apply failed:', error);
     }

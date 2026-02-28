@@ -156,6 +156,10 @@ function ensurePanelStyle(): void {
   pointer-events: auto;
 }
 
+#${PANEL_BODY_ID} .preset-assistant-app-root * {
+  pointer-events: auto;
+}
+
 #${MENU_ID}.active {
   background-color: rgba(63, 123, 240, 0.16) !important;
 }
