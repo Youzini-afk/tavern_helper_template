@@ -1,4 +1,5 @@
 import { klona } from 'klona';
+import _ from 'lodash';
 import { computed, reactive, ref } from 'vue';
 import { defineStore } from 'pinia';
 
@@ -31,8 +32,25 @@ interface PresetPreviewInfo {
 const SAVE_FEEDBACK_MS = 1200;
 const EDIT_LIVE_APPLY_DELAY_MS = 260;
 
+function createInitialSettings(): Preset['settings'] {
+  const globalDefault = (globalThis as { default_preset?: Preset }).default_preset;
+  if (globalDefault?.settings) {
+    return cloneSettings(globalDefault.settings);
+  }
+  try {
+    const inUsePreset = getPreset('in_use');
+    if (inUsePreset?.settings) {
+      return cloneSettings(inUsePreset.settings);
+    }
+  } catch (error) {
+    console.warn('[PresetAssistant] failed to read in_use preset settings:', error);
+  }
+  return {} as Preset['settings'];
+}
+
 export const usePresetAssistantStore = defineStore('preset-assistant', () => {
   const assistantState = ref(readAssistantState());
+  const initialSettings = createInitialSettings();
 
   const presetNames = ref<string[]>([]);
   const presetPreviewMap = ref<Record<string, PresetPreviewInfo>>({});
@@ -59,8 +77,8 @@ export const usePresetAssistantStore = defineStore('preset-assistant', () => {
   });
 
   const browseParamDraft = reactive<BrowseParamDraftState>({
-    base_settings: cloneSettings(default_preset.settings),
-    staged_settings: cloneSettings(default_preset.settings),
+    base_settings: cloneSettings(initialSettings),
+    staged_settings: cloneSettings(initialSettings),
     dirty: false,
     applying: false,
   });

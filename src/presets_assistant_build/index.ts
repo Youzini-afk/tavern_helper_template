@@ -155,7 +155,7 @@ function mountAppIntoPanel(): void {
     return;
   }
   panelRoot = createScriptIdDiv().appendTo(body as unknown as JQuery);
-  destroyTeleport = teleportStyle().destroy;
+  destroyTeleport = teleportStyle(doc.head).destroy;
   app = createApp(PresetAssistantApp);
   app.use(createPinia());
   app.mount(panelRoot[0]);

@@ -69,6 +69,8 @@
 </template>
 
 <script setup lang="ts">
+import _ from 'lodash';
+
 import { presetSettingGroups } from '../core/presetMapper';
 import type { SettingField } from '../types';
 
