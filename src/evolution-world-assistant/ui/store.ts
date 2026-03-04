@@ -180,6 +180,14 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     patchSettings({ ui_open: open });
   }
 
+  function openPanel() {
+    setOpen(true);
+  }
+
+  function closePanel() {
+    setOpen(false);
+  }
+
   return {
     settings,
     lastRun,
@@ -195,5 +203,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     validateConfig,
     validateControllerSyntax,
     setOpen,
+    openPanel,
+    closePanel,
   };
 });
