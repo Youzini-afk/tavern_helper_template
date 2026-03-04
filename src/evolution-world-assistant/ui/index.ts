@@ -10,7 +10,7 @@ let buttonEventStop: EventOnReturn | null = null;
 const BUTTON_NAME = 'Evolution 世界助手';
 
 function installToolbarButton() {
-  appendInexistentScriptButtons([{ name: BUTTON_NAME, visible: true }]);
+  replaceScriptButtons([{ name: BUTTON_NAME, visible: true }]);
   buttonEventStop?.stop();
   buttonEventStop = eventOn(getButtonEvent(BUTTON_NAME), () => {
     patchSettings({ ui_open: true });
@@ -20,7 +20,7 @@ function installToolbarButton() {
 function uninstallToolbarButton() {
   buttonEventStop?.stop();
   buttonEventStop = null;
-  updateScriptButtonsWith(buttons => buttons.filter(button => button.name !== BUTTON_NAME));
+  replaceScriptButtons([]);
 }
 
 export function mountUi() {
