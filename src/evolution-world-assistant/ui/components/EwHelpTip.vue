@@ -83,11 +83,8 @@ function clearCloseTimer() {
 
 function scheduleCloseIfHover() {
   clearCloseTimer();
-  if (locked.value) {
-    return;
-  }
   closeTimer = setTimeout(() => {
-    closeIfUnlocked();
+    closeIfAllowed();
   }, 140);
 }
 
@@ -104,11 +101,15 @@ function close() {
   }
 }
 
-function closeIfUnlocked() {
-  if (locked.value) {
+function closeIfAllowed() {
+  if (isPersistentOpen()) {
     return;
   }
   close();
+}
+
+function isPersistentOpen() {
+  return touchLike.value && locked.value;
 }
 
 function openTip(mode: 'hover' | 'detail') {
@@ -118,18 +119,25 @@ function openTip(mode: 'hover' | 'detail') {
   }
   open.value = true;
   if (mode === 'detail') {
-    locked.value = true;
+    locked.value = touchLike.value;
     showDetail.value = true;
   } else {
-    if (!locked.value) {
+    if (!isPersistentOpen()) {
       showDetail.value = false;
+    }
+    if (!touchLike.value) {
+      locked.value = false;
     }
   }
   activeTipCloser = close;
 }
 
 function toggleDetail() {
-  if (open.value && locked.value) {
+  if (touchLike.value && open.value && locked.value) {
+    close();
+    return;
+  }
+  if (!touchLike.value && open.value && showDetail.value) {
     close();
     return;
   }
@@ -176,7 +184,7 @@ function handleFocusOut(event: FocusEvent) {
   if (nextTarget && rootRef.value?.contains(nextTarget)) {
     return;
   }
-  closeIfUnlocked();
+  closeIfAllowed();
 }
 
 function handleTriggerClick() {

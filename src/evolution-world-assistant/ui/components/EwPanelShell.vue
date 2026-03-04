@@ -4,7 +4,7 @@
       <header class="ew-panel__header">
         <div class="ew-panel__title-wrap">
           <h2 class="ew-panel__title">{{ title }}</h2>
-          <p class="ew-panel__subtitle">{{ subtitle }}</p>
+          <p v-if="subtitle" class="ew-panel__subtitle">{{ subtitle }}</p>
           <span class="ew-panel__status" :data-enabled="enabled ? '1' : '0'">
             {{ enabled ? '已启用' : '未启用' }}
           </span>
@@ -41,7 +41,7 @@ defineProps<{
   busy: boolean;
   enabled: boolean;
   title: string;
-  subtitle: string;
+  subtitle?: string;
   tabs: TabMeta[];
   activeTab: TabKey;
 }>();

@@ -4,7 +4,6 @@
     :busy="store.busy"
     :enabled="store.settings.enabled"
     title="Evolution World Assistant"
-    subtitle="阻塞式动态世界链路（聊天级单书）"
     :tabs="PANEL_TABS"
     :active-tab="store.activeTab"
     @change-tab="store.setActiveTab"
@@ -12,8 +11,16 @@
   >
     <template #actions>
       <button type="button" class="ew-btn" @click="store.validateConfig">校验配置</button>
+      <button type="button" class="ew-btn" @click="openImportFilePicker">导入配置</button>
       <button type="button" class="ew-btn" @click="store.exportConfig">导出配置</button>
       <button type="button" class="ew-btn ew-btn--danger" @click="store.closePanel">关闭</button>
+      <input
+        ref="importFileInputRef"
+        type="file"
+        accept=".json,application/json,text/json"
+        class="ew-hidden-file-input"
+        @change="onImportFileChange"
+      />
     </template>
 
     <div class="ew-content-stack">
@@ -203,6 +210,7 @@ import { useEwStore } from './store';
 
 const store = useEwStore();
 const manualMessage = ref('');
+const importFileInputRef = ref<HTMLInputElement | null>(null);
 
 const enabledFlowCount = computed(() => store.settings.flows.filter(flow => flow.enabled).length);
 const formattedLastRun = computed(() => JSON.stringify(store.lastRun ?? {}, null, 2));
@@ -217,6 +225,30 @@ function updateFlow(index: number, nextFlow: EwFlowConfig) {
   store.settings.flows.splice(index, 1, nextFlow);
   if (store.expandedFlowId === previousId && previousId !== nextFlow.id) {
     store.setExpandedFlow(nextFlow.id);
+  }
+}
+
+function openImportFilePicker() {
+  importFileInputRef.value?.click();
+}
+
+async function onImportFileChange(event: Event) {
+  const input = event.target as HTMLInputElement | null;
+  const file = input?.files?.[0];
+  if (!file) {
+    return;
+  }
+
+  try {
+    store.importText = await file.text();
+    store.importConfig();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    toastr.error(`import failed: ${message}`, 'Evolution World');
+  } finally {
+    if (input) {
+      input.value = '';
+    }
   }
 }
 
@@ -339,6 +371,10 @@ onUnmounted(() => {
 .ew-btn--danger:focus-visible {
   background: color-mix(in srgb, #d76872 38%, transparent);
   border-color: color-mix(in srgb, #d76872 74%, transparent);
+}
+
+.ew-hidden-file-input {
+  display: none;
 }
 
 .ew-switch {
