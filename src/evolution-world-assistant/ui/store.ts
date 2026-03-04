@@ -1,4 +1,5 @@
 import { EwFlowConfig, EwFlowConfigSchema, EwSettings, LastIoSummary, RunSummary } from '../runtime/types';
+import type { TabKey } from './help-meta';
 import {
   getLastIo,
   getSettings,
@@ -32,6 +33,9 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   const settings = ref<EwSettings>(getSettings());
   const lastRun = ref<RunSummary | null>(getLastRun());
   const lastIo = ref<LastIoSummary | null>(getLastIo());
+  const activeTab = ref<TabKey>('overview');
+  const globalAdvancedOpen = ref(false);
+  const expandedFlowId = ref<string | null>(null);
   const importText = ref('');
   const busy = ref(false);
 
@@ -63,10 +67,22 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     { deep: true },
   );
 
+  watch(
+    () => settings.value.flows.map(flow => flow.id),
+    flowIds => {
+      if (expandedFlowId.value && !flowIds.includes(expandedFlowId.value)) {
+        expandedFlowId.value = null;
+      }
+    },
+  );
+
   function addFlow() {
     const next = klona(settings.value);
-    next.flows.push(createFlow(next.flows.length + 1));
+    const newFlow = createFlow(next.flows.length + 1);
+    next.flows.push(newFlow);
     settings.value = next;
+    expandedFlowId.value = newFlow.id;
+    activeTab.value = 'flows';
   }
 
   function removeFlow(flowId: string) {
@@ -76,6 +92,29 @@ export const useEwStore = defineStore('evolution-world-store', () => {
       next.flows.push(createFlow(1));
     }
     settings.value = next;
+    if (expandedFlowId.value === flowId) {
+      expandedFlowId.value = next.flows[0]?.id ?? null;
+    }
+  }
+
+  function setActiveTab(tab: TabKey) {
+    activeTab.value = tab;
+  }
+
+  function setGlobalAdvancedOpen(open: boolean) {
+    globalAdvancedOpen.value = open;
+  }
+
+  function toggleGlobalAdvancedOpen() {
+    globalAdvancedOpen.value = !globalAdvancedOpen.value;
+  }
+
+  function toggleFlowExpanded(flowId: string) {
+    expandedFlowId.value = expandedFlowId.value === flowId ? null : flowId;
+  }
+
+  function setExpandedFlow(flowId: string | null) {
+    expandedFlowId.value = flowId;
   }
 
   async function runManual(message: string) {
@@ -186,16 +225,25 @@ export const useEwStore = defineStore('evolution-world-store', () => {
 
   function closePanel() {
     setOpen(false);
+    activeTab.value = 'overview';
   }
 
   return {
     settings,
     lastRun,
     lastIo,
+    activeTab,
+    globalAdvancedOpen,
+    expandedFlowId,
     importText,
     busy,
     addFlow,
     removeFlow,
+    setActiveTab,
+    setGlobalAdvancedOpen,
+    toggleGlobalAdvancedOpen,
+    toggleFlowExpanded,
+    setExpandedFlow,
     runManual,
     rollbackController,
     exportConfig,

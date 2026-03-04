@@ -1,211 +1,212 @@
 <template>
-  <div v-if="store.settings.ui_open" class="ew-overlay" @click.self="store.closePanel">
-    <section class="ew-modal" :data-busy="store.busy ? '1' : '0'">
-      <header class="ew-header">
-        <div>
-          <h2>Evolution World Assistant</h2>
-          <p>阻塞式动态世界链路（聊天级单书）</p>
-        </div>
-        <div class="ew-actions-inline">
-          <button type="button" @click="store.validateConfig">校验配置</button>
-          <button type="button" @click="store.exportConfig">导出配置</button>
-          <button type="button" class="danger" @click="store.closePanel">关闭</button>
-        </div>
-      </header>
+  <EwPanelShell
+    v-if="store.settings.ui_open"
+    :busy="store.busy"
+    :enabled="store.settings.enabled"
+    title="Evolution World Assistant"
+    subtitle="阻塞式动态世界链路（聊天级单书）"
+    :tabs="PANEL_TABS"
+    :active-tab="store.activeTab"
+    @change-tab="store.setActiveTab"
+    @close="store.closePanel"
+  >
+    <template #actions>
+      <button type="button" class="ew-btn" @click="store.validateConfig">校验配置</button>
+      <button type="button" class="ew-btn" @click="store.exportConfig">导出配置</button>
+      <button type="button" class="ew-btn ew-btn--danger" @click="store.closePanel">关闭</button>
+    </template>
 
-      <main class="ew-main">
-        <section class="ew-section">
-          <h3>全局设置</h3>
+    <div class="ew-content-stack">
+      <template v-if="store.activeTab === 'overview'">
+        <EwSectionCard title="高频设置" subtitle="先配置最常用项，快速跑通流程。">
           <div class="ew-grid two">
-            <label>
-              <span>总开关</span>
+            <EwFieldRow label="总开关" :help="help('enabled')">
               <input v-model="store.settings.enabled" type="checkbox" />
-            </label>
-            <label>
-              <span>调度模式</span>
+            </EwFieldRow>
+            <EwFieldRow label="调度模式" :help="help('dispatch_mode')">
               <select v-model="store.settings.dispatch_mode">
                 <option value="parallel">并行</option>
                 <option value="serial">串行</option>
               </select>
-            </label>
-            <label>
-              <span>总超时(ms)</span>
+            </EwFieldRow>
+            <EwFieldRow label="总超时(ms)" :help="help('total_timeout_ms')">
               <input v-model.number="store.settings.total_timeout_ms" type="number" min="1000" step="500" />
-            </label>
-            <label>
-              <span>门控TTL(ms)</span>
+            </EwFieldRow>
+            <EwFieldRow label="门控时效(ms)" :help="help('gate_ttl_ms')">
               <input v-model.number="store.settings.gate_ttl_ms" type="number" min="1000" step="500" />
-            </label>
-            <label>
-              <span>失败策略</span>
-              <input :value="'失败即中止发送'" type="text" disabled />
-            </label>
-            <label>
-              <span>运行时世界书前缀</span>
-              <input v-model="store.settings.runtime_worldbook_prefix" type="text" />
-            </label>
-            <label>
-              <span>命名策略</span>
-              <input :value="'自动发现优先（当前绑定 -> 前缀扫描 -> 新建）'" type="text" disabled />
-            </label>
-            <label>
-              <span>动态条目前缀</span>
-              <input v-model="store.settings.dynamic_entry_prefix" type="text" />
-            </label>
-            <label>
-              <span>控制器条目名</span>
-              <input v-model="store.settings.controller_entry_name" type="text" />
-            </label>
-            <label>
-              <span>元数据条目名</span>
-              <input v-model="store.settings.meta_entry_name" type="text" />
-            </label>
+            </EwFieldRow>
           </div>
-        </section>
+        </EwSectionCard>
 
-        <section class="ew-section">
-          <header class="ew-sub-header">
-            <h3>流配置</h3>
-            <button type="button" @click="store.addFlow">新增流</button>
-          </header>
+        <EwSectionCard title="运行摘要" subtitle="当前配置规模和关键参数一览。">
+          <div class="ew-summary-grid">
+            <article class="ew-summary-card">
+              <h4>流程数量</h4>
+              <strong>{{ store.settings.flows.length }}</strong>
+              <small>总流程</small>
+            </article>
+            <article class="ew-summary-card">
+              <h4>启用流程</h4>
+              <strong>{{ enabledFlowCount }}</strong>
+              <small>有效流程</small>
+            </article>
+            <article class="ew-summary-card">
+              <h4>调度模式</h4>
+              <strong>{{ store.settings.dispatch_mode === 'parallel' ? '并行' : '串行' }}</strong>
+              <small>当前策略</small>
+            </article>
+            <article class="ew-summary-card">
+              <h4>总超时</h4>
+              <strong>{{ store.settings.total_timeout_ms }}ms</strong>
+              <small>全链路上限</small>
+            </article>
+          </div>
+        </EwSectionCard>
+      </template>
 
-          <article v-for="(flow, index) in store.settings.flows" :key="flow.id" class="flow-card">
-            <header class="flow-head">
-              <strong>{{ flow.name || `Flow ${index + 1}` }}</strong>
-              <div class="ew-actions-inline">
-                <label class="inline-check">
-                  <input v-model="flow.enabled" type="checkbox" />
-                  启用
-                </label>
-                <button type="button" class="danger" @click="store.removeFlow(flow.id)">删除</button>
-              </div>
-            </header>
-
-            <div class="ew-grid two">
-              <label>
-                <span>名称</span>
-                <input v-model="flow.name" type="text" />
-              </label>
-              <label>
-                <span>流ID</span>
-                <input v-model="flow.id" type="text" />
-              </label>
-              <label>
-                <span>API URL</span>
-                <input v-model="flow.api_url" type="text" placeholder="https://example.com/flow" />
-              </label>
-              <label>
-                <span>API Key</span>
-                <input v-model="flow.api_key" type="password" />
-              </label>
-              <label>
-                <span>优先级</span>
-                <input v-model.number="flow.priority" type="number" step="1" />
-              </label>
-              <label>
-                <span>超时(ms)</span>
-                <input v-model.number="flow.timeout_ms" type="number" min="1000" step="500" />
-              </label>
-              <label>
-                <span>上下文楼层数</span>
-                <input v-model.number="flow.context_turns" type="number" min="1" step="1" />
-              </label>
-              <label>
-                <span>额外请求头(JSON对象)</span>
-                <textarea v-model="flow.headers_json" rows="3" placeholder='{"X-Token":"value"}' />
-              </label>
-            </div>
-
-            <div class="ew-grid two">
-              <section class="rule-box">
-                <header>
-                  <strong>提取规则</strong>
-                  <button type="button" @click="addRule(flow.extract_rules)">新增</button>
-                </header>
-                <div v-for="(rule, ridx) in flow.extract_rules" :key="`e-${ridx}`" class="rule-row">
-                  <input v-model="rule.start" type="text" placeholder="start" />
-                  <input v-model="rule.end" type="text" placeholder="end" />
-                  <button type="button" class="danger" @click="removeRule(flow.extract_rules, ridx)">删</button>
-                </div>
-              </section>
-
-              <section class="rule-box">
-                <header>
-                  <strong>排除规则</strong>
-                  <button type="button" @click="addRule(flow.exclude_rules)">新增</button>
-                </header>
-                <div v-for="(rule, ridx) in flow.exclude_rules" :key="`x-${ridx}`" class="rule-row">
-                  <input v-model="rule.start" type="text" placeholder="start" />
-                  <input v-model="rule.end" type="text" placeholder="end" />
-                  <button type="button" class="danger" @click="removeRule(flow.exclude_rules, ridx)">删</button>
-                </div>
-              </section>
-            </div>
-
-            <label>
-              <span>request_template(JSON merge)</span>
-              <textarea
-                v-model="flow.request_template"
-                rows="4"
-                placeholder='{"context":{"turns":{{context.turns}}}}'
+      <template v-else-if="store.activeTab === 'global'">
+        <EwSectionCard title="基础配置" subtitle="世界书命名与控制器目标。">
+          <div class="ew-grid two">
+            <EwFieldRow label="运行时世界书前缀" :help="help('runtime_worldbook_prefix')">
+              <input
+                v-model="store.settings.runtime_worldbook_prefix"
+                type="text"
+                :placeholder="help('runtime_worldbook_prefix')?.placeholder"
               />
-            </label>
-          </article>
-        </section>
+            </EwFieldRow>
+            <EwFieldRow label="动态条目前缀" :help="help('dynamic_entry_prefix')">
+              <input
+                v-model="store.settings.dynamic_entry_prefix"
+                type="text"
+                :placeholder="help('dynamic_entry_prefix')?.placeholder"
+              />
+            </EwFieldRow>
+            <EwFieldRow label="控制器条目名" :help="help('controller_entry_name')">
+              <input
+                v-model="store.settings.controller_entry_name"
+                type="text"
+                :placeholder="help('controller_entry_name')?.placeholder"
+              />
+            </EwFieldRow>
+            <EwFieldRow label="元数据条目名" :help="help('meta_entry_name')">
+              <input
+                v-model="store.settings.meta_entry_name"
+                type="text"
+                :placeholder="help('meta_entry_name')?.placeholder"
+              />
+            </EwFieldRow>
+          </div>
+        </EwSectionCard>
 
-        <section class="ew-section">
-          <header class="ew-sub-header">
-            <h3>调试</h3>
-            <div class="ew-actions-inline">
-              <button type="button" @click="store.runManual(manualMessage)">手动运行</button>
-              <button type="button" @click="store.validateControllerSyntax">控制器语法校验</button>
-              <button type="button" @click="store.rollbackController">回滚控制器</button>
+        <EwSectionCard
+          v-model="store.globalAdvancedOpen"
+          title="高级配置"
+          subtitle="默认收起，仅在需要精细调优时展开。"
+          collapsible
+        >
+          <div class="ew-grid two">
+            <EwFieldRow label="元数据标记" :help="help('meta_marker')">
+              <input
+                v-model="store.settings.meta_marker"
+                type="text"
+                :placeholder="help('meta_marker')?.placeholder"
+              />
+            </EwFieldRow>
+            <EwFieldRow label="最大扫描世界书数" :help="help('max_scan_worldbooks')">
+              <input v-model.number="store.settings.max_scan_worldbooks" type="number" min="1" step="1" />
+            </EwFieldRow>
+            <EwFieldRow label="失败策略" :help="help('failure_policy')">
+              <input :value="'失败即中止发送'" type="text" disabled />
+            </EwFieldRow>
+          </div>
+        </EwSectionCard>
+      </template>
+
+      <template v-else-if="store.activeTab === 'flows'">
+        <EwSectionCard title="流程编排" subtitle="每条流独立配置，按优先级合并结果。">
+          <template #actions>
+            <button type="button" class="ew-btn" @click="store.addFlow">新增流</button>
+          </template>
+
+          <div class="ew-flow-list">
+            <EwFlowCard
+              v-for="(flow, index) in store.settings.flows"
+              :key="flow.id"
+              :index="index"
+              :model-value="flow"
+              :expanded="store.expandedFlowId === flow.id"
+              @toggle-expand="store.toggleFlowExpanded(flow.id)"
+              @remove="store.removeFlow(flow.id)"
+              @update:model-value="value => updateFlow(index, value)"
+            />
+          </div>
+        </EwSectionCard>
+      </template>
+
+      <template v-else>
+        <EwSectionCard title="调试操作" subtitle="手动执行、语法校验与快速回滚。">
+          <div class="ew-actions-wrap">
+            <button type="button" class="ew-btn" @click="store.runManual(manualMessage)">手动运行</button>
+            <button type="button" class="ew-btn" @click="store.validateControllerSyntax">控制器语法校验</button>
+            <button type="button" class="ew-btn ew-btn--danger" @click="store.rollbackController">回滚控制器</button>
+          </div>
+
+          <EwFieldRow label="手动运行输入" :help="help('manual_message')">
+            <textarea v-model="manualMessage" rows="3" placeholder="留空将使用最新楼层文本" />
+          </EwFieldRow>
+        </EwSectionCard>
+
+        <EwSectionCard title="运行记录" subtitle="最近一次执行与请求响应摘要。">
+          <div class="ew-debug-grid">
+            <div class="ew-pre-box">
+              <strong>最近运行</strong>
+              <pre>{{ formattedLastRun }}</pre>
             </div>
-          </header>
-
-          <label>
-            <span>手动运行输入（留空默认取最新楼层）</span>
-            <textarea v-model="manualMessage" rows="3" placeholder="manual user input" />
-          </label>
-
-          <div class="run-box">
-            <strong>最近运行</strong>
-            <pre>{{ formattedLastRun }}</pre>
+            <div class="ew-pre-box">
+              <strong>最近请求/响应摘要</strong>
+              <pre>{{ formattedLastIo }}</pre>
+            </div>
           </div>
 
-          <div class="run-box">
-            <strong>最近请求/响应摘要</strong>
-            <pre>{{ formattedLastIo }}</pre>
-          </div>
-
-          <label>
-            <span>导入配置(JSON)</span>
+          <EwFieldRow label="导入配置(JSON)" :help="help('import_text')">
             <textarea v-model="store.importText" rows="6" placeholder="paste config json" />
-          </label>
-          <div class="ew-actions-inline">
-            <button type="button" @click="store.importConfig">导入配置</button>
+          </EwFieldRow>
+
+          <div class="ew-actions-wrap">
+            <button type="button" class="ew-btn" @click="store.importConfig">导入配置</button>
           </div>
-        </section>
-      </main>
-    </section>
-  </div>
+        </EwSectionCard>
+      </template>
+    </div>
+  </EwPanelShell>
 </template>
 
 <script setup lang="ts">
+import type { EwFlowConfig } from '../runtime/types';
+import EwFieldRow from './components/EwFieldRow.vue';
+import EwFlowCard from './components/EwFlowCard.vue';
+import EwPanelShell from './components/EwPanelShell.vue';
+import EwSectionCard from './components/EwSectionCard.vue';
+import { getFieldHelp, PANEL_TABS } from './help-meta';
 import { useEwStore } from './store';
 
 const store = useEwStore();
 const manualMessage = ref('');
 
+const enabledFlowCount = computed(() => store.settings.flows.filter(flow => flow.enabled).length);
 const formattedLastRun = computed(() => JSON.stringify(store.lastRun ?? {}, null, 2));
 const formattedLastIo = computed(() => JSON.stringify(store.lastIo ?? {}, null, 2));
 
-function addRule(target: Array<{ start: string; end: string }>) {
-  target.push({ start: '', end: '' });
+function help(key: string) {
+  return getFieldHelp(key);
 }
 
-function removeRule(target: Array<{ start: string; end: string }>, index: number) {
-  target.splice(index, 1);
+function updateFlow(index: number, nextFlow: EwFlowConfig) {
+  const previousId = store.settings.flows[index]?.id;
+  store.settings.flows.splice(index, 1, nextFlow);
+  if (store.expandedFlowId === previousId && previousId !== nextFlow.id) {
+    store.setExpandedFlow(nextFlow.id);
+  }
 }
 
 function onEsc(event: KeyboardEvent) {
@@ -228,263 +229,165 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.ew-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 5000;
-  background: rgb(0 0 0 / 62%);
-  display: grid;
-  place-items: center;
-  padding: 12px;
-}
-
-.ew-modal {
-  width: min(1040px, 100%);
-  max-height: calc(100vh - 24px);
-  background: #10161f;
-  color: #e6edf3;
-  border: 1px solid #2c3948;
-  border-radius: 12px;
-  box-shadow: 0 24px 48px rgb(0 0 0 / 50%);
+.ew-content-stack {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-}
-
-.ew-modal[data-busy='1'] {
-  opacity: 0.85;
-}
-
-.ew-modal :deep(*) {
-  box-sizing: border-box;
-}
-
-.ew-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: center;
-  padding: 14px 16px;
-  border-bottom: 1px solid #223141;
-  background: linear-gradient(135deg, #122033 0%, #0f1827 100%);
-}
-
-.ew-header h2 {
-  margin: 0;
-  font-size: 28px;
-  line-height: 1.1;
-  color: #f5f7fa;
-}
-
-.ew-header p {
-  margin: 4px 0 0;
-  font-size: 13px;
-  color: #c3d1df;
-}
-
-.ew-main {
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 14px 16px 18px;
-}
-
-.ew-section {
-  border: 1px solid #2c3948;
-  border-radius: 10px;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  background: #0d131c;
-}
-
-.ew-section h3 {
-  margin: 0;
-  font-size: 18px;
-  color: #d5e2ef;
-}
-
-.ew-sub-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  gap: 0.86rem;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    'Microsoft YaHei UI',
+    'Microsoft YaHei',
+    sans-serif;
 }
 
 .ew-grid {
   display: grid;
-  gap: 8px;
+  gap: 0.74rem;
 }
 
 .ew-grid.two {
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.flow-card {
-  border: 1px solid #2f3d4e;
-  border-radius: 10px;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  background: #111a25;
-}
-
-.flow-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  align-items: center;
-}
-
-.flow-head strong {
-  font-size: 20px;
-  color: #f0f5fb;
-}
-
-.rule-box {
-  border: 1px dashed #3a4a5d;
-  border-radius: 8px;
-  padding: 8px;
-  background: #0d1622;
-}
-
-.rule-box > header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.rule-row {
+.ew-summary-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 6px;
-  margin-bottom: 6px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.64rem;
 }
 
-.ew-actions-inline {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.inline-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  color: #dde8f3;
-}
-
-label {
+.ew-summary-card {
+  border-radius: 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 40%, transparent);
+  background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 12%, rgba(0, 0, 0, 0.12));
+  padding: 0.62rem 0.68rem;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0.32rem;
 }
 
-label > span {
-  font-size: 13px;
-  color: #d4deea;
+.ew-summary-card h4 {
+  margin: 0;
+  font-size: 0.77rem;
+  color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 74%, transparent);
 }
 
-input,
-select,
-textarea {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid #405469;
-  border-radius: 8px;
-  background: #0b1118;
-  color: #ecf2f9;
-  outline: none;
-  font-size: 14px;
+.ew-summary-card strong {
+  font-size: 1.2rem;
+  line-height: 1;
+  color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 95%, transparent);
 }
 
-input:focus,
-select:focus,
-textarea:focus {
-  border-color: #4ca9ff;
-  box-shadow: 0 0 0 2px rgb(76 169 255 / 22%);
+.ew-summary-card small {
+  font-size: 0.7rem;
+  color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 64%, transparent);
 }
 
-input[type='checkbox'] {
-  width: 16px;
-  height: 16px;
-  accent-color: #4ca9ff;
+.ew-flow-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.74rem;
 }
 
-input[disabled] {
-  opacity: 0.75;
-  cursor: default;
+.ew-actions-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.46rem;
 }
 
-textarea {
-  resize: vertical;
-  min-height: 70px;
-}
-
-button {
-  border: 1px solid #3c536c;
-  border-radius: 8px;
-  background: #1c2a3a;
-  color: #eaf2fb;
-  font-size: 13px;
+.ew-btn {
+  border-radius: 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 56%, transparent);
+  background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 24%, transparent);
+  color: var(--SmartThemeBodyColor, #edf2f9);
+  font-size: 0.78rem;
   font-weight: 600;
-  padding: 8px 10px;
+  padding: 0.32rem 0.68rem;
   cursor: pointer;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.14s ease;
 }
 
-button:hover {
-  background: #22334a;
+.ew-btn:hover,
+.ew-btn:focus-visible {
+  border-color: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 78%, transparent);
+  background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 38%, transparent);
+  transform: translateY(-1px);
+  outline: none;
 }
 
-button.danger {
-  border-color: #7a3f45;
-  background: #3a1b20;
-  color: #ffd8dc;
+.ew-btn--danger {
+  border-color: color-mix(in srgb, #d76872 58%, transparent);
+  background: color-mix(in srgb, #d76872 24%, transparent);
+  color: #ffe5e8;
 }
 
-.run-box {
-  border: 1px solid #314258;
-  border-radius: 8px;
-  padding: 10px;
-  background: #0a111a;
+.ew-btn--danger:hover,
+.ew-btn--danger:focus-visible {
+  background: color-mix(in srgb, #d76872 38%, transparent);
+  border-color: color-mix(in srgb, #d76872 74%, transparent);
 }
 
-.run-box strong {
-  font-size: 14px;
+.ew-debug-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.72rem;
 }
 
-pre {
-  margin: 8px 0 0;
+.ew-pre-box {
+  border-radius: 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 42%, transparent);
+  background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 12%, rgba(0, 0, 0, 0.12));
+  padding: 0.66rem;
+}
+
+.ew-pre-box strong {
+  font-size: 0.8rem;
+  color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 88%, transparent);
+}
+
+.ew-pre-box pre {
+  margin: 0.46rem 0 0;
+  max-height: 16rem;
+  overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 220px;
-  overflow: auto;
-  font-size: 12px;
-  line-height: 1.4;
-  color: #dbe7f5;
+  font-size: 0.73rem;
+  line-height: 1.42;
+  color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 84%, transparent);
+}
+
+@media (max-width: 1100px) {
+  .ew-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 900px) {
-  .ew-header h2 {
-    font-size: 22px;
-  }
-
   .ew-grid.two {
     grid-template-columns: 1fr;
   }
 
-  .flow-head {
-    flex-direction: column;
-    align-items: flex-start;
+  .ew-debug-grid {
+    grid-template-columns: 1fr;
   }
 
-  .rule-row {
+  .ew-summary-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .ew-summary-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ew-btn {
+    transition: none;
   }
 }
 </style>
