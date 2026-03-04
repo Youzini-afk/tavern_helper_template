@@ -19,18 +19,28 @@
       <span aria-hidden="true">?</span>
     </button>
 
-    <div v-if="open" :id="tipId" class="ew-help-tip__bubble" role="tooltip" @click.stop>
+    <div
+      v-if="open"
+      :id="tipId"
+      class="ew-help-tip__bubble"
+      role="tooltip"
+      @click.stop
+      @mouseenter="clearCloseTimer"
+      @mouseleave="handleBubbleMouseLeave"
+    >
       <p class="ew-help-tip__short">{{ props.meta.shortHelp }}</p>
+
       <button
-        v-if="props.meta.detailHelp"
+        v-if="props.meta.detailHelp && !showDetail"
         type="button"
-        class="ew-help-tip__more"
+        class="ew-help-tip__more-link"
         :aria-expanded="showDetail ? 'true' : 'false'"
         :aria-controls="detailId"
-        @click.stop="showDetail = !showDetail"
+        @click.stop="showMoreDetail"
       >
-        {{ showDetail ? '收起' : '更多' }}
+        点击查看更多
       </button>
+
       <p v-if="showDetail" :id="detailId" class="ew-help-tip__detail">{{ props.meta.detailHelp }}</p>
     </div>
   </div>
@@ -49,9 +59,11 @@ const props = defineProps<{
 const rootRef = ref<HTMLElement | null>(null);
 const open = ref(false);
 const showDetail = ref(false);
+const locked = ref(false);
 const tipId = `ew-help-tip-${++tipSequence}`;
 const detailId = `${tipId}-detail`;
 const touchLike = ref(false);
+let closeTimer: ReturnType<typeof setTimeout> | null = null;
 
 function refreshTouchMode() {
   try {
@@ -61,52 +73,102 @@ function refreshTouchMode() {
   }
 }
 
+function clearCloseTimer() {
+  if (!closeTimer) {
+    return;
+  }
+  clearTimeout(closeTimer);
+  closeTimer = null;
+}
+
+function scheduleCloseIfHover() {
+  clearCloseTimer();
+  if (locked.value) {
+    return;
+  }
+  closeTimer = setTimeout(() => {
+    closeIfUnlocked();
+  }, 140);
+}
+
 function close() {
   if (!open.value) {
     return;
   }
+  clearCloseTimer();
   open.value = false;
   showDetail.value = false;
+  locked.value = false;
   if (activeTipCloser === close) {
     activeTipCloser = null;
   }
 }
 
-function openTip() {
-  if (open.value) {
+function closeIfUnlocked() {
+  if (locked.value) {
     return;
   }
+  close();
+}
+
+function openTip(mode: 'hover' | 'detail') {
+  clearCloseTimer();
   if (activeTipCloser && activeTipCloser !== close) {
     activeTipCloser();
   }
   open.value = true;
+  if (mode === 'detail') {
+    locked.value = true;
+    showDetail.value = true;
+  } else {
+    if (!locked.value) {
+      showDetail.value = false;
+    }
+  }
   activeTipCloser = close;
 }
 
-function toggle() {
-  if (open.value) {
+function toggleDetail() {
+  if (open.value && locked.value) {
     close();
     return;
   }
-  openTip();
+  openTip('detail');
+}
+
+function showMoreDetail() {
+  openTip('detail');
 }
 
 function handleMouseEnter() {
   if (touchLike.value) {
     return;
   }
-  openTip();
+  clearCloseTimer();
+  if (!open.value) {
+    openTip('hover');
+  }
 }
 
 function handleMouseLeave() {
   if (touchLike.value) {
     return;
   }
-  close();
+  scheduleCloseIfHover();
+}
+
+function handleBubbleMouseLeave() {
+  if (touchLike.value) {
+    return;
+  }
+  scheduleCloseIfHover();
 }
 
 function handleFocusIn() {
-  openTip();
+  clearCloseTimer();
+  if (!open.value) {
+    openTip('hover');
+  }
 }
 
 function handleFocusOut(event: FocusEvent) {
@@ -114,11 +176,11 @@ function handleFocusOut(event: FocusEvent) {
   if (nextTarget && rootRef.value?.contains(nextTarget)) {
     return;
   }
-  close();
+  closeIfUnlocked();
 }
 
 function handleTriggerClick() {
-  toggle();
+  toggleDetail();
 }
 
 function onPointerDown(event: Event) {
@@ -158,6 +220,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  clearCloseTimer();
   close();
   document.removeEventListener('pointerdown', onPointerDown, true);
   document.removeEventListener('keydown', onEscape, true);
@@ -233,20 +296,23 @@ onUnmounted(() => {
   color: color-mix(in srgb, var(--SmartThemeBodyColor, #ecf2f9) 86%, transparent);
 }
 
-.ew-help-tip__more {
+.ew-help-tip__more-link {
   margin-top: 0.42rem;
-  border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 54%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 36%, transparent);
-  color: var(--SmartThemeBodyColor, #ecf2f9);
-  padding: 0.15rem 0.5rem;
-  font-size: 0.72rem;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: color-mix(in srgb, var(--SmartThemeBodyColor, #ecf2f9) 92%, #7db4ff);
+  padding: 0;
+  font-size: 0.74rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
   cursor: pointer;
+  text-align: left;
 }
 
-.ew-help-tip__more:hover,
-.ew-help-tip__more:focus-visible {
-  background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 52%, transparent);
+.ew-help-tip__more-link:hover,
+.ew-help-tip__more-link:focus-visible {
+  color: color-mix(in srgb, var(--SmartThemeBodyColor, #ecf2f9) 100%, #9dccff);
   outline: none;
 }
 

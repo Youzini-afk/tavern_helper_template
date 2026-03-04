@@ -21,7 +21,18 @@
         <EwSectionCard title="高频设置" subtitle="先配置最常用项，快速跑通流程。">
           <div class="ew-grid two">
             <EwFieldRow label="总开关" :help="help('enabled')">
-              <input v-model="store.settings.enabled" type="checkbox" />
+              <button
+                type="button"
+                class="ew-switch"
+                role="switch"
+                :aria-checked="store.settings.enabled ? 'true' : 'false'"
+                @click="store.settings.enabled = !store.settings.enabled"
+              >
+                <span class="ew-switch__track" :data-enabled="store.settings.enabled ? '1' : '0'">
+                  <span class="ew-switch__thumb" />
+                </span>
+                <span class="ew-switch__text">{{ store.settings.enabled ? '已开启' : '已关闭' }}</span>
+              </button>
             </EwFieldRow>
             <EwFieldRow label="调度模式" :help="help('dispatch_mode')">
               <select v-model="store.settings.dispatch_mode">
@@ -328,6 +339,72 @@ onUnmounted(() => {
 .ew-btn--danger:focus-visible {
   background: color-mix(in srgb, #d76872 38%, transparent);
   border-color: color-mix(in srgb, #d76872 74%, transparent);
+}
+
+.ew-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.58rem;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.ew-switch__track {
+  width: 2.7rem;
+  height: 1.56rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 58%, transparent);
+  background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 18%, rgba(7, 10, 15, 0.4));
+  box-shadow:
+    inset 0 1px 4px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.06);
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+
+.ew-switch__track[data-enabled='1'] {
+  border-color: color-mix(in srgb, #55cb84 62%, transparent);
+  background: color-mix(in srgb, #55cb84 36%, rgba(7, 10, 15, 0.4));
+}
+
+.ew-switch__thumb {
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--SmartThemeBodyColor, #eef3f9) 96%, transparent);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.38),
+    0 0 0 1px rgba(0, 0, 0, 0.12);
+  transform: translateX(0);
+  transition:
+    transform 0.2s ease,
+    background 0.2s ease;
+}
+
+.ew-switch__track[data-enabled='1'] .ew-switch__thumb {
+  transform: translateX(1.12rem);
+  background: #f8fffb;
+}
+
+.ew-switch__text {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 86%, transparent);
+}
+
+.ew-switch:hover .ew-switch__track,
+.ew-switch:focus-visible .ew-switch__track {
+  border-color: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 78%, transparent);
+}
+
+.ew-switch:focus-visible {
+  outline: none;
 }
 
 .ew-debug-grid {
