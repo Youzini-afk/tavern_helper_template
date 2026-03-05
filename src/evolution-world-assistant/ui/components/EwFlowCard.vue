@@ -2,13 +2,14 @@
   <article class="ew-flow-card" :data-enabled="flow.enabled ? '1' : '0'" :data-expanded="expanded ? '1' : '0'">
     <header class="ew-flow-card__head">
       <div class="ew-flow-card__summary">
-        <strong class="ew-flow-card__name">{{ flow.name || `流程 ${index + 1}` }}</strong>
+        <strong class="ew-flow-card__name">{{ flow.name || `工作流 ${index + 1}` }}</strong>
         <div class="ew-flow-card__chips">
           <span class="ew-flow-card__chip">{{ flow.enabled ? '启用' : '停用' }}</span>
           <span class="ew-flow-card__chip">优先级 {{ flow.priority }}</span>
           <span class="ew-flow-card__chip">超时 {{ flow.timeout_ms }}ms</span>
+          <span class="ew-flow-card__chip">API {{ presetLabel }}</span>
         </div>
-        <p class="ew-flow-card__endpoint">API: {{ endpointSummary }}</p>
+        <p class="ew-flow-card__endpoint">接口: {{ endpointSummary }}</p>
       </div>
 
       <div class="ew-flow-card__actions">
@@ -31,19 +32,16 @@
           <EwFieldRow label="名称" :help="help('flow.name')">
             <input :value="flow.name" type="text" @input="setText('name', $event)" />
           </EwFieldRow>
-          <EwFieldRow label="流ID" :help="help('flow.id')">
+          <EwFieldRow label="工作流ID" :help="help('flow.id')">
             <input :value="flow.id" type="text" @input="setText('id', $event)" />
           </EwFieldRow>
-          <EwFieldRow label="API URL" :help="help('flow.api_url')">
-            <input
-              :value="flow.api_url"
-              type="text"
-              :placeholder="help('flow.api_url')?.placeholder"
-              @input="setText('api_url', $event)"
-            />
-          </EwFieldRow>
-          <EwFieldRow label="API Key" :help="help('flow.api_key')">
-            <input :value="flow.api_key" type="password" @input="setText('api_key', $event)" />
+          <EwFieldRow label="API配置预设" :help="help('flow.api_preset_id')">
+            <select :value="flow.api_preset_id" @change="setApiPresetId($event)">
+              <option v-if="apiPresets.length === 0" value="">无可用API配置</option>
+              <option v-for="preset in apiPresets" :key="preset.id" :value="preset.id">
+                {{ preset.name || preset.id }}
+              </option>
+            </select>
           </EwFieldRow>
           <EwFieldRow label="优先级" :help="help('flow.priority')">
             <input :value="flow.priority" type="number" step="1" @input="setNumber('priority', $event)" />
@@ -53,14 +51,6 @@
           </EwFieldRow>
           <EwFieldRow label="上下文楼层数" :help="help('flow.context_turns')">
             <input :value="flow.context_turns" type="number" min="1" step="1" @input="setNumber('context_turns', $event)" />
-          </EwFieldRow>
-          <EwFieldRow label="额外请求头(JSON对象)" :help="help('flow.headers_json')">
-            <textarea
-              :value="flow.headers_json"
-              rows="3"
-              :placeholder="help('flow.headers_json')?.placeholder"
-              @input="setText('headers_json', $event)"
-            />
           </EwFieldRow>
         </div>
 
@@ -104,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import type { EwFlowConfig } from '../../runtime/types';
+import type { EwApiPreset, EwFlowConfig } from '../../runtime/types';
 import { getFieldHelp } from '../help-meta';
 import EwFieldRow from './EwFieldRow.vue';
 import EwHelpTip from './EwHelpTip.vue';
@@ -112,6 +102,7 @@ import EwRulesEditor from './EwRulesEditor.vue';
 
 const props = defineProps<{
   modelValue: EwFlowConfig;
+  apiPresets: EwApiPreset[];
   index: number;
   expanded: boolean;
 }>();
@@ -123,8 +114,11 @@ const emit = defineEmits<{
 }>();
 
 const flow = computed(() => props.modelValue);
+const selectedPreset = computed(() => {
+  return props.apiPresets.find(preset => preset.id === flow.value.api_preset_id) ?? null;
+});
 const endpointSummary = computed(() => {
-  const endpoint = flow.value.api_url.trim();
+  const endpoint = selectedPreset.value?.api_url.trim() ?? '';
   if (!endpoint) {
     return '未配置';
   }
@@ -132,6 +126,13 @@ const endpointSummary = computed(() => {
     return endpoint;
   }
   return `${endpoint.slice(0, 57)}...`;
+});
+const presetLabel = computed(() => {
+  const label = selectedPreset.value?.name?.trim() ?? '';
+  if (label) {
+    return label;
+  }
+  return '未绑定';
 });
 
 function help(key: string) {
@@ -158,16 +159,21 @@ function setEnabled(event: Event) {
   patch({ enabled: next });
 }
 
-function setText(key: keyof EwFlowConfig, event: Event) {
+function setText(key: 'name' | 'id' | 'request_template', event: Event) {
   const next = (event.target as HTMLInputElement | HTMLTextAreaElement).value;
   patch({ [key]: next } as Partial<EwFlowConfig>);
 }
 
-function setNumber(key: keyof EwFlowConfig, event: Event) {
+function setNumber(key: 'priority' | 'timeout_ms' | 'context_turns', event: Event) {
   const rawValue = (event.target as HTMLInputElement).value;
   const currentValue = flow.value[key];
   const fallback = typeof currentValue === 'number' ? currentValue : 0;
   patch({ [key]: toNumber(rawValue, fallback) } as Partial<EwFlowConfig>);
+}
+
+function setApiPresetId(event: Event) {
+  const nextId = (event.target as HTMLSelectElement).value;
+  patch({ api_preset_id: nextId });
 }
 </script>
 

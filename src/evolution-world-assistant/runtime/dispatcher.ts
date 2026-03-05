@@ -1,7 +1,7 @@
 import { buildFlowRequest } from './context-builder';
 import { FlowResponseSchema } from './contracts';
 import { parseJsonObject } from './helpers';
-import { DispatchFlowAttempt, DispatchFlowResult, EwFlowConfig, EwSettings } from './types';
+import { DispatchFlowAttempt, DispatchFlowResult, EwApiPreset, EwFlowConfig, EwSettings } from './types';
 
 type DispatchInput = {
   settings: EwSettings;
@@ -61,6 +61,30 @@ function toErrorMessage(error: unknown): string {
   return String(error);
 }
 
+function resolveApiPreset(settings: EwSettings, flow: EwFlowConfig): EwApiPreset {
+  const matchedPreset = settings.api_presets.find(preset => preset.id === flow.api_preset_id);
+  if (matchedPreset) {
+    return matchedPreset;
+  }
+
+  const hasLegacyApiConfig = Boolean(flow.api_url.trim() || flow.api_key.trim() || flow.headers_json.trim());
+  if (hasLegacyApiConfig) {
+    return {
+      id: '__legacy__',
+      name: '兼容旧配置',
+      api_url: flow.api_url,
+      api_key: flow.api_key,
+      headers_json: flow.headers_json,
+    };
+  }
+
+  if (settings.api_presets.length > 0) {
+    return settings.api_presets[0];
+  }
+
+  throw new Error(`[${flow.id}] api preset not found`);
+}
+
 async function executeFlow(
   settings: EwSettings,
   flow: EwFlowConfig,
@@ -71,6 +95,7 @@ async function executeFlow(
   serialResults: Record<string, any>[],
 ): Promise<DispatchFlowAttempt> {
   const startedAt = Date.now();
+  const apiPreset = resolveApiPreset(settings, flow);
   const request = await buildFlowRequest({
     settings,
     flow,
@@ -81,25 +106,25 @@ async function executeFlow(
   });
 
   try {
-    if (!flow.api_url.trim()) {
+    if (!apiPreset.api_url.trim()) {
       throw new Error(`[${flow.id}] api_url is empty`);
     }
 
     const body = applyTemplate(request as unknown as Record<string, any>, flow.request_template);
     const headers = {
       'Content-Type': 'application/json',
-      ...parseJsonObject(flow.headers_json),
+      ...parseJsonObject(apiPreset.headers_json),
     };
 
-    if (flow.api_key.trim()) {
-      headers.Authorization = `Bearer ${flow.api_key.trim()}`;
+    if (apiPreset.api_key.trim()) {
+      headers.Authorization = `Bearer ${apiPreset.api_key.trim()}`;
     }
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), flow.timeout_ms);
 
     try {
-      const response = await fetch(flow.api_url, {
+      const response = await fetch(apiPreset.api_url, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
@@ -123,6 +148,9 @@ async function executeFlow(
       return {
         flow,
         flow_order: flowOrder,
+        api_preset_id: apiPreset.id,
+        api_preset_name: apiPreset.name,
+        api_url: apiPreset.api_url,
         request,
         response: parsed.data,
         ok: true,
@@ -141,6 +169,9 @@ async function executeFlow(
     return {
       flow,
       flow_order: flowOrder,
+      api_preset_id: apiPreset.id,
+      api_preset_name: apiPreset.name,
+      api_url: apiPreset.api_url,
       request,
       ok: false,
       error: toErrorMessage(error),

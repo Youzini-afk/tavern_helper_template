@@ -1,4 +1,13 @@
-import { EwFlowConfig, EwFlowConfigSchema, EwSettings, LastIoSummary, RunSummary } from '../runtime/types';
+import {
+  EwApiPreset,
+  EwApiPresetSchema,
+  EwFlowConfig,
+  EwFlowConfigSchema,
+  EwSettings,
+  LastIoSummary,
+  RunSummary,
+} from '../runtime/types';
+import { simpleHash } from '../runtime/helpers';
 import type { TabKey } from './help-meta';
 import {
   getLastIo,
@@ -12,13 +21,24 @@ import {
 } from '../runtime/settings';
 import { runWorkflow } from '../runtime/pipeline';
 
-function createFlow(index: number): EwFlowConfig {
+function createApiPreset(index: number): EwApiPreset {
+  return EwApiPresetSchema.parse({
+    id: `api_${index}_${simpleHash(`ui-api-${index}-${Date.now()}`)}`,
+    name: `API配置 ${index}`,
+    api_url: '',
+    api_key: '',
+    headers_json: '',
+  });
+}
+
+function createFlow(index: number, apiPresetId: string): EwFlowConfig {
   return EwFlowConfigSchema.parse({
-    id: `flow_${index}_${Date.now()}`,
-    name: `Flow ${index}`,
+    id: `flow_${index}_${simpleHash(`ui-flow-${index}-${Date.now()}`)}`,
+    name: `工作流 ${index}`,
     enabled: true,
     priority: 100,
     timeout_ms: 8000,
+    api_preset_id: apiPresetId,
     api_url: '',
     api_key: '',
     context_turns: 8,
@@ -35,6 +55,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   const lastIo = ref<LastIoSummary | null>(getLastIo());
   const activeTab = ref<TabKey>('overview');
   const globalAdvancedOpen = ref(false);
+  const expandedApiPresetId = ref<string | null>(null);
   const expandedFlowId = ref<string | null>(null);
   const importText = ref('');
   const busy = ref(false);
@@ -68,6 +89,15 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   );
 
   watch(
+    () => settings.value.api_presets.map(preset => preset.id),
+    presetIds => {
+      if (expandedApiPresetId.value && !presetIds.includes(expandedApiPresetId.value)) {
+        expandedApiPresetId.value = null;
+      }
+    },
+  );
+
+  watch(
     () => settings.value.flows.map(flow => flow.id),
     flowIds => {
       if (expandedFlowId.value && !flowIds.includes(expandedFlowId.value)) {
@@ -76,9 +106,46 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     },
   );
 
+  function addApiPreset() {
+    const next = klona(settings.value);
+    const newPreset = createApiPreset(next.api_presets.length + 1);
+    next.api_presets.push(newPreset);
+    settings.value = next;
+    expandedApiPresetId.value = newPreset.id;
+    activeTab.value = 'flows';
+  }
+
+  function removeApiPreset(presetId: string) {
+    const next = klona(settings.value);
+    _.remove(next.api_presets, preset => preset.id === presetId);
+
+    if (next.api_presets.length === 0) {
+      next.api_presets.push(createApiPreset(1));
+    }
+
+    const fallbackPresetId = next.api_presets[0].id;
+    next.flows = next.flows.map(flow => {
+      if (flow.api_preset_id !== presetId) {
+        return flow;
+      }
+      return {
+        ...flow,
+        api_preset_id: fallbackPresetId,
+      };
+    });
+
+    settings.value = next;
+    if (expandedApiPresetId.value === presetId) {
+      expandedApiPresetId.value = next.api_presets[0]?.id ?? null;
+    }
+  }
+
   function addFlow() {
     const next = klona(settings.value);
-    const newFlow = createFlow(next.flows.length + 1);
+    if (next.api_presets.length === 0) {
+      next.api_presets.push(createApiPreset(1));
+    }
+    const newFlow = createFlow(next.flows.length + 1, next.api_presets[0].id);
     next.flows.push(newFlow);
     settings.value = next;
     expandedFlowId.value = newFlow.id;
@@ -89,7 +156,10 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     const next = klona(settings.value);
     _.remove(next.flows, flow => flow.id === flowId);
     if (next.flows.length === 0) {
-      next.flows.push(createFlow(1));
+      if (next.api_presets.length === 0) {
+        next.api_presets.push(createApiPreset(1));
+      }
+      next.flows.push(createFlow(1, next.api_presets[0].id));
     }
     settings.value = next;
     if (expandedFlowId.value === flowId) {
@@ -109,8 +179,16 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     globalAdvancedOpen.value = !globalAdvancedOpen.value;
   }
 
+  function toggleApiPresetExpanded(presetId: string) {
+    expandedApiPresetId.value = expandedApiPresetId.value === presetId ? null : presetId;
+  }
+
   function toggleFlowExpanded(flowId: string) {
     expandedFlowId.value = expandedFlowId.value === flowId ? null : flowId;
+  }
+
+  function setExpandedApiPreset(presetId: string | null) {
+    expandedApiPresetId.value = presetId;
   }
 
   function setExpandedFlow(flowId: string | null) {
@@ -234,15 +312,20 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     lastIo,
     activeTab,
     globalAdvancedOpen,
+    expandedApiPresetId,
     expandedFlowId,
     importText,
     busy,
+    addApiPreset,
+    removeApiPreset,
     addFlow,
     removeFlow,
     setActiveTab,
     setGlobalAdvancedOpen,
     toggleGlobalAdvancedOpen,
+    toggleApiPresetExpanded,
     toggleFlowExpanded,
+    setExpandedApiPreset,
     setExpandedFlow,
     runManual,
     rollbackController,

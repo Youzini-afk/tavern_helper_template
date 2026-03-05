@@ -59,14 +59,14 @@
         <EwSectionCard title="运行摘要" subtitle="当前配置规模和关键参数一览。">
           <div class="ew-summary-grid">
             <article class="ew-summary-card">
-              <h4>流程数量</h4>
+              <h4>工作流数量</h4>
               <strong>{{ store.settings.flows.length }}</strong>
-              <small>总流程</small>
+              <small>总工作流</small>
             </article>
             <article class="ew-summary-card">
-              <h4>启用流程</h4>
+              <h4>启用工作流</h4>
               <strong>{{ enabledFlowCount }}</strong>
-              <small>有效流程</small>
+              <small>有效工作流</small>
             </article>
             <article class="ew-summary-card">
               <h4>调度模式</h4>
@@ -141,9 +141,29 @@
       </template>
 
       <template v-else-if="store.activeTab === 'flows'">
-        <EwSectionCard title="流程编排" subtitle="每条流独立配置，按优先级合并结果。">
+        <EwSectionCard title="API配置" subtitle="统一管理外部接口预设，供工作流复用。">
           <template #actions>
-            <button type="button" class="ew-btn" @click="store.addFlow">新增流</button>
+            <button type="button" class="ew-btn" @click="store.addApiPreset">新增API配置</button>
+          </template>
+
+          <div class="ew-api-list">
+            <EwApiPresetCard
+              v-for="(preset, index) in store.settings.api_presets"
+              :key="preset.id"
+              :index="index"
+              :model-value="preset"
+              :expanded="store.expandedApiPresetId === preset.id"
+              :bind-count="getPresetBindCount(preset.id)"
+              @toggle-expand="store.toggleApiPresetExpanded(preset.id)"
+              @remove="store.removeApiPreset(preset.id)"
+              @update:model-value="value => updateApiPreset(index, value)"
+            />
+          </div>
+        </EwSectionCard>
+
+        <EwSectionCard title="工作流编排" subtitle="每条工作流独立配置，按优先级合并结果。">
+          <template #actions>
+            <button type="button" class="ew-btn" @click="store.addFlow">新增工作流</button>
           </template>
 
           <div class="ew-flow-list">
@@ -152,6 +172,7 @@
               :key="flow.id"
               :index="index"
               :model-value="flow"
+              :api-presets="store.settings.api_presets"
               :expanded="store.expandedFlowId === flow.id"
               @toggle-expand="store.toggleFlowExpanded(flow.id)"
               @remove="store.removeFlow(flow.id)"
@@ -200,7 +221,8 @@
 </template>
 
 <script setup lang="ts">
-import type { EwFlowConfig } from '../runtime/types';
+import type { EwApiPreset, EwFlowConfig } from '../runtime/types';
+import EwApiPresetCard from './components/EwApiPresetCard.vue';
 import EwFieldRow from './components/EwFieldRow.vue';
 import EwFlowCard from './components/EwFlowCard.vue';
 import EwPanelShell from './components/EwPanelShell.vue';
@@ -226,6 +248,18 @@ function updateFlow(index: number, nextFlow: EwFlowConfig) {
   if (store.expandedFlowId === previousId && previousId !== nextFlow.id) {
     store.setExpandedFlow(nextFlow.id);
   }
+}
+
+function updateApiPreset(index: number, nextPreset: EwApiPreset) {
+  const previousId = store.settings.api_presets[index]?.id;
+  store.settings.api_presets.splice(index, 1, nextPreset);
+  if (store.expandedApiPresetId === previousId && previousId !== nextPreset.id) {
+    store.setExpandedApiPreset(nextPreset.id);
+  }
+}
+
+function getPresetBindCount(presetId: string) {
+  return store.settings.flows.filter(flow => flow.api_preset_id === presetId).length;
 }
 
 function openImportFilePicker() {
@@ -327,6 +361,12 @@ onUnmounted(() => {
 }
 
 .ew-flow-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.74rem;
+}
+
+.ew-api-list {
   display: flex;
   flex-direction: column;
   gap: 0.74rem;

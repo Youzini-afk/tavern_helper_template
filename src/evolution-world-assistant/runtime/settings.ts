@@ -1,4 +1,6 @@
 import {
+  EwApiPreset,
+  EwApiPresetSchema,
   EwFlowConfig,
   EwFlowConfigSchema,
   EwSettings,
@@ -31,14 +33,27 @@ let cachedSettings: EwSettings | null = null;
 let cachedLastRun: RunSummary | null = null;
 let cachedLastIo: LastIoSummary | null = null;
 
-function makeDefaultFlow(index: number): EwFlowConfig {
+function makeDefaultApiPreset(index: number): EwApiPreset {
+  const id = `api_${index}_${simpleHash(`api-${index}-${Date.now()}`)}`;
+  return EwApiPresetSchema.parse({
+    id,
+    name: `API配置 ${index}`,
+    api_url: '',
+    api_key: '',
+    headers_json: '',
+  });
+}
+
+function makeDefaultFlow(index: number, apiPresetId: string): EwFlowConfig {
   const id = `flow_${index}_${simpleHash(`${index}-${Date.now()}`)}`;
   return EwFlowConfigSchema.parse({
     id,
-    name: `Flow ${index}`,
+    name: `工作流 ${index}`,
     enabled: true,
     priority: 100,
     timeout_ms: 8000,
+    api_preset_id: apiPresetId,
+    // Legacy fields retained for backward compatibility.
     api_url: '',
     api_key: '',
     context_turns: 8,
@@ -88,11 +103,125 @@ function writeScriptStorage(updater: (storage: ScriptStorageShape) => ScriptStor
   throw new Error('script storage API unavailable: updateVariablesWith/insertOrAssignVariables');
 }
 
+function ensurePresetId(rawId: string, index: number, usedIds: Set<string>): string {
+  let nextId = rawId.trim() || `api_${index + 1}_${simpleHash(`api-${index}-${Date.now()}`)}`;
+  while (usedIds.has(nextId)) {
+    nextId = `${nextId}_${usedIds.size + 1}`;
+  }
+  usedIds.add(nextId);
+  return nextId;
+}
+
+function ensurePresetName(baseName: string, usedNames: Set<string>): string {
+  const trimmed = baseName.trim() || 'API配置';
+  if (!usedNames.has(trimmed)) {
+    usedNames.add(trimmed);
+    return trimmed;
+  }
+
+  let counter = 2;
+  let nextName = `${trimmed} ${counter}`;
+  while (usedNames.has(nextName)) {
+    counter += 1;
+    nextName = `${trimmed} ${counter}`;
+  }
+  usedNames.add(nextName);
+  return nextName;
+}
+
+function normalizeApiPresets(rawPresets: EwApiPreset[]): EwApiPreset[] {
+  const usedIds = new Set<string>();
+  const usedNames = new Set<string>();
+
+  const normalized = rawPresets.map((preset, index) => {
+    const parsed = EwApiPresetSchema.parse(preset);
+    const id = ensurePresetId(parsed.id, index, usedIds);
+    const name = ensurePresetName(parsed.name, usedNames);
+    return EwApiPresetSchema.parse({
+      ...parsed,
+      id,
+      name,
+    });
+  });
+
+  if (normalized.length > 0) {
+    return normalized;
+  }
+
+  return [makeDefaultApiPreset(1)];
+}
+
+function findPresetByLegacyFields(presets: EwApiPreset[], flow: EwFlowConfig): EwApiPreset | null {
+  const legacyUrl = flow.api_url.trim();
+  const legacyKey = flow.api_key.trim();
+  const legacyHeaders = flow.headers_json.trim();
+  if (!legacyUrl && !legacyKey && !legacyHeaders) {
+    return null;
+  }
+
+  return (
+    presets.find(preset => {
+      return (
+        preset.api_url.trim() === legacyUrl &&
+        preset.api_key.trim() === legacyKey &&
+        preset.headers_json.trim() === legacyHeaders
+      );
+    }) ?? null
+  );
+}
+
 function normalizeSettings(raw: unknown): EwSettings {
   const parsed = EwSettingsSchema.safeParse(raw);
   const base = parsed.success ? parsed.data : EwSettingsSchema.parse({});
-  const withFlows = base.flows.length > 0 ? base : { ...base, flows: [makeDefaultFlow(1)] };
-  return EwSettingsSchema.parse(withFlows);
+  const apiPresets = normalizeApiPresets(base.api_presets ?? []);
+  const usedPresetNames = new Set(apiPresets.map(preset => preset.name));
+  const defaultPresetId = apiPresets[0].id;
+  const flowSeed = base.flows.length > 0 ? base.flows : [makeDefaultFlow(1, defaultPresetId)];
+
+  const normalizedFlows = flowSeed.map(flow => {
+    const nextFlow = EwFlowConfigSchema.parse(flow);
+    const boundPreset = apiPresets.find(preset => preset.id === nextFlow.api_preset_id);
+    if (boundPreset) {
+      return nextFlow;
+    }
+
+    const legacyPreset = findPresetByLegacyFields(apiPresets, nextFlow);
+    if (legacyPreset) {
+      return EwFlowConfigSchema.parse({
+        ...nextFlow,
+        api_preset_id: legacyPreset.id,
+      });
+    }
+
+    const hasLegacyApiConfig = Boolean(
+      nextFlow.api_url.trim() || nextFlow.api_key.trim() || nextFlow.headers_json.trim(),
+    );
+    if (hasLegacyApiConfig) {
+      const createdPreset = EwApiPresetSchema.parse({
+        id: ensurePresetId('', apiPresets.length, new Set(apiPresets.map(preset => preset.id))),
+        name: ensurePresetName(`${nextFlow.name || '工作流'} API`, usedPresetNames),
+        api_url: nextFlow.api_url,
+        api_key: nextFlow.api_key,
+        headers_json: nextFlow.headers_json,
+      });
+      apiPresets.push(createdPreset);
+      return EwFlowConfigSchema.parse({
+        ...nextFlow,
+        api_preset_id: createdPreset.id,
+      });
+    }
+
+    return EwFlowConfigSchema.parse({
+      ...nextFlow,
+      api_preset_id: defaultPresetId,
+    });
+  });
+
+  return EwSettingsSchema.parse({
+    ...base,
+    api_presets: apiPresets,
+    flows: normalizedFlows,
+  });
 }
 
 function emitSettings(settings: EwSettings) {

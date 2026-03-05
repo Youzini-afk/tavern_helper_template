@@ -1,11 +1,21 @@
 import { TextSliceRuleSchema } from './contracts';
 
+export const EwApiPresetSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().default('API配置'),
+  api_url: z.string().default(''),
+  api_key: z.string().default(''),
+  headers_json: z.string().default(''),
+});
+
 export const EwFlowConfigSchema = z.object({
   id: z.string().min(1),
   name: z.string().default('Flow'),
   enabled: z.boolean().default(true),
   priority: z.coerce.number().int().default(100),
   timeout_ms: z.coerce.number().int().positive().default(8000),
+  api_preset_id: z.string().default(''),
+  // Legacy fields kept for backward-compatible migration from old configs.
   api_url: z.string().default(''),
   api_key: z.string().default(''),
   context_turns: z.coerce.number().int().min(1).default(8),
@@ -28,6 +38,7 @@ export const EwSettingsSchema = z.object({
   max_scan_worldbooks: z.coerce.number().int().min(1).default(20),
   gate_ttl_ms: z.coerce.number().int().positive().default(12000),
   ui_open: z.boolean().default(false),
+  api_presets: z.array(EwApiPresetSchema).default([]),
   flows: z.array(EwFlowConfigSchema).default([]),
 });
 
@@ -59,6 +70,7 @@ export const FlowIoSummarySchema = z.object({
   flow_id: z.string().default(''),
   flow_name: z.string().default(''),
   priority: z.coerce.number().default(0),
+  api_preset_name: z.string().default(''),
   api_url: z.string().default(''),
   ok: z.boolean().default(false),
   elapsed_ms: z.coerce.number().int().default(0),
@@ -76,6 +88,7 @@ export const LastIoSummarySchema = z.object({
 });
 
 export type EwFlowConfig = z.infer<typeof EwFlowConfigSchema>;
+export type EwApiPreset = z.infer<typeof EwApiPresetSchema>;
 export type EwSettings = z.infer<typeof EwSettingsSchema>;
 export type RunSummary = z.infer<typeof RunSummarySchema>;
 export type LastIoSummary = z.infer<typeof LastIoSummarySchema>;
@@ -89,6 +102,9 @@ export type DispatchFlowResult = {
 export type DispatchFlowAttempt = {
   flow: EwFlowConfig;
   flow_order: number;
+  api_preset_id: string;
+  api_preset_name: string;
+  api_url: string;
   request: import('./contracts').FlowRequestV1;
   response?: import('./contracts').FlowResponseV1;
   ok: boolean;
