@@ -189,7 +189,11 @@ async function executeFlow(
 ): Promise<DispatchFlowAttempt> {
   const startedAt = Date.now();
   const apiPreset = resolveApiPreset(settings, flow);
-  const attemptApiUrl = apiPreset.mode === 'llm_connector' && apiPreset.use_main_api ? 'tavern://main_api' : apiPreset.api_url;
+  const usesTavernMain = apiPreset.mode === 'llm_connector';
+  const usesCustomConnector = apiPreset.mode === 'workflow_http' && Boolean(apiPreset.model.trim());
+  const usesLegacyWorkflowHttp =
+    apiPreset.mode === 'workflow_http' && !apiPreset.model.trim() && Boolean(apiPreset.headers_json.trim());
+  const attemptApiUrl = usesTavernMain ? 'tavern://main_api' : apiPreset.api_url;
   const request = await buildFlowRequest({
     settings,
     flow,
@@ -202,8 +206,15 @@ async function executeFlow(
   try {
     const body = applyTemplate(request as unknown as Record<string, any>, flow.request_template);
 
-    if (apiPreset.mode === 'llm_connector') {
-      const response = await executeFlowViaLlmConnector(flow, apiPreset, body);
+    if (usesTavernMain) {
+      const response = await executeFlowViaLlmConnector(
+        flow,
+        {
+          ...apiPreset,
+          use_main_api: true,
+        },
+        body,
+      );
       return {
         flow,
         flow_order: flowOrder,
@@ -215,6 +226,32 @@ async function executeFlow(
         ok: true,
         elapsed_ms: Date.now() - startedAt,
       };
+    }
+
+    if (usesCustomConnector) {
+      const response = await executeFlowViaLlmConnector(
+        flow,
+        {
+          ...apiPreset,
+          use_main_api: false,
+        },
+        body,
+      );
+      return {
+        flow,
+        flow_order: flowOrder,
+        api_preset_id: apiPreset.id,
+        api_preset_name: apiPreset.name,
+        api_url: attemptApiUrl,
+        request,
+        response,
+        ok: true,
+        elapsed_ms: Date.now() - startedAt,
+      };
+    }
+
+    if (apiPreset.mode === 'workflow_http' && !usesLegacyWorkflowHttp) {
+      throw new Error(`[${flow.id}] model is empty (自定义API模式必须选择模型)`);
     }
 
     if (!apiPreset.api_url.trim()) {

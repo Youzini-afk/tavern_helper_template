@@ -4,13 +4,13 @@
       <div class="ew-api-card__summary">
         <strong class="ew-api-card__name">{{ preset.name || `API配置 ${index + 1}` }}</strong>
         <div class="ew-api-card__chips">
-          <span class="ew-api-card__chip">{{ preset.mode === 'workflow_http' ? '工作流HTTP' : '酒馆连接器' }}</span>
-          <span v-if="preset.mode === 'llm_connector'" class="ew-api-card__chip">
-            {{ preset.use_main_api ? '主API模型' : `模型 ${preset.model || '未选'}` }}
+          <span class="ew-api-card__chip">{{ preset.mode === 'workflow_http' ? '自定义API' : '酒馆连接器' }}</span>
+          <span class="ew-api-card__chip">
+            {{ preset.mode === 'workflow_http' ? `模型 ${preset.model || '未选'}` : '使用酒馆主API' }}
           </span>
           <span class="ew-api-card__chip">工作流引用 {{ bindCount }}</span>
         </div>
-        <p class="ew-api-card__endpoint">URL: {{ endpointSummary }}</p>
+        <p class="ew-api-card__endpoint">端点: {{ endpointSummary }}</p>
       </div>
 
       <div class="ew-api-card__actions">
@@ -31,20 +31,17 @@
           </EwFieldRow>
           <EwFieldRow label="API模式" :help="help('api_preset.mode')">
             <select :value="preset.mode" @change="setMode">
-              <option value="workflow_http">自定义工作流API</option>
-              <option value="llm_connector">酒馆连接器</option>
+              <option value="workflow_http">自定义API</option>
+              <option value="llm_connector">酒馆连接器（主API）</option>
             </select>
           </EwFieldRow>
 
-          <EwFieldRow v-if="preset.mode === 'llm_connector'" label="使用主API" :help="help('api_preset.use_main_api')">
-            <label class="ew-api-card__check-row">
-              <input :checked="preset.use_main_api" type="checkbox" @change="setUseMainApi" />
-              <span>直接使用酒馆当前 API 和模型</span>
-            </label>
-          </EwFieldRow>
+          <div v-if="preset.mode === 'llm_connector'" class="ew-api-card__hint">
+            已启用酒馆连接器：将直接使用酒馆当前主 API 与当前模型，无需额外配置。
+          </div>
 
           <EwFieldRow
-            v-if="preset.mode === 'workflow_http' || !preset.use_main_api"
+            v-if="preset.mode === 'workflow_http'"
             label="API URL"
             :help="help('api_preset.api_url')"
           >
@@ -57,14 +54,14 @@
           </EwFieldRow>
 
           <EwFieldRow
-            v-if="preset.mode === 'workflow_http' || !preset.use_main_api"
+            v-if="preset.mode === 'workflow_http'"
             label="API Key"
             :help="help('api_preset.api_key')"
           >
             <input :value="preset.api_key" type="password" @input="setText('api_key', $event)" />
           </EwFieldRow>
 
-          <EwFieldRow v-if="preset.mode === 'llm_connector' && !preset.use_main_api" label="模型" :help="help('api_preset.model')">
+          <EwFieldRow v-if="preset.mode === 'workflow_http'" label="模型" :help="help('api_preset.model')">
             <div class="ew-api-card__model-wrap">
               <input
                 :value="preset.model"
@@ -85,19 +82,6 @@
                 <option v-for="model in preset.model_candidates" :key="model" :value="model" />
               </datalist>
             </div>
-          </EwFieldRow>
-
-          <EwFieldRow
-            v-if="preset.mode === 'workflow_http'"
-            label="额外请求头(JSON对象)"
-            :help="help('api_preset.headers_json')"
-          >
-            <textarea
-              :value="preset.headers_json"
-              rows="3"
-              :placeholder="help('api_preset.headers_json')?.placeholder"
-              @input="setText('headers_json', $event)"
-            />
           </EwFieldRow>
         </div>
       </div>
@@ -128,25 +112,19 @@ const loadingModels = ref(false);
 const modelListId = computed(() => `ew-model-list-${preset.value.id || props.index}`);
 const endpointSummary = computed(() => {
   if (preset.value.mode === 'llm_connector') {
-    if (preset.value.use_main_api) {
-      return '酒馆主API（直接使用当前连接器与模型）';
-    }
-    const endpoint = preset.value.api_url.trim();
-    if (!endpoint) {
-      return '连接器未配置（缺少 API URL）';
-    }
-    const model = preset.value.model.trim() || '未选模型';
-    return `${endpoint} / ${model}`;
+    return '酒馆主API（自动使用当前配置）';
   }
 
   const endpoint = preset.value.api_url.trim();
-  if (!endpoint) {
+  const model = preset.value.model.trim() || '未选模型';
+  if (!endpoint && !model) {
     return '未配置';
   }
-  if (endpoint.length <= 64) {
-    return endpoint;
+  if (!endpoint) {
+    return `URL未配置 / ${model}`;
   }
-  return `${endpoint.slice(0, 61)}...`;
+  const merged = `${endpoint} / ${model}`;
+  return merged.length <= 72 ? merged : `${merged.slice(0, 69)}...`;
 });
 
 function help(key: string) {
@@ -170,11 +148,10 @@ function setMode(event: Event) {
   if (mode !== 'workflow_http' && mode !== 'llm_connector') {
     return;
   }
-  patch({ mode });
-}
-
-function setUseMainApi(event: Event) {
-  patch({ use_main_api: (event.target as HTMLInputElement).checked });
+  patch({
+    mode,
+    use_main_api: mode === 'llm_connector',
+  });
 }
 
 async function loadModels() {
@@ -321,14 +298,6 @@ async function loadModels() {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.ew-api-card__check-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 86%, transparent);
-  font-size: 0.82rem;
-}
-
 .ew-api-card__model-wrap {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -337,6 +306,16 @@ async function loadModels() {
 
 .ew-api-card__model-wrap datalist {
   display: none;
+}
+
+.ew-api-card__hint {
+  border-radius: 0.72rem;
+  border: 1px dashed color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 44%, transparent);
+  background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 10%, rgba(8, 12, 18, 0.46));
+  color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 78%, transparent);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  padding: 0.54rem 0.62rem;
 }
 
 .ew-api-expand-enter-active,

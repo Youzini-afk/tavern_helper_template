@@ -250,22 +250,18 @@ const endpointSummary = computed(() => {
     return '未绑定API配置';
   }
   if (preset.mode === 'llm_connector') {
-    if (preset.use_main_api) {
-      return '酒馆主API（当前连接器与模型）';
-    }
-    const endpoint = preset.api_url.trim();
-    const model = preset.model.trim() || '未选模型';
-    if (!endpoint) {
-      return `连接器未配置（${model}）`;
-    }
-    const merged = `${endpoint} / ${model}`;
-    return merged.length <= 72 ? merged : `${merged.slice(0, 69)}...`;
+    return '酒馆主API（自动使用当前配置）';
   }
   const endpoint = preset.api_url.trim();
-  if (!endpoint) {
+  const model = preset.model.trim() || '未选模型';
+  if (!endpoint && !model) {
     return '未配置';
   }
-  return endpoint.length <= 64 ? endpoint : `${endpoint.slice(0, 61)}...`;
+  if (!endpoint) {
+    return `URL未配置 / ${model}`;
+  }
+  const merged = `${endpoint} / ${model}`;
+  return merged.length <= 72 ? merged : `${merged.slice(0, 69)}...`;
 });
 const presetLabel = computed(() => selectedPreset.value?.name?.trim() || '未绑定');
 const nameBehaviorGroupName = computed(() => `name_behavior_${flow.value.id}`);

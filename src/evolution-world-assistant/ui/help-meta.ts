@@ -106,21 +106,15 @@ const FIELD_HELP_LIST: FieldHelpMeta[] = [
   {
     key: 'api_preset.mode',
     label: 'API模式',
-    shortHelp: '选择“工作流HTTP”或“酒馆连接器”模式。',
+    shortHelp: '选择“自定义API”或“酒馆连接器”模式。',
     detailHelp:
-      '工作流HTTP会直接 POST 到你的外部接口；酒馆连接器会调用 TavernHelper 生成流程，可选主API或自定义URL+模型。',
-  },
-  {
-    key: 'api_preset.use_main_api',
-    label: '使用主API',
-    shortHelp: '启用后直接使用酒馆当前连接器和当前模型。',
-    detailHelp: '该模式不需要填写 URL/模型，适合直接复用你在酒馆主界面选好的 API 与模型。',
+      '自定义API模式需要你填写 URL/Key/模型；酒馆连接器模式会直接使用酒馆当前主API与当前模型，不需要额外配置。',
   },
   {
     key: 'api_preset.api_url',
     label: 'API URL',
-    shortHelp: '该预设对应的外部工作流接口地址。',
-    detailHelp: '应返回符合 ew-flow/v1 的 JSON 响应，建议使用稳定的 HTTPS 地址。',
+    shortHelp: '自定义API模式下使用的接口地址。',
+    detailHelp: '填写你的自定义 API 基础地址后，可点击“加载模型列表”获取可用模型。',
     placeholder: 'https://example.com/flow',
   },
   {
@@ -132,7 +126,7 @@ const FIELD_HELP_LIST: FieldHelpMeta[] = [
   {
     key: 'api_preset.model',
     label: '模型',
-    shortHelp: '连接器模式下，指定要调用的模型名称。',
+    shortHelp: '自定义API模式下，指定要调用的模型名称。',
     detailHelp: '可手动输入，也可先填 URL/Key 后点击“加载模型列表”自动选择。',
     placeholder: 'gpt-4o-mini',
   },
