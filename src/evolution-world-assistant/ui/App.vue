@@ -105,15 +105,8 @@
       </template>
 
       <template v-else-if="store.activeTab === 'global'">
-        <EwSectionCard title="基础配置" subtitle="世界书命名与控制器目标。">
+        <EwSectionCard title="基础配置" subtitle="世界书命名与楼层绑定控制。">
           <div class="ew-grid two">
-            <EwFieldRow label="运行时世界书前缀" :help="help('runtime_worldbook_prefix')">
-              <input
-                v-model="store.settings.runtime_worldbook_prefix"
-                type="text"
-                :placeholder="help('runtime_worldbook_prefix')?.placeholder"
-              />
-            </EwFieldRow>
             <EwFieldRow label="动态条目前缀" :help="help('dynamic_entry_prefix')">
               <input
                 v-model="store.settings.dynamic_entry_prefix"
@@ -128,12 +121,33 @@
                 :placeholder="help('controller_entry_name')?.placeholder"
               />
             </EwFieldRow>
-            <EwFieldRow label="元数据条目名" :help="help('meta_entry_name')">
-              <input
-                v-model="store.settings.meta_entry_name"
-                type="text"
-                :placeholder="help('meta_entry_name')?.placeholder"
-              />
+            <EwFieldRow label="楼层绑定" :help="help('floor_binding_enabled')">
+              <button
+                type="button"
+                class="ew-switch"
+                role="switch"
+                :aria-checked="store.settings.floor_binding_enabled ? 'true' : 'false'"
+                @click="store.settings.floor_binding_enabled = !store.settings.floor_binding_enabled"
+              >
+                <span class="ew-switch__track" :data-enabled="store.settings.floor_binding_enabled ? '1' : '0'">
+                  <span class="ew-switch__thumb" />
+                </span>
+                <span class="ew-switch__text">{{ store.settings.floor_binding_enabled ? '已开启' : '已关闭' }}</span>
+              </button>
+            </EwFieldRow>
+            <EwFieldRow label="自动清理孤儿条目" :help="help('auto_cleanup_orphans')">
+              <button
+                type="button"
+                class="ew-switch"
+                role="switch"
+                :aria-checked="store.settings.auto_cleanup_orphans ? 'true' : 'false'"
+                @click="store.settings.auto_cleanup_orphans = !store.settings.auto_cleanup_orphans"
+              >
+                <span class="ew-switch__track" :data-enabled="store.settings.auto_cleanup_orphans ? '1' : '0'">
+                  <span class="ew-switch__thumb" />
+                </span>
+                <span class="ew-switch__text">{{ store.settings.auto_cleanup_orphans ? '已开启' : '已关闭' }}</span>
+              </button>
             </EwFieldRow>
           </div>
         </EwSectionCard>
@@ -145,16 +159,6 @@
           collapsible
         >
           <div class="ew-grid two">
-            <EwFieldRow label="元数据标记" :help="help('meta_marker')">
-              <input
-                v-model="store.settings.meta_marker"
-                type="text"
-                :placeholder="help('meta_marker')?.placeholder"
-              />
-            </EwFieldRow>
-            <EwFieldRow label="最大扫描世界书数" :help="help('max_scan_worldbooks')">
-              <input v-model.number="store.settings.max_scan_worldbooks" type="number" min="1" step="1" />
-            </EwFieldRow>
             <EwFieldRow label="失败策略" :help="help('failure_policy')">
               <input :value="'失败即中止发送'" type="text" disabled />
             </EwFieldRow>

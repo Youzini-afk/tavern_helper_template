@@ -36,14 +36,7 @@ export const EwFlowBehaviorOptionsSchema = z.object({
   verbosity: z.enum(['auto', 'low', 'medium', 'high']).default('auto'),
 });
 
-export const EwFlowPromptTriggerTypeSchema = z.enum([
-  'all',
-  'send',
-  'continue',
-  'regenerate',
-  'quiet',
-  'manual',
-]);
+export const EwFlowPromptTriggerTypeSchema = z.enum(['all', 'send', 'continue', 'regenerate', 'quiet', 'manual']);
 
 const EwFlowPromptPositionSchema = z.preprocess(
   value => {
@@ -110,15 +103,19 @@ export const EwSettingsSchema = z.object({
   dispatch_mode: z.enum(['parallel', 'serial']).default('parallel'),
   failure_policy: z.literal('stop_generation').default('stop_generation'),
   controller_entry_name: z.string().default('EW/Controller'),
-  meta_entry_name: z.string().default('EW/Meta'),
-  meta_marker: z.string().default('EW_RUNTIME_META'),
   dynamic_entry_prefix: z.string().default('EW/Dyn/'),
-  runtime_worldbook_prefix: z.string().default('EW_RUNTIME::'),
-  max_scan_worldbooks: z.coerce.number().int().min(1).default(20),
   gate_ttl_ms: z.coerce.number().int().positive().default(12000),
+  floor_binding_enabled: z.boolean().default(true),
+  auto_cleanup_orphans: z.boolean().default(true),
   ui_open: z.boolean().default(false),
   api_presets: z.array(EwApiPresetSchema).default([]),
   flows: z.array(EwFlowConfigSchema).default([]),
+
+  // Deprecated: kept for backward-compatible migration only.
+  meta_entry_name: z.string().default('EW/Meta'),
+  meta_marker: z.string().default('EW_RUNTIME_META'),
+  runtime_worldbook_prefix: z.string().default('EW_RUNTIME::'),
+  max_scan_worldbooks: z.coerce.number().int().min(1).default(20),
 });
 
 export const WorldbookOperationSchema = z.object({

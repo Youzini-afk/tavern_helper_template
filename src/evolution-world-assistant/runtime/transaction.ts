@@ -1,5 +1,6 @@
 import { MergedPlan, EwSettings } from './types';
-import { ensureRuntimeWorldbook, ensureDefaultEntry } from './worldbook-runtime';
+import { resolveTargetWorldbook, ensureDefaultEntry } from './worldbook-runtime';
+import { markFloorEntries } from './floor-binding';
 import { saveControllerBackup } from './settings';
 
 type CommitResult = {
@@ -14,9 +15,6 @@ function findEntry(entries: WorldbookEntry[], name: string): WorldbookEntry | un
 
 function isManagedEntryName(settings: EwSettings, name: string): boolean {
   if (name === settings.controller_entry_name) {
-    return true;
-  }
-  if (name === settings.meta_entry_name) {
     return true;
   }
   return name.startsWith(settings.dynamic_entry_prefix);
@@ -56,22 +54,22 @@ function toggleEntries(entries: WorldbookEntry[], toggles: Array<{ name: string;
   return cloned;
 }
 
-function buildMetaContent(settings: EwSettings, chatId: string, requestId: string): string {
-  return `${settings.meta_marker}\nchat_id=${chatId}\nrequest_id=${requestId}\nupdated_at=${Date.now()}`;
-}
-
 export async function commitMergedPlan(
   settings: EwSettings,
   mergedPlan: MergedPlan,
   controllerTemplate: string,
-  requestId: string,
+  _requestId: string,
+  messageId: number,
 ): Promise<CommitResult> {
-  const runtime = await ensureRuntimeWorldbook(settings, true);
-  const beforeEntries = runtime.entries;
+  const target = await resolveTargetWorldbook(settings);
+  const beforeEntries = target.entries;
+  const chatId = String(SillyTavern.getCurrentChatId?.() ?? SillyTavern.chatId ?? 'unknown');
 
+  // Backup the current controller content before overwriting.
   const previousController = findEntry(beforeEntries, settings.controller_entry_name)?.content ?? '';
-  saveControllerBackup(runtime.chat_id, runtime.worldbook_name, previousController);
+  saveControllerBackup(chatId, target.worldbook_name, previousController);
 
+  // Validate that all operations target managed entry names.
   const allNames = [
     ...mergedPlan.worldbook.upsert_entries.map(entry => entry.name),
     ...mergedPlan.worldbook.delete_entries.map(entry => entry.name),
@@ -82,6 +80,7 @@ export async function commitMergedPlan(
     throw new Error(`unmanaged entry name(s): ${unmanaged.join(', ')}`);
   }
 
+  // Apply worldbook operations.
   let nextEntries = deleteByNames(beforeEntries, mergedPlan.worldbook.delete_entries.map(entry => entry.name));
 
   for (const upsert of mergedPlan.worldbook.upsert_entries) {
@@ -90,19 +89,26 @@ export async function commitMergedPlan(
 
   nextEntries = toggleEntries(nextEntries, mergedPlan.worldbook.toggle_entries);
 
+  // Write the EJS controller entry into the character worldbook.
   nextEntries = upsertEntry(nextEntries, settings.controller_entry_name, controllerTemplate, true);
-  nextEntries = upsertEntry(
-    nextEntries,
-    settings.meta_entry_name,
-    buildMetaContent(settings, runtime.chat_id, requestId),
-    true,
-  );
 
-  await replaceWorldbook(runtime.worldbook_name, nextEntries, { render: 'debounced' });
+  // Commit all changes in one atomic operation.
+  await replaceWorldbook(target.worldbook_name, nextEntries, { render: 'debounced' });
+
+  // Mark floor binding: record which EW/Dyn/ entries belong to this message.
+  if (settings.floor_binding_enabled && messageId >= 0) {
+    const floorEntryNames = mergedPlan.worldbook.upsert_entries
+      .map(entry => entry.name)
+      .filter(name => name.startsWith(settings.dynamic_entry_prefix));
+
+    if (floorEntryNames.length > 0) {
+      await markFloorEntries(messageId, floorEntryNames);
+    }
+  }
 
   return {
-    worldbook_name: runtime.worldbook_name,
-    chat_id: runtime.chat_id,
+    worldbook_name: target.worldbook_name,
+    chat_id: chatId,
     changed_count: nextEntries.length,
   };
 }

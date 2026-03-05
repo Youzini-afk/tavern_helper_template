@@ -1,67 +1,131 @@
 import { EwSettings } from './types';
 
-export type RuntimeWorldbook = {
-  chat_id: string;
+export type TargetWorldbook = {
   worldbook_name: string;
   entries: WorldbookEntry[];
   created: boolean;
 };
 
-function getChatId(): string {
-  try {
-    return String(SillyTavern.getCurrentChatId?.() ?? SillyTavern.chatId ?? 'unknown');
-  } catch {
-    return 'unknown';
-  }
-}
-
-export function buildRuntimeWorldbookName(settings: EwSettings, chatId: string): string {
-  return `${settings.runtime_worldbook_prefix}${chatId}`;
-}
-
-function getMetaEntry(entries: WorldbookEntry[], settings: EwSettings): WorldbookEntry | undefined {
-  return entries.find(entry => entry.name === settings.meta_entry_name);
-}
-
-function parseMetaContent(content: string): { marker: boolean; chat_id?: string } {
-  const lines = content
-    .split('\n')
-    .map(line => line.trim())
-    .filter(Boolean);
-  const marker = lines.length > 0;
-  const pairs = _.fromPairs(
-    lines
-      .filter(line => line.includes('='))
-      .map(line => {
-        const [key, ...rest] = line.split('=');
-        return [key.trim(), rest.join('=').trim()];
-      }),
-  );
-  const chatId = _.get(pairs, 'chat_id');
-  const normalizedChatId =
-    typeof chatId === 'string' ? chatId.replace(/^['"]/, '').replace(/['"]$/, '') : undefined;
-  return {
-    marker,
-    chat_id: normalizedChatId,
+export type FullWorldbookContext = {
+  character_name: string;
+  character_description: string;
+  char_worldbook: {
+    worldbook_name: string;
+    entries: Array<{ name: string; enabled: boolean; content: string }>;
   };
+  global_worldbooks: Array<{
+    worldbook_name: string;
+    entries: Array<{ name: string; enabled: boolean; content: string }>;
+  }>;
+};
+
+function toEntrySnapshot(entries: WorldbookEntry[]): Array<{ name: string; enabled: boolean; content: string }> {
+  return entries.map(entry => ({
+    name: entry.name,
+    enabled: entry.enabled,
+    content: entry.content,
+  }));
 }
 
-function isMetaValid(entry: WorldbookEntry | undefined, settings: EwSettings, chatId: string): boolean {
-  if (!entry) {
-    return false;
-  }
-  if (!entry.content.includes(settings.meta_marker)) {
-    return false;
+/**
+ * Resolve the target worldbook for writing EW/Dyn/ entries and EW/Controller.
+ *
+ * Strategy:
+ *  1. Read the current character's primary worldbook.
+ *  2. If none exists, auto-create one and bind it to the character.
+ */
+export async function resolveTargetWorldbook(_settings: EwSettings): Promise<TargetWorldbook> {
+  const charWb = getCharWorldbookNames('current');
+
+  if (charWb.primary) {
+    try {
+      const entries = await getWorldbook(charWb.primary);
+      return { worldbook_name: charWb.primary, entries, created: false };
+    } catch {
+      // Primary worldbook name is set but cannot be loaded — fallthrough to create.
+    }
   }
 
-  const parsed = parseMetaContent(entry.content);
-  if (!parsed.marker) {
-    return false;
+  // Auto-create a worldbook for this character.
+  const charName = getCurrentCharacterName() ?? 'unknown';
+  const autoName = `EW_${charName}`;
+
+  let exists = false;
+  try {
+    await getWorldbook(autoName);
+    exists = true;
+  } catch {
+    exists = false;
   }
-  if (parsed.chat_id && parsed.chat_id !== chatId) {
-    return false;
+
+  if (!exists) {
+    await createWorldbook(autoName, []);
   }
-  return true;
+
+  await rebindCharWorldbooks('current', {
+    primary: autoName,
+    additional: charWb.additional ?? [],
+  });
+
+  const entries = await getWorldbook(autoName);
+  return { worldbook_name: autoName, entries, created: true };
+}
+
+/**
+ * Collect full worldbook context for enriching the ew-flow/v1 request body.
+ *
+ * Reads:
+ *  - Current character card info (name, description)
+ *  - Character's primary worldbook entries
+ *  - All global worldbook entries
+ */
+export async function getFullWorldbookContext(): Promise<FullWorldbookContext> {
+  const charName = getCurrentCharacterName() ?? '';
+  let charDescription = '';
+
+  try {
+    const character = await getCharacter('current');
+    charDescription = character.description ?? '';
+  } catch {
+    // Character not available — proceed with empty description.
+  }
+
+  const charWb = getCharWorldbookNames('current');
+  let charEntries: Array<{ name: string; enabled: boolean; content: string }> = [];
+  const charWbName = charWb.primary ?? '';
+
+  if (charWb.primary) {
+    try {
+      charEntries = toEntrySnapshot(await getWorldbook(charWb.primary));
+    } catch {
+      // Cannot read — proceed with empty.
+    }
+  }
+
+  const globalWbNames = getGlobalWorldbookNames();
+  const globalWorldbooks: FullWorldbookContext['global_worldbooks'] = [];
+
+  for (const wbName of globalWbNames) {
+    try {
+      const entries = await getWorldbook(wbName);
+      globalWorldbooks.push({
+        worldbook_name: wbName,
+        entries: toEntrySnapshot(entries),
+      });
+    } catch {
+      // Skip unreadable worldbooks.
+    }
+  }
+
+  return {
+    character_name: charName,
+    character_description: charDescription,
+    char_worldbook: {
+      worldbook_name: charWbName,
+      entries: charEntries,
+    },
+    global_worldbooks: globalWorldbooks,
+  };
 }
 
 function nextUid(entries: WorldbookEntry[]): number {
@@ -69,9 +133,9 @@ function nextUid(entries: WorldbookEntry[]): number {
   return (maxUid ?? 0) + 1;
 }
 
-function defaultEntry(uid: number, name: string, content: string, enabled: boolean): WorldbookEntry {
+export function ensureDefaultEntry(name: string, content: string, enabled: boolean, entries: WorldbookEntry[]): WorldbookEntry {
   return {
-    uid,
+    uid: nextUid(entries),
     name,
     enabled,
     strategy: {
@@ -100,95 +164,4 @@ function defaultEntry(uid: number, name: string, content: string, enabled: boole
     },
     extra: {},
   };
-}
-
-function upsertMetaEntry(entries: WorldbookEntry[], settings: EwSettings, chatId: string): WorldbookEntry[] {
-  const cloned = klona(entries);
-  const content = `${settings.meta_marker}\nchat_id=${chatId}\nupdated_at=${Date.now()}`;
-  const existed = cloned.find(entry => entry.name === settings.meta_entry_name);
-
-  if (existed) {
-    existed.enabled = true;
-    existed.content = content;
-    return cloned;
-  }
-
-  cloned.push(defaultEntry(nextUid(cloned), settings.meta_entry_name, content, true));
-  return cloned;
-}
-
-async function findByNameAndValidate(name: string, settings: EwSettings, chatId: string): Promise<WorldbookEntry[] | null> {
-  try {
-    const entries = await getWorldbook(name);
-    if (isMetaValid(getMetaEntry(entries, settings), settings, chatId)) {
-      return entries;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-export async function ensureRuntimeWorldbook(settings: EwSettings, createIfMissing = true): Promise<RuntimeWorldbook> {
-  const chatId = getChatId();
-  const runtimeName = buildRuntimeWorldbookName(settings, chatId);
-  const currentBound = getChatWorldbookName('current');
-
-  if (currentBound) {
-    const entries = await findByNameAndValidate(currentBound, settings, chatId);
-    if (entries) {
-      return { chat_id: chatId, worldbook_name: currentBound, entries, created: false };
-    }
-  }
-
-  const candidates = [runtimeName]
-    .concat(
-      getWorldbookNames().filter(name => name.startsWith(settings.runtime_worldbook_prefix) && name !== runtimeName),
-    )
-    .slice(0, settings.max_scan_worldbooks);
-
-  for (const candidate of candidates) {
-    const entries = await findByNameAndValidate(candidate, settings, chatId);
-    if (!entries) {
-      continue;
-    }
-
-    if (currentBound !== candidate) {
-      await rebindChatWorldbook('current', candidate);
-    }
-
-    return { chat_id: chatId, worldbook_name: candidate, entries, created: false };
-  }
-
-  if (!createIfMissing) {
-    throw new Error('runtime worldbook not found');
-  }
-
-  let exists = false;
-  try {
-    await getWorldbook(runtimeName);
-    exists = true;
-  } catch {
-    exists = false;
-  }
-
-  if (!exists) {
-    await createWorldbook(runtimeName, []);
-  }
-
-  const loaded = await getWorldbook(runtimeName);
-  const withMeta = upsertMetaEntry(loaded, settings, chatId);
-  await replaceWorldbook(runtimeName, withMeta, { render: 'debounced' });
-  await rebindChatWorldbook('current', runtimeName);
-
-  return {
-    chat_id: chatId,
-    worldbook_name: runtimeName,
-    entries: withMeta,
-    created: true,
-  };
-}
-
-export function ensureDefaultEntry(name: string, content: string, enabled: boolean, entries: WorldbookEntry[]): WorldbookEntry {
-  return defaultEntry(nextUid(entries), name, content, enabled);
 }

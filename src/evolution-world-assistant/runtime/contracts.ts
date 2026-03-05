@@ -73,7 +73,7 @@ export const FlowRequestSchema = z.object({
     exclude_rules: z.array(TextSliceRuleSchema).default([]),
   }),
   worldbook: z.object({
-    runtime_name: z.string().min(1),
+    worldbook_name: z.string().default(''),
     entries: z
       .array(
         z.object({
@@ -84,6 +84,51 @@ export const FlowRequestSchema = z.object({
       )
       .default([]),
   }),
+  character_context: z
+    .object({
+      name: z.string().default(''),
+      description: z.string().default(''),
+      worldbook_entries: z
+        .array(
+          z.object({
+            name: z.string().default(''),
+            enabled: z.boolean().default(true),
+            content: z.string().default(''),
+          }),
+        )
+        .default([]),
+    })
+    .default({ name: '', description: '', worldbook_entries: [] }),
+  global_worldbooks: z
+    .array(
+      z.object({
+        worldbook_name: z.string().default(''),
+        entries: z
+          .array(
+            z.object({
+              name: z.string().default(''),
+              enabled: z.boolean().default(true),
+              content: z.string().default(''),
+            }),
+          )
+          .default([]),
+      }),
+    )
+    .default([]),
+  preset_info: z
+    .object({
+      name: z.string().default(''),
+      enabled_prompts: z
+        .array(
+          z.object({
+            id: z.string().default(''),
+            name: z.string().default(''),
+            role: z.enum(['system', 'user', 'assistant']).default('system'),
+          }),
+        )
+        .default([]),
+    })
+    .default({ name: '', enabled_prompts: [] }),
   mvu: z.object({
     message_id: z.number().default(-1),
     stat_data: z.record(z.string(), z.any()).default({}),
@@ -95,6 +140,7 @@ export const WorldbookUpsertEntrySchema = z.object({
   name: z.string().min(1),
   content: z.string().default(''),
   enabled: z.boolean().default(true),
+  floor_bind: z.number().optional(),
 });
 
 export const WorldbookDeleteEntrySchema = z.object({

@@ -107,7 +107,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
     const mergedPlan = mergeFlowResults(results);
     const controllerTemplate = await renderControllerTemplate(mergedPlan.controller_model);
 
-    const commitResult = await commitMergedPlan(settings, mergedPlan, controllerTemplate, requestId);
+    const commitResult = await commitMergedPlan(settings, mergedPlan, controllerTemplate, requestId, input.message_id);
 
     if (input.inject_reply !== false) {
       injectReplyInstructionOnce(mergedPlan.reply_instruction);

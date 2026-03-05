@@ -1,7 +1,7 @@
 import { FlowRequestV1, FlowRequestSchema, TextSliceRule } from './contracts';
 import { EwFlowConfig, EwSettings } from './types';
 import { extractSlices, removeSlices, uuidv4 } from './helpers';
-import { buildRuntimeWorldbookName, ensureRuntimeWorldbook } from './worldbook-runtime';
+import { resolveTargetWorldbook, getFullWorldbookContext } from './worldbook-runtime';
 
 export type BuildRequestInput = {
   settings: EwSettings;
@@ -40,26 +40,6 @@ function getMvuSnapshot(messageId: number): { message_id: number; stat_data: Rec
   }
 }
 
-async function getRuntimeWorldbookSnapshot(settings: EwSettings): Promise<{ runtime_name: string; entries: Array<{ name: string; enabled: boolean; content: string }> }> {
-  try {
-    const runtime = await ensureRuntimeWorldbook(settings, false);
-    return {
-      runtime_name: runtime.worldbook_name,
-      entries: runtime.entries.map(entry => ({
-        name: entry.name,
-        enabled: entry.enabled,
-        content: entry.content,
-      })),
-    };
-  } catch {
-    const chatId = String(SillyTavern.getCurrentChatId?.() ?? SillyTavern.chatId ?? 'unknown');
-    return {
-      runtime_name: buildRuntimeWorldbookName(settings, chatId),
-      entries: [],
-    };
-  }
-}
-
 function getContextMessages(flow: EwFlowConfig): Array<{ role: 'system' | 'assistant' | 'user'; content: string; message_id: number }> {
   const lastId = getLastMessageId();
   if (lastId < 0) {
@@ -78,11 +58,41 @@ function getContextMessages(flow: EwFlowConfig): Array<{ role: 'system' | 'assis
   return messages;
 }
 
+function getPresetSnapshot(): { name: string; enabled_prompts: Array<{ id: string; name: string; role: 'system' | 'user' | 'assistant' }> } {
+  try {
+    const presetName = getLoadedPresetName();
+    const preset = getPreset('in_use');
+    const enabledPrompts = preset.prompts
+      .filter(p => p.enabled)
+      .map(p => ({ id: p.id, name: p.name, role: p.role }));
+    return { name: presetName, enabled_prompts: enabledPrompts };
+  } catch {
+    return { name: '', enabled_prompts: [] };
+  }
+}
+
 export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRequestV1> {
   const chatId = String(SillyTavern.getCurrentChatId?.() ?? SillyTavern.chatId ?? 'unknown');
   const requestId = input.request_id ?? uuidv4();
 
-  const worldbook = await getRuntimeWorldbookSnapshot(input.settings);
+  // Resolve the target worldbook (character card's primary worldbook).
+  let worldbookName = '';
+  let worldbookEntries: Array<{ name: string; enabled: boolean; content: string }> = [];
+  try {
+    const target = await resolveTargetWorldbook(input.settings);
+    worldbookName = target.worldbook_name;
+    worldbookEntries = target.entries.map(entry => ({
+      name: entry.name,
+      enabled: entry.enabled,
+      content: entry.content,
+    }));
+  } catch {
+    // Proceed with empty worldbook snapshot.
+  }
+
+  // Collect full character/worldbook/preset context.
+  const fullContext = await getFullWorldbookContext();
+  const presetInfo = getPresetSnapshot();
   const contextMessages = getContextMessages(input.flow);
 
   const payload = FlowRequestSchema.parse({
@@ -106,7 +116,17 @@ export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRe
       extract_rules: input.flow.extract_rules,
       exclude_rules: input.flow.exclude_rules,
     },
-    worldbook,
+    worldbook: {
+      worldbook_name: worldbookName,
+      entries: worldbookEntries,
+    },
+    character_context: {
+      name: fullContext.character_name,
+      description: fullContext.character_description,
+      worldbook_entries: fullContext.char_worldbook.entries,
+    },
+    global_worldbooks: fullContext.global_worldbooks,
+    preset_info: presetInfo,
     mvu: getMvuSnapshot(input.message_id),
     serial_results: input.serial_results ?? [],
   });

@@ -10,6 +10,7 @@ import {
   shouldHandleGenerationAfter,
 } from './state';
 import { runWorkflow } from './pipeline';
+import { initFloorBindingEvents, disposeFloorBindingEvents } from './floor-binding';
 
 const listenerStops: EventOnReturn[] = [];
 const domCleanup: Array<() => void> = [];
@@ -159,6 +160,9 @@ export function initRuntimeEvents() {
       }, 300);
     }),
   );
+
+  // Initialize floor binding event listeners for automatic cleanup.
+  initFloorBindingEvents(getSettings);
 }
 
 export function disposeRuntimeEvents() {
@@ -168,4 +172,5 @@ export function disposeRuntimeEvents() {
   for (const cleanup of domCleanup.splice(0, domCleanup.length)) {
     cleanup();
   }
+  disposeFloorBindingEvents();
 }
