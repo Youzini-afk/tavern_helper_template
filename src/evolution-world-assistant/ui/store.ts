@@ -20,6 +20,7 @@ import {
   subscribeSettings,
 } from '../runtime/settings';
 import { runWorkflow } from '../runtime/pipeline';
+import { showEwNotice } from './notice';
 
 function createApiPreset(index: number): EwApiPreset {
   return EwApiPresetSchema.parse({
@@ -112,7 +113,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     next.api_presets.push(newPreset);
     settings.value = next;
     expandedApiPresetId.value = newPreset.id;
-    activeTab.value = 'flows';
+    activeTab.value = 'api';
   }
 
   function removeApiPreset(presetId: string) {
@@ -244,6 +245,12 @@ export const useEwStore = defineStore('evolution-world-store', () => {
 
   function importConfig() {
     if (!importText.value.trim()) {
+      showEwNotice({
+        title: '导入失败',
+        message: '导入内容为空，请先粘贴 JSON 配置。',
+        level: 'warning',
+        duration_ms: 3600,
+      });
       toastr.warning('import text is empty', 'Evolution World');
       return;
     }
@@ -252,9 +259,21 @@ export const useEwStore = defineStore('evolution-world-store', () => {
       const parsed = JSON.parse(importText.value);
       replaceSettings(parsed as EwSettings);
       settings.value = getSettings();
+      showEwNotice({
+        title: '导入成功',
+        message: '配置已加载并应用到当前脚本。',
+        level: 'success',
+        duration_ms: 3200,
+      });
       toastr.success('config imported', 'Evolution World');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      showEwNotice({
+        title: '导入失败',
+        message,
+        level: 'error',
+        duration_ms: 4800,
+      });
       toastr.error(`import failed: ${message}`, 'Evolution World');
     }
   }

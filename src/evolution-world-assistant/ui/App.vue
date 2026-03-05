@@ -230,6 +230,7 @@ import EwFlowCard from './components/EwFlowCard.vue';
 import EwPanelShell from './components/EwPanelShell.vue';
 import EwSectionCard from './components/EwSectionCard.vue';
 import { getFieldHelp, PANEL_TABS } from './help-meta';
+import { showEwNotice } from './notice';
 import { useEwStore } from './store';
 
 const store = useEwStore();
@@ -280,6 +281,12 @@ async function onImportFileChange(event: Event) {
     store.importConfig();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    showEwNotice({
+      title: '文件读取失败',
+      message,
+      level: 'error',
+      duration_ms: 4600,
+    });
     toastr.error(`import failed: ${message}`, 'Evolution World');
   } finally {
     if (input) {

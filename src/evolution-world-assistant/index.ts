@@ -1,5 +1,6 @@
 import { initRuntime, disposeRuntime } from './runtime/main';
 import { mountUi, unmountUi } from './ui';
+import { showEwNotice } from './ui/notice';
 
 const BOOTSTRAP_TIMEOUT_MS = 12_000;
 const BOOTSTRAP_POLL_MS = 100;
@@ -43,6 +44,12 @@ async function waitForRuntimeGlobals() {
 function reportBootstrapError(error: unknown) {
   const reason = formatError(error);
   console.error('[Evolution World] bootstrap failed:', error);
+  showEwNotice({
+    title: '脚本加载失败',
+    message: reason,
+    level: 'error',
+    duration_ms: 5200,
+  });
   toastr.error(`插件加载失败: ${reason}`, 'Evolution World');
 }
 
@@ -50,6 +57,12 @@ async function bootstrap() {
   await waitForRuntimeGlobals();
   initRuntime();
   mountUi();
+  showEwNotice({
+    title: '脚本已加载',
+    message: 'Evolution World Assistant 已就绪。',
+    level: 'success',
+    duration_ms: 3200,
+  });
 }
 
 $(() => {
