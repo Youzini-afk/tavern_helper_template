@@ -26,7 +26,7 @@
     <transition name="ew-api-expand">
       <div v-if="expanded" class="ew-api-card__body">
         <div class="ew-api-card__grid two">
-          <EwFieldRow label="预设名称" :help="help('api_preset.name')">
+          <EwFieldRow label="预设名称">
             <input :value="preset.name" type="text" @input="setText('name', $event)" />
           </EwFieldRow>
           <EwFieldRow label="API模式" :help="help('api_preset.mode')">
@@ -43,12 +43,11 @@
           <EwFieldRow
             v-if="preset.mode === 'workflow_http'"
             label="API URL"
-            :help="help('api_preset.api_url')"
           >
             <input
               :value="preset.api_url"
               type="text"
-              :placeholder="help('api_preset.api_url')?.placeholder"
+              placeholder="https://api.example.com/v1/chat/completions"
               @input="setText('api_url', $event)"
             />
           </EwFieldRow>
@@ -56,18 +55,17 @@
           <EwFieldRow
             v-if="preset.mode === 'workflow_http'"
             label="API Key"
-            :help="help('api_preset.api_key')"
           >
             <input :value="preset.api_key" type="password" @input="setText('api_key', $event)" />
           </EwFieldRow>
 
-          <EwFieldRow v-if="preset.mode === 'workflow_http'" label="模型" :help="help('api_preset.model')">
+          <EwFieldRow v-if="preset.mode === 'workflow_http'" label="模型">
             <div class="ew-api-card__model-wrap">
               <input
                 :value="preset.model"
                 type="text"
                 :list="modelListId"
-                :placeholder="help('api_preset.model')?.placeholder"
+                placeholder="gpt-4o-mini"
                 @input="setText('model', $event)"
               />
               <button

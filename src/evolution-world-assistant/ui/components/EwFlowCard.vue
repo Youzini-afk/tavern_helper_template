@@ -150,15 +150,51 @@
 
         <section class="ew-flow-card__section">
           <h4>上下文规则</h4>
-          <div class="ew-grid ew-grid--two">
-            <section>
-              <div class="ew-subhead"><h5>提取规则</h5><EwHelpTip v-if="help('flow.extract_rules')" :meta="help('flow.extract_rules')!" /></div>
-              <EwRulesEditor title="提取规则" :model-value="flow.extract_rules" @update:model-value="value => patch({ extract_rules: value })" />
-            </section>
-            <section>
-              <div class="ew-subhead"><h5>排除规则</h5><EwHelpTip v-if="help('flow.exclude_rules')" :meta="help('flow.exclude_rules')!" /></div>
-              <EwRulesEditor title="排除规则" :model-value="flow.exclude_rules" @update:model-value="value => patch({ exclude_rules: value })" />
-            </section>
+          <p class="ew-flow-card__desc">在聊天消息发送给工作流 AI 之前，依次进行：正则处理 → 文本切片。</p>
+
+          <div class="ew-flow-card__subsection">
+            <h5>正则处理</h5>
+            <label class="ew-checkbox">
+              <input :checked="flow.use_tavern_regex" type="checkbox" @change="setFlowBool('use_tavern_regex', $event)" />
+              <span>使用酒馆已启用的正则</span>
+            </label>
+            <p class="ew-flow-card__hint-text">开启后，聊天消息会先经过酒馆当前激活的正则脚本处理（全局 + 角色卡正则）。</p>
+
+            <div class="ew-flow-card__custom-regex-head">
+              <h6>自定义正则</h6>
+              <button type="button" class="ew-mini-btn" @click="addCustomRegex">新增</button>
+            </div>
+            <div v-if="flow.custom_regex_rules.length === 0" class="ew-empty">暂无自定义正则。</div>
+            <div v-else class="ew-regex-list">
+              <article v-for="(rule, ruleIndex) in flow.custom_regex_rules" :key="rule.id" class="ew-regex-item">
+                <header class="ew-regex-item__head">
+                  <label class="ew-checkbox"><input :checked="rule.enabled" type="checkbox" @change="setRegexEnabled(ruleIndex, $event)" /></label>
+                  <span class="ew-regex-item__name">{{ rule.name || `正则 ${ruleIndex + 1}` }}</span>
+                  <button type="button" class="ew-mini-btn ew-mini-btn--danger" @click="removeCustomRegex(ruleIndex)">删除</button>
+                </header>
+                <div class="ew-regex-item__body">
+                  <EwFieldRow label="名称"><input :value="rule.name" type="text" placeholder="例：去掉OOC标记" @input="patchRegexText(ruleIndex, 'name', $event)" /></EwFieldRow>
+                  <EwFieldRow label="正则表达式"><input :value="rule.find_regex" type="text" placeholder="例：\[OOC\].*?\[\/OOC\]" @input="patchRegexText(ruleIndex, 'find_regex', $event)" /></EwFieldRow>
+                  <EwFieldRow label="替换为"><input :value="rule.replace_string" type="text" placeholder="留空则删除匹配内容" @input="patchRegexText(ruleIndex, 'replace_string', $event)" /></EwFieldRow>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <div class="ew-flow-card__subsection">
+            <h5>文本切片</h5>
+            <div class="ew-grid ew-grid--two">
+              <section>
+                <div class="ew-subhead"><h6>提取规则</h6></div>
+                <p class="ew-flow-card__hint-text">只保留 start～end 之间的文本发给 AI（如：只提取状态栏）。</p>
+                <EwRulesEditor title="提取规则" :model-value="flow.extract_rules" @update:model-value="value => patch({ extract_rules: value })" />
+              </section>
+              <section>
+                <div class="ew-subhead"><h6>排除规则</h6></div>
+                <p class="ew-flow-card__hint-text">删掉 start～end 之间的文本（如：去掉 OOC 标记）。</p>
+                <EwRulesEditor title="排除规则" :model-value="flow.exclude_rules" @update:model-value="value => patch({ exclude_rules: value })" />
+              </section>
+            </div>
           </div>
         </section>
 
@@ -354,6 +390,37 @@ function promptTriggerSummary(item: EwFlowPromptItem) {
   const matched = PROMPT_TRIGGER_OPTIONS.find(option => option.value === value);
   return matched?.label ?? value;
 }
+
+// --- Regex handling ---
+type FlowBoolKey = 'use_tavern_regex';
+function setFlowBool(key: FlowBoolKey, event: Event) {
+  patch({ [key]: (event.target as HTMLInputElement).checked } as Partial<EwFlowConfig>);
+}
+function addCustomRegex() {
+  const nextRules = [...flow.value.custom_regex_rules, {
+    id: `regex_${simpleHash(`${flow.value.id}-${flow.value.custom_regex_rules.length}-${Date.now()}`)}`,
+    name: '',
+    enabled: true,
+    find_regex: '',
+    replace_string: '',
+  }];
+  patch({ custom_regex_rules: nextRules });
+}
+function removeCustomRegex(index: number) {
+  patch({ custom_regex_rules: flow.value.custom_regex_rules.filter((_, i) => i !== index) });
+}
+function setRegexEnabled(index: number, event: Event) {
+  const nextRules = flow.value.custom_regex_rules.map((rule, i) =>
+    i === index ? { ...rule, enabled: (event.target as HTMLInputElement).checked } : rule,
+  );
+  patch({ custom_regex_rules: nextRules });
+}
+function patchRegexText(index: number, key: 'name' | 'find_regex' | 'replace_string', event: Event) {
+  const nextRules = flow.value.custom_regex_rules.map((rule, i) =>
+    i === index ? { ...rule, [key]: (event.target as HTMLInputElement).value } : rule,
+  );
+  patch({ custom_regex_rules: nextRules });
+}
 </script>
 
 <style scoped>
@@ -372,6 +439,17 @@ function promptTriggerSummary(item: EwFlowPromptItem) {
 .ew-flow-card__section { border-radius: 0.86rem; border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 34%, transparent); background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 8%, rgba(0, 0, 0, 0.12)); padding: 0.62rem; }
 .ew-flow-card__section h4 { margin: 0 0 0.58rem; font-size: 0.88rem; color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 92%, transparent); }
 .ew-flow-card__section-head { display: flex; align-items: center; justify-content: space-between; gap: 0.52rem; margin-bottom: 0.58rem; }
+.ew-flow-card__desc { margin: 0 0 0.56rem; font-size: 0.76rem; line-height: 1.4; color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 62%, transparent); }
+.ew-flow-card__hint-text { margin: 0.22rem 0 0.46rem; font-size: 0.72rem; line-height: 1.35; color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 56%, transparent); }
+.ew-flow-card__subsection { border-radius: 0.72rem; border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 24%, transparent); background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 5%, rgba(0, 0, 0, 0.08)); padding: 0.52rem; margin-bottom: 0.56rem; }
+.ew-flow-card__subsection h5 { margin: 0 0 0.42rem; font-size: 0.84rem; color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 88%, transparent); }
+.ew-flow-card__custom-regex-head { display: flex; align-items: center; justify-content: space-between; gap: 0.42rem; margin: 0.52rem 0 0.36rem; }
+.ew-flow-card__custom-regex-head h6 { margin: 0; font-size: 0.78rem; color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 82%, transparent); }
+.ew-regex-list { display: flex; flex-direction: column; gap: 0.42rem; }
+.ew-regex-item { border-radius: 0.64rem; border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 32%, transparent); background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 8%, rgba(0, 0, 0, 0.1)); padding: 0.42rem 0.5rem; }
+.ew-regex-item__head { display: flex; align-items: center; gap: 0.42rem; margin-bottom: 0.36rem; }
+.ew-regex-item__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.78rem; color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 88%, transparent); }
+.ew-regex-item__body { display: flex; flex-direction: column; gap: 0.36rem; }
 .ew-grid { display: grid; gap: 0.66rem; }
 .ew-grid--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .ew-checkbox { display: inline-flex; align-items: center; gap: 0.42rem; font-size: 0.8rem; color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 86%, transparent); }
@@ -381,6 +459,7 @@ function promptTriggerSummary(item: EwFlowPromptItem) {
 .ew-check-list { display: flex; flex-direction: column; gap: 0.42rem; padding: 0.16rem 0; }
 .ew-subhead { display: flex; align-items: center; justify-content: space-between; gap: 0.46rem; margin-bottom: 0.46rem; }
 .ew-subhead h5 { margin: 0; font-size: 0.82rem; color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 90%, transparent); }
+.ew-subhead h6 { margin: 0; font-size: 0.78rem; color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 86%, transparent); }
 .ew-inline { display: inline-flex; align-items: center; gap: 0.4rem; }
 .ew-empty { border-radius: 0.72rem; border: 1px dashed color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 44%, transparent); padding: 0.58rem 0.64rem; font-size: 0.78rem; color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 76%, transparent); }
 .ew-prompt-list { display: flex; flex-direction: column; gap: 0.54rem; }

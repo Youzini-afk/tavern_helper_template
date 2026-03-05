@@ -23,6 +23,34 @@ function applyContentFilters(text: string, extractRules: TextSliceRule[], exclud
   return content;
 }
 
+function applyRegexProcessing(text: string, flow: EwFlowConfig): string {
+  let result = text;
+
+  // Step 1: Apply SillyTavern's active regex scripts if enabled.
+  if (flow.use_tavern_regex && typeof formatAsTavernRegexedString === 'function') {
+    try {
+      result = formatAsTavernRegexedString(result, 'ai_output', 'prompt') ?? result;
+    } catch {
+      // Tavern regex failed — proceed with unmodified text.
+    }
+  }
+
+  // Step 2: Apply custom regex rules.
+  for (const rule of flow.custom_regex_rules) {
+    if (!rule.enabled || !rule.find_regex.trim()) {
+      continue;
+    }
+    try {
+      const regex = new RegExp(rule.find_regex, 'g');
+      result = result.replace(regex, rule.replace_string);
+    } catch {
+      // Invalid regex — skip this rule silently.
+    }
+  }
+
+  return result;
+}
+
 function getMvuSnapshot(messageId: number): { message_id: number; stat_data: Record<string, any> } {
   const mvu = _.get(window, 'Mvu');
   if (!mvu || !_.isFunction(mvu.getMvuData)) {
@@ -48,11 +76,17 @@ function getContextMessages(flow: EwFlowConfig): Array<{ role: 'system' | 'assis
 
   const messages = getChatMessages(`0-${lastId}`, { hide_state: 'unhidden' })
     .slice(-flow.context_turns)
-    .map(msg => ({
-      role: msg.role,
-      content: applyContentFilters(msg.message ?? '', flow.extract_rules, flow.exclude_rules),
-      message_id: msg.message_id,
-    }))
+    .map(msg => {
+      let content = msg.message ?? '';
+      // Apply regex processing first, then content filters (extract/exclude slices).
+      content = applyRegexProcessing(content, flow);
+      content = applyContentFilters(content, flow.extract_rules, flow.exclude_rules);
+      return {
+        role: msg.role,
+        content,
+        message_id: msg.message_id,
+      };
+    })
     .filter(msg => Boolean(msg.content.trim()));
 
   return messages;

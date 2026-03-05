@@ -93,6 +93,14 @@ export const EwFlowConfigSchema = z.object({
   context_turns: z.coerce.number().int().min(1).default(8),
   extract_rules: z.array(TextSliceRuleSchema).default([]),
   exclude_rules: z.array(TextSliceRuleSchema).default([]),
+  use_tavern_regex: z.boolean().default(false),
+  custom_regex_rules: z.array(z.object({
+    id: z.string().min(1),
+    name: z.string().default(''),
+    enabled: z.boolean().default(true),
+    find_regex: z.string().default(''),
+    replace_string: z.string().default(''),
+  })).default([]),
   request_template: z.string().default(''),
   headers_json: z.string().default(''),
 });
