@@ -38,8 +38,13 @@ function makeDefaultApiPreset(index: number): EwApiPreset {
   return EwApiPresetSchema.parse({
     id,
     name: `API配置 ${index}`,
+    mode: 'workflow_http',
+    use_main_api: false,
     api_url: '',
     api_key: '',
+    model: '',
+    api_source: 'openai',
+    model_candidates: [],
     headers_json: '',
   });
 }
@@ -183,6 +188,11 @@ function normalizeApiPresets(rawPresets: EwApiPreset[]): EwApiPreset[] {
       ...parsed,
       id,
       name,
+      mode: parsed.mode ?? 'workflow_http',
+      use_main_api: parsed.use_main_api ?? false,
+      model: parsed.model ?? '',
+      api_source: parsed.api_source ?? 'openai',
+      model_candidates: parsed.model_candidates ?? [],
     });
   });
 
@@ -242,8 +252,13 @@ function normalizeSettings(raw: unknown): EwSettings {
       const createdPreset = EwApiPresetSchema.parse({
         id: ensurePresetId('', apiPresets.length, new Set(apiPresets.map(preset => preset.id))),
         name: ensurePresetName(`${nextFlow.name || '工作流'} API`, usedPresetNames),
+        mode: 'workflow_http',
+        use_main_api: false,
         api_url: nextFlow.api_url,
         api_key: nextFlow.api_key,
+        model: '',
+        api_source: 'openai',
+        model_candidates: [],
         headers_json: nextFlow.headers_json,
       });
       apiPresets.push(createdPreset);

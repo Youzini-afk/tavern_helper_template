@@ -4,6 +4,10 @@
       <div class="ew-api-card__summary">
         <strong class="ew-api-card__name">{{ preset.name || `API配置 ${index + 1}` }}</strong>
         <div class="ew-api-card__chips">
+          <span class="ew-api-card__chip">{{ preset.mode === 'workflow_http' ? '工作流HTTP' : '酒馆连接器' }}</span>
+          <span v-if="preset.mode === 'llm_connector'" class="ew-api-card__chip">
+            {{ preset.use_main_api ? '主API模型' : `模型 ${preset.model || '未选'}` }}
+          </span>
           <span class="ew-api-card__chip">工作流引用 {{ bindCount }}</span>
         </div>
         <p class="ew-api-card__endpoint">URL: {{ endpointSummary }}</p>
@@ -25,7 +29,25 @@
           <EwFieldRow label="预设名称" :help="help('api_preset.name')">
             <input :value="preset.name" type="text" @input="setText('name', $event)" />
           </EwFieldRow>
-          <EwFieldRow label="API URL" :help="help('api_preset.api_url')">
+          <EwFieldRow label="API模式" :help="help('api_preset.mode')">
+            <select :value="preset.mode" @change="setMode">
+              <option value="workflow_http">自定义工作流API</option>
+              <option value="llm_connector">酒馆连接器</option>
+            </select>
+          </EwFieldRow>
+
+          <EwFieldRow v-if="preset.mode === 'llm_connector'" label="使用主API" :help="help('api_preset.use_main_api')">
+            <label class="ew-api-card__check-row">
+              <input :checked="preset.use_main_api" type="checkbox" @change="setUseMainApi" />
+              <span>直接使用酒馆当前 API 和模型</span>
+            </label>
+          </EwFieldRow>
+
+          <EwFieldRow
+            v-if="preset.mode === 'workflow_http' || !preset.use_main_api"
+            label="API URL"
+            :help="help('api_preset.api_url')"
+          >
             <input
               :value="preset.api_url"
               type="text"
@@ -33,10 +55,43 @@
               @input="setText('api_url', $event)"
             />
           </EwFieldRow>
-          <EwFieldRow label="API Key" :help="help('api_preset.api_key')">
+
+          <EwFieldRow
+            v-if="preset.mode === 'workflow_http' || !preset.use_main_api"
+            label="API Key"
+            :help="help('api_preset.api_key')"
+          >
             <input :value="preset.api_key" type="password" @input="setText('api_key', $event)" />
           </EwFieldRow>
-          <EwFieldRow label="额外请求头(JSON对象)" :help="help('api_preset.headers_json')">
+
+          <EwFieldRow v-if="preset.mode === 'llm_connector' && !preset.use_main_api" label="模型" :help="help('api_preset.model')">
+            <div class="ew-api-card__model-wrap">
+              <input
+                :value="preset.model"
+                type="text"
+                :list="modelListId"
+                :placeholder="help('api_preset.model')?.placeholder"
+                @input="setText('model', $event)"
+              />
+              <button
+                type="button"
+                class="ew-api-card__action"
+                :disabled="loadingModels"
+                @click="loadModels"
+              >
+                {{ loadingModels ? '加载中...' : '加载模型列表' }}
+              </button>
+              <datalist :id="modelListId">
+                <option v-for="model in preset.model_candidates" :key="model" :value="model" />
+              </datalist>
+            </div>
+          </EwFieldRow>
+
+          <EwFieldRow
+            v-if="preset.mode === 'workflow_http'"
+            label="额外请求头(JSON对象)"
+            :help="help('api_preset.headers_json')"
+          >
             <textarea
               :value="preset.headers_json"
               rows="3"
@@ -69,7 +124,21 @@ const emit = defineEmits<{
 }>();
 
 const preset = computed(() => props.modelValue);
+const loadingModels = ref(false);
+const modelListId = computed(() => `ew-model-list-${preset.value.id || props.index}`);
 const endpointSummary = computed(() => {
+  if (preset.value.mode === 'llm_connector') {
+    if (preset.value.use_main_api) {
+      return '酒馆主API（直接使用当前连接器与模型）';
+    }
+    const endpoint = preset.value.api_url.trim();
+    if (!endpoint) {
+      return '连接器未配置（缺少 API URL）';
+    }
+    const model = preset.value.model.trim() || '未选模型';
+    return `${endpoint} / ${model}`;
+  }
+
   const endpoint = preset.value.api_url.trim();
   if (!endpoint) {
     return '未配置';
@@ -91,9 +160,55 @@ function patch(partial: Partial<EwApiPreset>) {
   });
 }
 
-function setText(key: keyof EwApiPreset, event: Event) {
+function setText(key: 'name' | 'api_url' | 'api_key' | 'model' | 'headers_json', event: Event) {
   const next = (event.target as HTMLInputElement | HTMLTextAreaElement).value;
   patch({ [key]: next } as Partial<EwApiPreset>);
+}
+
+function setMode(event: Event) {
+  const mode = (event.target as HTMLSelectElement).value;
+  if (mode !== 'workflow_http' && mode !== 'llm_connector') {
+    return;
+  }
+  patch({ mode });
+}
+
+function setUseMainApi(event: Event) {
+  patch({ use_main_api: (event.target as HTMLInputElement).checked });
+}
+
+async function loadModels() {
+  if (typeof getModelList !== 'function') {
+    toastr.error('当前环境不支持 getModelList', 'Evolution World');
+    return;
+  }
+
+  const apiurl = preset.value.api_url.trim();
+  if (!apiurl) {
+    toastr.warning('请先填写 API URL', 'Evolution World');
+    return;
+  }
+
+  loadingModels.value = true;
+  try {
+    const list = await getModelList({
+      apiurl,
+      key: preset.value.api_key.trim() || undefined,
+    });
+    const deduped = Array.from(new Set(list.map(item => item.trim()).filter(Boolean)));
+    const current = preset.value.model.trim();
+    const model_candidates = current && !deduped.includes(current) ? [current, ...deduped] : deduped;
+    patch({
+      model_candidates,
+      model: current || model_candidates[0] || '',
+    });
+    toastr.success(`已加载 ${model_candidates.length} 个模型`, 'Evolution World');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    toastr.error(`加载模型失败: ${message}`, 'Evolution World');
+  } finally {
+    loadingModels.value = false;
+  }
 }
 </script>
 
@@ -206,6 +321,24 @@ function setText(key: keyof EwApiPreset, event: Event) {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.ew-api-card__check-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 86%, transparent);
+  font-size: 0.82rem;
+}
+
+.ew-api-card__model-wrap {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.52rem;
+}
+
+.ew-api-card__model-wrap datalist {
+  display: none;
+}
+
 .ew-api-expand-enter-active,
 .ew-api-expand-leave-active {
   transition:
@@ -236,6 +369,10 @@ function setText(key: keyof EwApiPreset, event: Event) {
   }
 
   .ew-api-card__grid.two {
+    grid-template-columns: 1fr;
+  }
+
+  .ew-api-card__model-wrap {
     grid-template-columns: 1fr;
   }
 }

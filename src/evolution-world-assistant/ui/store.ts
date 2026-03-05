@@ -26,8 +26,13 @@ function createApiPreset(index: number): EwApiPreset {
   return EwApiPresetSchema.parse({
     id: `api_${index}_${simpleHash(`ui-api-${index}-${Date.now()}`)}`,
     name: `API配置 ${index}`,
+    mode: 'workflow_http',
+    use_main_api: false,
     api_url: '',
     api_key: '',
+    model: '',
+    api_source: 'openai',
+    model_candidates: [],
     headers_json: '',
   });
 }

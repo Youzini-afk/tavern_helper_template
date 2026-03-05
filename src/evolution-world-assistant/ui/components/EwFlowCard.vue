@@ -245,8 +245,26 @@ const flow = computed(() => props.modelValue);
 const expandedPromptId = ref<string | null>(null);
 const selectedPreset = computed(() => props.apiPresets.find(preset => preset.id === flow.value.api_preset_id) ?? null);
 const endpointSummary = computed(() => {
-  const endpoint = selectedPreset.value?.api_url.trim() ?? '';
-  if (!endpoint) return '未配置';
+  const preset = selectedPreset.value;
+  if (!preset) {
+    return '未绑定API配置';
+  }
+  if (preset.mode === 'llm_connector') {
+    if (preset.use_main_api) {
+      return '酒馆主API（当前连接器与模型）';
+    }
+    const endpoint = preset.api_url.trim();
+    const model = preset.model.trim() || '未选模型';
+    if (!endpoint) {
+      return `连接器未配置（${model}）`;
+    }
+    const merged = `${endpoint} / ${model}`;
+    return merged.length <= 72 ? merged : `${merged.slice(0, 69)}...`;
+  }
+  const endpoint = preset.api_url.trim();
+  if (!endpoint) {
+    return '未配置';
+  }
   return endpoint.length <= 64 ? endpoint : `${endpoint.slice(0, 61)}...`;
 });
 const presetLabel = computed(() => selectedPreset.value?.name?.trim() || '未绑定');
