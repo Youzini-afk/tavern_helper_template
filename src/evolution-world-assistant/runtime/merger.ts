@@ -29,9 +29,9 @@ export function mergeFlowResults(results: MergeInput): MergedPlan {
     ),
   );
 
-  const upsertMap = new Map<string, Prioritized<{ content: string; enabled: boolean }>>();
-  const deleteMap = new Map<string, Prioritized<null>>();
-  const toggleMap = new Map<string, Prioritized<{ enabled: boolean }>>();
+  // Declarative: desired_entries (final state) and remove_entries (deletions).
+  const desiredMap = new Map<string, Prioritized<{ content: string; enabled: boolean }>>();
+  const removeMap = new Map<string, Prioritized<null>>();
 
   let controllerModel: Prioritized<ControllerModel> | undefined;
   const replyParts: string[] = [];
@@ -42,35 +42,23 @@ export function mergeFlowResults(results: MergeInput): MergedPlan {
     const flowOrder = result.flow_order;
     const worldbookOps = result.response.operations.worldbook;
 
-    for (const upsert of worldbookOps.upsert_entries) {
+    for (const desired of worldbookOps.desired_entries) {
       const next: Prioritized<{ content: string; enabled: boolean }> = {
-        value: { content: upsert.content, enabled: upsert.enabled },
+        value: { content: desired.content, enabled: desired.enabled },
         priority,
         flow_order: flowOrder,
       };
-      const current = upsertMap.get(upsert.name);
+      const current = desiredMap.get(desired.name);
       if (shouldReplace(current, next)) {
-        upsertMap.set(upsert.name, next);
+        desiredMap.set(desired.name, next);
       }
     }
 
-    for (const deletion of worldbookOps.delete_entries) {
+    for (const removal of worldbookOps.remove_entries) {
       const next: Prioritized<null> = { value: null, priority, flow_order: flowOrder };
-      const current = deleteMap.get(deletion.name);
+      const current = removeMap.get(removal.name);
       if (shouldReplace(current, next)) {
-        deleteMap.set(deletion.name, next);
-      }
-    }
-
-    for (const toggle of worldbookOps.toggle_entries) {
-      const next: Prioritized<{ enabled: boolean }> = {
-        value: { enabled: toggle.enabled },
-        priority,
-        flow_order: flowOrder,
-      };
-      const current = toggleMap.get(toggle.name);
-      if (shouldReplace(current, next)) {
-        toggleMap.set(toggle.name, next);
+        removeMap.set(removal.name, next);
       }
     }
 
@@ -92,18 +80,18 @@ export function mergeFlowResults(results: MergeInput): MergedPlan {
     diagnostics[result.flow.id] = result.response.diagnostics;
   }
 
-  for (const [name, deletion] of deleteMap.entries()) {
-    const upsert = upsertMap.get(name);
-    if (!upsert) {
+  // Conflict resolution: remove wins over desired when priority is >= .
+  for (const [name, removal] of removeMap.entries()) {
+    const desired = desiredMap.get(name);
+    if (!desired) {
       continue;
     }
 
-    if (deletion.priority > upsert.priority || deletion.priority === upsert.priority) {
-      upsertMap.delete(name);
-      continue;
+    if (removal.priority >= desired.priority) {
+      desiredMap.delete(name);
+    } else {
+      removeMap.delete(name);
     }
-
-    deleteMap.delete(name);
   }
 
   if (!controllerModel) {
@@ -112,16 +100,12 @@ export function mergeFlowResults(results: MergeInput): MergedPlan {
 
   return {
     worldbook: {
-      upsert_entries: [...upsertMap.entries()].map(([name, value]) => ({
+      desired_entries: [...desiredMap.entries()].map(([name, value]) => ({
         name,
         content: value.value.content,
         enabled: value.value.enabled,
       })),
-      delete_entries: [...deleteMap.keys()].map(name => ({ name })),
-      toggle_entries: [...toggleMap.entries()].map(([name, value]) => ({
-        name,
-        enabled: value.value.enabled,
-      })),
+      remove_entries: [...removeMap.keys()].map(name => ({ name })),
     },
     controller_model: controllerModel.value,
     reply_instruction: replyParts.join('\n\n'),

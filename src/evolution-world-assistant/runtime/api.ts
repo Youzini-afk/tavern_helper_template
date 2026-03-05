@@ -2,7 +2,7 @@ import { runWorkflow } from './pipeline';
 import { EwSettingsSchema } from './types';
 import { getSettings, getLastIo, getLastRun, patchSettings, readControllerBackup } from './settings';
 import { validateEjsTemplate } from './controller-renderer';
-import { ensureRuntimeWorldbook } from './worldbook-runtime';
+import { resolveTargetWorldbook } from './worldbook-runtime';
 
 declare global {
   interface Window {
@@ -22,9 +22,8 @@ declare global {
 async function validateControllerSyntax(): Promise<{ ok: boolean; reason?: string }> {
   try {
     const settings = getSettings();
-    const runtime = await ensureRuntimeWorldbook(settings, false);
-    const entries = await getWorldbook(runtime.worldbook_name);
-    const controller = entries.find(entry => entry.name === settings.controller_entry_name);
+    const target = await resolveTargetWorldbook(settings);
+    const controller = target.entries.find(entry => entry.name === settings.controller_entry_name);
     if (!controller) {
       return { ok: false, reason: `controller entry not found: ${settings.controller_entry_name}` };
     }
@@ -39,8 +38,8 @@ async function validateControllerSyntax(): Promise<{ ok: boolean; reason?: strin
 async function rollbackController(): Promise<{ ok: boolean; reason?: string }> {
   try {
     const settings = getSettings();
-    const runtime = await ensureRuntimeWorldbook(settings, false);
-    const backup = readControllerBackup(runtime.chat_id);
+    const chatId = String(SillyTavern.getCurrentChatId?.() ?? SillyTavern.chatId ?? 'unknown');
+    const backup = readControllerBackup(chatId);
     if (!backup) {
       return { ok: false, reason: 'no backup found for current chat' };
     }

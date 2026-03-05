@@ -202,9 +202,8 @@ export type Prioritized<T> = {
 
 export type MergedPlan = {
   worldbook: {
-    upsert_entries: Array<{ name: string; content: string; enabled: boolean }>;
-    delete_entries: Array<{ name: string }>;
-    toggle_entries: Array<{ name: string; enabled: boolean }>;
+    desired_entries: Array<{ name: string; content: string; enabled: boolean }>;
+    remove_entries: Array<{ name: string }>;
   };
   controller_model: import('./contracts').ControllerModel;
   reply_instruction: string;

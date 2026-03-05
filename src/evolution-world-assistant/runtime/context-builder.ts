@@ -78,8 +78,9 @@ export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRe
   // Resolve the target worldbook (character card's primary worldbook).
   let worldbookName = '';
   let worldbookEntries: Array<{ name: string; enabled: boolean; content: string }> = [];
+  let target: import('./worldbook-runtime').TargetWorldbook | undefined;
   try {
-    const target = await resolveTargetWorldbook(input.settings);
+    target = await resolveTargetWorldbook(input.settings);
     worldbookName = target.worldbook_name;
     worldbookEntries = target.entries.map(entry => ({
       name: entry.name,
@@ -90,8 +91,8 @@ export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRe
     // Proceed with empty worldbook snapshot.
   }
 
-  // Collect full character/worldbook/preset context.
-  const fullContext = await getFullWorldbookContext();
+  // Collect full character/worldbook/preset context, reusing the already-resolved target.
+  const fullContext = await getFullWorldbookContext(target);
   const presetInfo = getPresetSnapshot();
   const contextMessages = getContextMessages(input.flow);
 

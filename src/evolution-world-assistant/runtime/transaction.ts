@@ -20,38 +20,37 @@ function isManagedEntryName(settings: EwSettings, name: string): boolean {
   return name.startsWith(settings.dynamic_entry_prefix);
 }
 
-function upsertEntry(entries: WorldbookEntry[], name: string, content: string, enabled: boolean): WorldbookEntry[] {
-  const cloned = klona(entries);
-  const existing = findEntry(cloned, name);
-  if (existing) {
-    existing.content = content;
-    existing.enabled = enabled;
-    return cloned;
-  }
+/**
+ * Apply declarative diff: reconcile the worldbook entries to match the desired state.
+ *
+ * - desired_entries: each entry should exist with the given content and enabled state.
+ *   If it already exists, overwrite content/enabled. If not, create it.
+ * - remove_entries: each named entry should be deleted if it exists.
+ */
+function applyDeclarativeDiff(
+  currentEntries: WorldbookEntry[],
+  desiredEntries: Array<{ name: string; content: string; enabled: boolean }>,
+  removeEntries: Array<{ name: string }>,
+): WorldbookEntry[] {
+  // Step 1: Remove entries.
+  const removeSet = new Set(removeEntries.map(e => e.name));
+  let result = currentEntries.filter(entry => !removeSet.has(entry.name));
 
-  cloned.push(ensureDefaultEntry(name, content, enabled, cloned));
-  return cloned;
-}
+  // Step 2: Apply desired state.
+  for (const desired of desiredEntries) {
+    const cloned = klona(result);
+    const existing = cloned.find(entry => entry.name === desired.name);
 
-function deleteByNames(entries: WorldbookEntry[], names: string[]): WorldbookEntry[] {
-  if (names.length === 0) {
-    return klona(entries);
-  }
-
-  const nameSet = new Set(names);
-  return entries.filter(entry => !nameSet.has(entry.name));
-}
-
-function toggleEntries(entries: WorldbookEntry[], toggles: Array<{ name: string; enabled: boolean }>): WorldbookEntry[] {
-  const cloned = klona(entries);
-  for (const toggle of toggles) {
-    const entry = findEntry(cloned, toggle.name);
-    if (!entry) {
-      throw new Error(`toggle target entry not found: ${toggle.name}`);
+    if (existing) {
+      existing.content = desired.content;
+      existing.enabled = desired.enabled;
+      result = cloned;
+    } else {
+      result = [...result, ensureDefaultEntry(desired.name, desired.content, desired.enabled, result)];
     }
-    entry.enabled = toggle.enabled;
   }
-  return cloned;
+
+  return result;
 }
 
 export async function commitMergedPlan(
@@ -71,33 +70,39 @@ export async function commitMergedPlan(
 
   // Validate that all operations target managed entry names.
   const allNames = [
-    ...mergedPlan.worldbook.upsert_entries.map(entry => entry.name),
-    ...mergedPlan.worldbook.delete_entries.map(entry => entry.name),
-    ...mergedPlan.worldbook.toggle_entries.map(entry => entry.name),
+    ...mergedPlan.worldbook.desired_entries.map(entry => entry.name),
+    ...mergedPlan.worldbook.remove_entries.map(entry => entry.name),
   ];
   const unmanaged = allNames.filter(name => !isManagedEntryName(settings, name));
   if (unmanaged.length > 0) {
     throw new Error(`unmanaged entry name(s): ${unmanaged.join(', ')}`);
   }
 
-  // Apply worldbook operations.
-  let nextEntries = deleteByNames(beforeEntries, mergedPlan.worldbook.delete_entries.map(entry => entry.name));
-
-  for (const upsert of mergedPlan.worldbook.upsert_entries) {
-    nextEntries = upsertEntry(nextEntries, upsert.name, upsert.content, upsert.enabled);
-  }
-
-  nextEntries = toggleEntries(nextEntries, mergedPlan.worldbook.toggle_entries);
+  // Apply declarative diff to worldbook entries.
+  let nextEntries = applyDeclarativeDiff(
+    beforeEntries,
+    mergedPlan.worldbook.desired_entries,
+    mergedPlan.worldbook.remove_entries,
+  );
 
   // Write the EJS controller entry into the character worldbook.
-  nextEntries = upsertEntry(nextEntries, settings.controller_entry_name, controllerTemplate, true);
+  const ctrlExisting = nextEntries.find(e => e.name === settings.controller_entry_name);
+  if (ctrlExisting) {
+    const cloned = klona(nextEntries);
+    const ctrl = cloned.find(e => e.name === settings.controller_entry_name)!;
+    ctrl.content = controllerTemplate;
+    ctrl.enabled = true;
+    nextEntries = cloned;
+  } else {
+    nextEntries = [...nextEntries, ensureDefaultEntry(settings.controller_entry_name, controllerTemplate, true, nextEntries)];
+  }
 
   // Commit all changes in one atomic operation.
   await replaceWorldbook(target.worldbook_name, nextEntries, { render: 'debounced' });
 
   // Mark floor binding: record which EW/Dyn/ entries belong to this message.
   if (settings.floor_binding_enabled && messageId >= 0) {
-    const floorEntryNames = mergedPlan.worldbook.upsert_entries
+    const floorEntryNames = mergedPlan.worldbook.desired_entries
       .map(entry => entry.name)
       .filter(name => name.startsWith(settings.dynamic_entry_prefix));
 

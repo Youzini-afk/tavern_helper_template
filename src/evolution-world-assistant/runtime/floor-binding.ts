@@ -83,7 +83,16 @@ export async function cleanupOrphanedEntries(settings: EwSettings): Promise<numb
     }
   }
 
-  // Find EW/Dyn/ entries in the worldbook that are NOT in any valid floor binding.
+  // We only want to remove EW/Dyn/ entries in the worldbook that:
+  // 1) Match the dynamic_entry_prefix
+  // 2) Are NOT currently bound to any existing floor
+  // 3) There IS at least one floor binding in the chat (meaning floor binding has been used)
+  //    — if no bindings exist at all, this is likely a fresh chat or floor binding was just enabled,
+  //    and we should NOT remove anything.
+  if (bindings.size === 0) {
+    return 0;
+  }
+
   const orphanedNames: string[] = [];
   for (const entry of target.entries) {
     if (entry.name.startsWith(settings.dynamic_entry_prefix) && !validEntryNames.has(entry.name)) {

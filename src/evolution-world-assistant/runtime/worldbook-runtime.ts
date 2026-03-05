@@ -79,7 +79,7 @@ export async function resolveTargetWorldbook(_settings: EwSettings): Promise<Tar
  *  - Character's primary worldbook entries
  *  - All global worldbook entries
  */
-export async function getFullWorldbookContext(): Promise<FullWorldbookContext> {
+export async function getFullWorldbookContext(preloadedTarget?: TargetWorldbook): Promise<FullWorldbookContext> {
   const charName = getCurrentCharacterName() ?? '';
   let charDescription = '';
 
@@ -90,15 +90,22 @@ export async function getFullWorldbookContext(): Promise<FullWorldbookContext> {
     // Character not available — proceed with empty description.
   }
 
-  const charWb = getCharWorldbookNames('current');
+  // Reuse preloaded target if available, otherwise read from scratch.
   let charEntries: Array<{ name: string; enabled: boolean; content: string }> = [];
-  const charWbName = charWb.primary ?? '';
+  let charWbName = '';
 
-  if (charWb.primary) {
-    try {
-      charEntries = toEntrySnapshot(await getWorldbook(charWb.primary));
-    } catch {
-      // Cannot read — proceed with empty.
+  if (preloadedTarget) {
+    charWbName = preloadedTarget.worldbook_name;
+    charEntries = toEntrySnapshot(preloadedTarget.entries);
+  } else {
+    const charWb = getCharWorldbookNames('current');
+    charWbName = charWb.primary ?? '';
+    if (charWb.primary) {
+      try {
+        charEntries = toEntrySnapshot(await getWorldbook(charWb.primary));
+      } catch {
+        // Cannot read — proceed with empty.
+      }
     }
   }
 

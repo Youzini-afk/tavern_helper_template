@@ -136,20 +136,14 @@ export const FlowRequestSchema = z.object({
   serial_results: z.array(z.record(z.string(), z.any())).default([]),
 });
 
-export const WorldbookUpsertEntrySchema = z.object({
+export const WorldbookDesiredEntrySchema = z.object({
   name: z.string().min(1),
   content: z.string().default(''),
   enabled: z.boolean().default(true),
-  floor_bind: z.number().optional(),
 });
 
-export const WorldbookDeleteEntrySchema = z.object({
+export const WorldbookRemoveEntrySchema = z.object({
   name: z.string().min(1),
-});
-
-export const WorldbookToggleEntrySchema = z.object({
-  name: z.string().min(1),
-  enabled: z.boolean(),
 });
 
 export const ControllerVariableSchema = z.object({
@@ -179,11 +173,10 @@ export const FlowResponseSchema = z.object({
   operations: z.object({
     worldbook: z
       .object({
-        upsert_entries: z.array(WorldbookUpsertEntrySchema).default([]),
-        delete_entries: z.array(WorldbookDeleteEntrySchema).default([]),
-        toggle_entries: z.array(WorldbookToggleEntrySchema).default([]),
+        desired_entries: z.array(WorldbookDesiredEntrySchema).default([]),
+        remove_entries: z.array(WorldbookRemoveEntrySchema).default([]),
       })
-      .default({ upsert_entries: [], delete_entries: [], toggle_entries: [] }),
+      .default({ desired_entries: [], remove_entries: [] }),
     controller_model: ControllerModelSchema.optional(),
   }),
   diagnostics: z
