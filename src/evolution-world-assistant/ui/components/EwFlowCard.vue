@@ -119,31 +119,79 @@
             <h4>行为参数</h4>
           </div>
 
+          <!-- Selects row -->
           <div class="ew-grid ew-grid--two">
             <EwFieldRow label="角色名称行为">
-              <div class="ew-radio-group">
-                <label class="ew-radio"><input :name="nameBehaviorGroupName" :checked="flow.behavior_options.name_behavior === 'none'" type="radio" @change="setBehaviorSelect('name_behavior', 'none')" /><span>无</span></label>
-                <label class="ew-radio"><input :name="nameBehaviorGroupName" :checked="flow.behavior_options.name_behavior === 'default'" type="radio" @change="setBehaviorSelect('name_behavior', 'default')" /><span>默认</span></label>
-                <label class="ew-radio"><input :name="nameBehaviorGroupName" :checked="flow.behavior_options.name_behavior === 'complete_target'" type="radio" @change="setBehaviorSelect('name_behavior', 'complete_target')" /><span>补全对象</span></label>
-                <label class="ew-radio"><input :name="nameBehaviorGroupName" :checked="flow.behavior_options.name_behavior === 'message_content'" type="radio" @change="setBehaviorSelect('name_behavior', 'message_content')" /><span>消息内容</span></label>
-              </div>
+              <select :value="flow.behavior_options.name_behavior" @change="setBehaviorSelectByEvent('name_behavior', $event)">
+                <option value="none">无</option>
+                <option value="default">默认</option>
+                <option value="complete_target">补全对象</option>
+                <option value="message_content">消息内容</option>
+              </select>
             </EwFieldRow>
             <EwFieldRow label="推理强度">
               <select :value="flow.behavior_options.reasoning_effort" @change="setBehaviorSelectByEvent('reasoning_effort', $event)">
                 <option value="auto">自动</option><option value="low">低</option><option value="medium">中</option><option value="high">高</option>
               </select>
             </EwFieldRow>
-            <EwFieldRow label="Verbosity">
+            <EwFieldRow label="详细程度">
               <select :value="flow.behavior_options.verbosity" @change="setBehaviorSelectByEvent('verbosity', $event)">
-                <option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
+                <option value="auto">自动</option><option value="low">低</option><option value="medium">中</option><option value="high">高</option>
               </select>
             </EwFieldRow>
-            <div class="ew-check-list">
-              <label class="ew-checkbox"><input :checked="flow.behavior_options.continue_prefill" type="checkbox" @change="setBehaviorBool('continue_prefill', $event)" /><span>继续预填充</span></label>
-              <label class="ew-checkbox"><input :checked="flow.behavior_options.squash_system_messages" type="checkbox" @change="setBehaviorBool('squash_system_messages', $event)" /><span>压缩系统消息</span></label>
-              <label class="ew-checkbox"><input :checked="flow.behavior_options.enable_function_calling" type="checkbox" @change="setBehaviorBool('enable_function_calling', $event)" /><span>启用函数调用</span></label>
-              <label class="ew-checkbox"><input :checked="flow.behavior_options.send_inline_media" type="checkbox" @change="setBehaviorBool('send_inline_media', $event)" /><span>Send inline media</span></label>
-              <label class="ew-checkbox"><input :checked="flow.behavior_options.request_thinking" type="checkbox" @change="setBehaviorBool('request_thinking', $event)" /><span>请求思维链</span></label>
+          </div>
+
+          <!-- Toggle switches grid -->
+          <div class="ew-toggle-grid">
+            <div class="ew-toggle-item">
+              <button type="button" class="ew-switch" role="switch"
+                :aria-checked="flow.behavior_options.continue_prefill ? 'true' : 'false'"
+                @click="setBehaviorToggle('continue_prefill')">
+                <span class="ew-switch__track" :data-enabled="flow.behavior_options.continue_prefill ? '1' : '0'">
+                  <span class="ew-switch__thumb" />
+                </span>
+              </button>
+              <span class="ew-toggle-item__label">继续预填充</span>
+            </div>
+            <div class="ew-toggle-item">
+              <button type="button" class="ew-switch" role="switch"
+                :aria-checked="flow.behavior_options.squash_system_messages ? 'true' : 'false'"
+                @click="setBehaviorToggle('squash_system_messages')">
+                <span class="ew-switch__track" :data-enabled="flow.behavior_options.squash_system_messages ? '1' : '0'">
+                  <span class="ew-switch__thumb" />
+                </span>
+              </button>
+              <span class="ew-toggle-item__label">压缩系统消息</span>
+            </div>
+            <div class="ew-toggle-item">
+              <button type="button" class="ew-switch" role="switch"
+                :aria-checked="flow.behavior_options.enable_function_calling ? 'true' : 'false'"
+                @click="setBehaviorToggle('enable_function_calling')">
+                <span class="ew-switch__track" :data-enabled="flow.behavior_options.enable_function_calling ? '1' : '0'">
+                  <span class="ew-switch__thumb" />
+                </span>
+              </button>
+              <span class="ew-toggle-item__label">启用函数调用</span>
+            </div>
+            <div class="ew-toggle-item">
+              <button type="button" class="ew-switch" role="switch"
+                :aria-checked="flow.behavior_options.send_inline_media ? 'true' : 'false'"
+                @click="setBehaviorToggle('send_inline_media')">
+                <span class="ew-switch__track" :data-enabled="flow.behavior_options.send_inline_media ? '1' : '0'">
+                  <span class="ew-switch__thumb" />
+                </span>
+              </button>
+              <span class="ew-toggle-item__label">发送内联媒体</span>
+            </div>
+            <div class="ew-toggle-item">
+              <button type="button" class="ew-switch" role="switch"
+                :aria-checked="flow.behavior_options.request_thinking ? 'true' : 'false'"
+                @click="setBehaviorToggle('request_thinking')">
+                <span class="ew-switch__track" :data-enabled="flow.behavior_options.request_thinking ? '1' : '0'">
+                  <span class="ew-switch__thumb" />
+                </span>
+              </button>
+              <span class="ew-toggle-item__label">请求思维链</span>
             </div>
           </div>
         </section>
@@ -154,10 +202,16 @@
 
           <div class="ew-flow-card__subsection">
             <h5>正则处理</h5>
-            <label class="ew-checkbox">
-              <input :checked="flow.use_tavern_regex" type="checkbox" @change="setFlowBool('use_tavern_regex', $event)" />
-              <span>使用酒馆已启用的正则</span>
-            </label>
+            <div class="ew-toggle-item">
+              <button type="button" class="ew-switch" role="switch"
+                :aria-checked="flow.use_tavern_regex ? 'true' : 'false'"
+                @click="patch({ use_tavern_regex: !flow.use_tavern_regex })">
+                <span class="ew-switch__track" :data-enabled="flow.use_tavern_regex ? '1' : '0'">
+                  <span class="ew-switch__thumb" />
+                </span>
+              </button>
+              <span class="ew-toggle-item__label">使用酒馆已启用的正则</span>
+            </div>
             <p class="ew-flow-card__hint-text">开启后，聊天消息会先经过酒馆当前激活的正则脚本处理（全局 + 角色卡正则）。</p>
 
             <div class="ew-flow-card__custom-regex-head">
@@ -306,7 +360,7 @@ const endpointSummary = computed(() => {
   return merged.length <= 72 ? merged : `${merged.slice(0, 69)}...`;
 });
 const presetLabel = computed(() => selectedPreset.value?.name?.trim() || '未绑定');
-const nameBehaviorGroupName = computed(() => `name_behavior_${flow.value.id}`);
+
 const PROMPT_TRIGGER_OPTIONS: Array<{ value: PromptTriggerType; label: string }> = [
   { value: 'all', label: 'All types (default)' },
   { value: 'send', label: '发送' },
@@ -342,9 +396,10 @@ function setGenerationNumber(key: GenerationNumberKey, event: Event) {
   return patchGeneration({ top_p: Number(clamp(raw, 0, 1).toFixed(4)) });
 }
 function setGenerationBool(key: GenerationBoolKey, event: Event) { patchGeneration({ [key]: (event.target as HTMLInputElement).checked } as Partial<EwFlowConfig['generation_options']>); }
-function setBehaviorBool(key: BehaviorBoolKey, event: Event) { patchBehavior({ [key]: (event.target as HTMLInputElement).checked } as Partial<EwFlowConfig['behavior_options']>); }
-function setBehaviorSelect(key: BehaviorSelectKey, value: EwFlowConfig['behavior_options'][BehaviorSelectKey]) { patchBehavior({ [key]: value } as Partial<EwFlowConfig['behavior_options']>); }
-function setBehaviorSelectByEvent(key: Exclude<BehaviorSelectKey, 'name_behavior'>, event: Event) {
+function setBehaviorToggle(key: BehaviorBoolKey) {
+  patchBehavior({ [key]: !flow.value.behavior_options[key] } as Partial<EwFlowConfig['behavior_options']>);
+}
+function setBehaviorSelectByEvent(key: BehaviorSelectKey, event: Event) {
   patchBehavior({ [key]: (event.target as HTMLSelectElement).value as EwFlowConfig['behavior_options'][typeof key] } as Partial<EwFlowConfig['behavior_options']>);
 }
 function makePromptItem(index: number): EwFlowPromptItem {
@@ -397,11 +452,7 @@ function promptTriggerSummary(item: EwFlowPromptItem) {
   return matched?.label ?? value;
 }
 
-// --- Regex handling ---
-type FlowBoolKey = 'use_tavern_regex';
-function setFlowBool(key: FlowBoolKey, event: Event) {
-  patch({ [key]: (event.target as HTMLInputElement).checked } as Partial<EwFlowConfig>);
-}
+
 function addCustomRegex() {
   const nextRules = [...flow.value.custom_regex_rules, {
     id: `regex_${simpleHash(`${flow.value.id}-${flow.value.custom_regex_rules.length}-${Date.now()}`)}`,
@@ -677,6 +728,31 @@ function patchRegexText(index: number, key: 'name' | 'find_regex' | 'replace_str
 
 .ew-grid--two {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* Toggle grid for behavior switches */
+.ew-toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 20%, transparent);
+  background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 5%, rgba(0, 0, 0, 0.08));
+}
+
+.ew-toggle-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ew-toggle-item__label {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 88%, transparent);
+  white-space: nowrap;
 }
 
 .ew-checkbox {
