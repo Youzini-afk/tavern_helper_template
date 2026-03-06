@@ -21,7 +21,14 @@
             {{ entry.type === 'marker' ? '📌' : '📄' }}
           </span>
           <span class="ew-prompt-order__name">{{ entry.name || entry.identifier }}</span>
-          <span v-if="entry.role !== 'system'" class="ew-prompt-order__chip">{{ entry.role }}</span>
+
+          <!-- Inline chips for prompt-type entries -->
+          <template v-if="entry.type === 'prompt'">
+            <span class="ew-prompt-order__chip">{{ entry.role }}</span>
+            <span class="ew-prompt-order__chip">{{ entry.injection_position === 'in_chat' ? '聊天中' : '相对' }}</span>
+            <span v-if="entry.injection_position === 'in_chat'" class="ew-prompt-order__chip">深度 {{ entry.injection_depth }}</span>
+          </template>
+          <span v-else-if="entry.role !== 'system'" class="ew-prompt-order__chip">{{ entry.role }}</span>
 
           <div class="ew-prompt-order__actions">
             <button
@@ -60,6 +67,17 @@
                   <option value="user">user</option>
                   <option value="assistant">assistant</option>
                 </select>
+              </label>
+              <label class="ew-prompt-order__editor-label">
+                插入位置
+                <select :value="entry.injection_position" @change="patchEntry(entry.identifier, 'injection_position', ($event.target as HTMLSelectElement).value)">
+                  <option value="relative">相对</option>
+                  <option value="in_chat">聊天中</option>
+                </select>
+              </label>
+              <label v-if="entry.injection_position === 'in_chat'" class="ew-prompt-order__editor-label">
+                注入深度
+                <input type="number" min="0" :value="entry.injection_depth" @input="patchEntry(entry.identifier, 'injection_depth', Number(($event.target as HTMLInputElement).value) || 0)" />
               </label>
             </div>
             <label class="ew-prompt-order__editor-label">

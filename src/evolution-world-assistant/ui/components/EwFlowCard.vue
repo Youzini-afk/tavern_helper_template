@@ -266,60 +266,6 @@
           />
         </section>
 
-        <section class="ew-flow-card__section">
-          <div class="ew-flow-card__section-head">
-            <h4>提示词配置</h4>
-            <div class="ew-inline">
-              <EwHelpTip v-if="help('flow.prompt_items')" :meta="help('flow.prompt_items')!" />
-              <button type="button" class="ew-flow-card__action" @click="addPromptItem">新增提示词</button>
-            </div>
-          </div>
-
-          <div v-if="flow.prompt_items.length === 0" class="ew-empty">暂无提示词，点击“新增提示词”开始配置。</div>
-          <transition-group v-else name="ew-list" tag="div" class="ew-prompt-list">
-            <article v-for="(item, itemIndex) in flow.prompt_items" :key="item.id" class="ew-prompt-item">
-              <header class="ew-prompt-item__head">
-                <label class="ew-checkbox"><input :checked="item.enabled" type="checkbox" @change="setPromptEnabled(item.id, $event)" /></label>
-                <strong class="ew-prompt-item__name" :title="item.name">{{ item.name || `提示词 ${itemIndex + 1}` }}</strong>
-                <span class="ew-flow-card__chip">{{ item.role }}</span>
-                <span class="ew-flow-card__chip">{{ item.position === 'relative' ? '相对' : '聊天中' }}</span>
-                <span class="ew-flow-card__chip">{{ promptTriggerSummary(item) }}</span>
-                <div class="ew-inline ew-prompt-item__controls">
-                  <button type="button" class="ew-mini-btn" :disabled="itemIndex === 0" @click="movePromptItem(item.id, -1)">↑</button>
-                  <button type="button" class="ew-mini-btn" :disabled="itemIndex >= flow.prompt_items.length - 1" @click="movePromptItem(item.id, 1)">↓</button>
-                  <button type="button" class="ew-mini-btn" @click="togglePromptExpand(item.id)">{{ expandedPromptId === item.id ? '收起' : '编辑' }}</button>
-                  <button type="button" class="ew-mini-btn ew-mini-btn--danger" @click="removePromptItem(item.id)">删除</button>
-                </div>
-              </header>
-
-              <transition name="ew-expand">
-                <div v-if="expandedPromptId === item.id" class="ew-prompt-item__body">
-                  <div class="ew-grid ew-grid--two">
-                    <EwFieldRow label="名称" :help="help('flow.prompt_item.name')"><input :value="item.name" type="text" @input="patchPromptText(item.id, 'name', $event)" /></EwFieldRow>
-                    <EwFieldRow label="角色" :help="help('flow.prompt_item.role')">
-                      <select :value="item.role" @change="patchPromptRole(item.id, $event)">
-                        <option value="system">system</option><option value="user">user</option><option value="assistant">assistant</option>
-                      </select>
-                    </EwFieldRow>
-                    <EwFieldRow label="插入位置" :help="help('flow.prompt_item.position')">
-                      <select :value="item.position" @change="patchPromptPosition(item.id, $event)">
-                        <option value="relative">相对</option><option value="in_chat">聊天中</option>
-                      </select>
-                    </EwFieldRow>
-                    <EwFieldRow label="触发器">
-                      <select :value="getPromptPrimaryTrigger(item)" @change="patchPromptTriggerTypes(item.id, $event)">
-                        <option v-for="option in PROMPT_TRIGGER_OPTIONS" :key="option.value" :value="option.value">
-                          {{ option.label }}
-                        </option>
-                      </select>
-                    </EwFieldRow>
-                  </div>
-                  <EwFieldRow label="内容" :help="help('flow.prompt_item.content')"><textarea :value="item.content" rows="4" @input="patchPromptText(item.id, 'content', $event)" /></EwFieldRow>
-                </div>
-              </transition>
-            </article>
-          </transition-group>
-        </section>
 
         <EwFieldRow label="请求模板(JSON merge)" :help="help('flow.request_template')">
           <textarea :value="flow.request_template" rows="4" :placeholder="help('flow.request_template')?.placeholder" @input="setText('request_template', $event)" />
