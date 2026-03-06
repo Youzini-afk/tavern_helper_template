@@ -1,5 +1,5 @@
 <template>
-  <div ref="rootRef" class="wb-assistant-root" :class="focusCineRootClass" :style="themeStyles">
+  <div ref="rootRef" class="wb-assistant-root" :class="[focusCineRootClass, { 'is-mobile': isMobile }]" :style="themeStyles">
 
     <!-- ═══ Mobile Tab View ═══ -->
     <template v-if="isMobile">
@@ -12009,8 +12009,7 @@ onMounted(() => {
     // Initial + delayed (wait for layout)
     syncHeight();
     requestAnimationFrame(syncHeight);
-    setTimeout(syncHeight, 100);
-    setTimeout(syncHeight, 500);
+    setTimeout(syncHeight, 300);
 
     // Only recalculate on orientation change (screen rotation),
     // NOT on resize (keyboard open/close triggers resize and would compress the panel)
@@ -15939,11 +15938,9 @@ watch(hasUnsavedChanges, (val) => {
   font-weight: 500;
 }
 
-@media (max-width: 768px) {
-  .wb-assistant-root {
-    padding: 6px;
-    gap: 8px;
-  }
+.wb-assistant-root.is-mobile {
+  padding: 6px;
+  gap: 8px;
 
   .wb-header,
   .wb-bindings,
@@ -15998,6 +15995,7 @@ watch(hasUnsavedChanges, (val) => {
   }
 
   .wb-floating-window {
+    position: absolute;
     left: 8px !important;
     right: 8px !important;
     width: auto !important;
@@ -16445,12 +16443,10 @@ watch(hasUnsavedChanges, (val) => {
 /* ═════════════════════════════════════════════════
    Mobile Responsive
    ═════════════════════════════════════════════════ */
-@media (max-width: 768px) {
-  .wb-assistant-root {
-    padding: 6px;
-    gap: 6px;
-    border-radius: 0;
-  }
+.wb-assistant-root.is-mobile {
+  padding: 6px;
+  gap: 6px;
+  border-radius: 0;
 
   /* ── Toolbar ── */
   .toolbar-label {
