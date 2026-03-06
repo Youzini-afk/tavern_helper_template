@@ -755,6 +755,72 @@ function patchRegexText(index: number, key: 'name' | 'find_regex' | 'replace_str
   white-space: nowrap;
 }
 
+/* Switch toggle — duplicated from App.vue because scoped CSS can't pierce child components */
+.ew-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ew-switch__track {
+  width: 2.8rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 58%, transparent);
+  background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 18%, rgba(7, 10, 15, 0.4));
+  box-shadow:
+    inset 0 1px 4px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.06);
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem;
+  transition:
+    border-color 0.3s ease,
+    background 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+.ew-switch__track[data-enabled='1'] {
+  border-color: color-mix(in srgb, var(--ew-success) 65%, transparent);
+  background: color-mix(in srgb, var(--ew-success) 45%, rgba(7, 10, 15, 0.4));
+  box-shadow:
+    inset 0 1px 4px rgba(0, 0, 0, 0.2),
+    0 0 10px color-mix(in srgb, var(--ew-success) 25%, transparent);
+}
+
+.ew-switch__thumb {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--SmartThemeBodyColor, #eef3f9) 90%, transparent);
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(0, 0, 0, 0.1);
+  transform: translateX(0);
+  transition:
+    transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+    background 0.3s ease;
+}
+
+.ew-switch__track[data-enabled='1'] .ew-switch__thumb {
+  transform: translateX(1.15rem);
+  background: #ffffff;
+}
+
+.ew-switch:hover .ew-switch__track,
+.ew-switch:focus-visible .ew-switch__track {
+  border-color: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 85%, transparent);
+}
+
+.ew-switch:focus-visible {
+  outline: none;
+}
+
 .ew-checkbox {
   display: inline-flex;
   align-items: center;
