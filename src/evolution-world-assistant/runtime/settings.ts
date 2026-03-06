@@ -3,8 +3,10 @@ import {
   EwApiPresetSchema,
   EwFlowConfig,
   EwFlowConfigSchema,
+  EwPromptOrderEntry,
   EwSettings,
   EwSettingsSchema,
+  DEFAULT_PROMPT_ORDER,
   LastIoSummary,
   LastIoSummarySchema,
   RunSummary,
@@ -149,6 +151,37 @@ function findPresetByLegacyFields(presets: EwApiPreset[], flow: EwFlowConfig): E
   );
 }
 
+function migratePromptItems(flow: EwFlowConfig): EwFlowConfig {
+  // If prompt_order has been customized (length differs from default), skip migration
+  if (flow.prompt_order.length !== DEFAULT_PROMPT_ORDER.length) return flow;
+
+  // Check if prompt_order is still the exact default (never configured by user)
+  const isDefault = flow.prompt_order.every(
+    (entry, idx) => entry.identifier === DEFAULT_PROMPT_ORDER[idx].identifier,
+  );
+  if (!isDefault) return flow;
+
+  // If there are prompt_items, append them as custom entries to prompt_order
+  if (flow.prompt_items.length === 0) return flow;
+
+  const migratedOrder: EwPromptOrderEntry[] = [...flow.prompt_order];
+  for (const item of flow.prompt_items) {
+    // Avoid duplicates — check if identifier already exists
+    if (migratedOrder.some(e => e.identifier === item.id)) continue;
+    migratedOrder.push({
+      identifier: item.id,
+      name: item.name || '迁移提示词',
+      enabled: item.enabled,
+      type: 'prompt',
+      role: item.role as 'system' | 'user' | 'assistant',
+      content: item.content,
+      injection_position: item.position === 'in_chat' ? 'in_chat' : 'relative',
+      injection_depth: 0,
+    });
+  }
+  return { ...flow, prompt_order: migratedOrder };
+}
+
 function normalizeSettings(raw: unknown): EwSettings {
   const parsed = EwSettingsSchema.safeParse(raw);
   const base = parsed.success ? parsed.data : EwSettingsSchema.parse({});
@@ -158,7 +191,9 @@ function normalizeSettings(raw: unknown): EwSettings {
   const flowSeed = base.flows.length > 0 ? base.flows : [makeDefaultFlow(1, defaultPresetId)];
 
   const normalizedFlows = flowSeed.map(flow => {
-    const nextFlow = EwFlowConfigSchema.parse(flow);
+    let nextFlow = EwFlowConfigSchema.parse(flow);
+    // FEAT-2: Migrate old prompt_items into prompt_order
+    nextFlow = migratePromptItems(nextFlow);
     const boundPreset = apiPresets.find(preset => preset.id === nextFlow.api_preset_id);
     if (boundPreset) {
       return nextFlow;

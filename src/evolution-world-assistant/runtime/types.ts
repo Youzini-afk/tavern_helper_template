@@ -36,6 +36,44 @@ export const EwFlowBehaviorOptionsSchema = z.object({
   verbosity: z.enum(['auto', 'low', 'medium', 'high']).default('auto'),
 });
 
+export const EwPromptOrderEntrySchema = z.object({
+  identifier: z.string().min(1),
+  name: z.string().default(''),
+  enabled: z.boolean().default(true),
+  type: z.enum(['marker', 'prompt']).default('prompt'),
+  role: z.enum(['system', 'user', 'assistant']).default('system'),
+  content: z.string().default(''),
+  injection_position: z.enum(['relative', 'in_chat']).default('relative'),
+  injection_depth: z.coerce.number().int().min(0).default(0),
+});
+
+export type EwPromptOrderEntry = z.infer<typeof EwPromptOrderEntrySchema>;
+
+export const DEFAULT_PROMPT_ORDER: EwPromptOrderEntry[] = [
+  { identifier: 'main',                    name: 'Main Prompt',               type: 'prompt', enabled: true,  role: 'system', content: '', injection_position: 'relative', injection_depth: 0 },
+  { identifier: 'worldInfoBefore',         name: 'World Info (before)',       type: 'marker', enabled: true,  role: 'system', content: '', injection_position: 'relative', injection_depth: 0 },
+  { identifier: 'personaDescription',      name: 'Persona Description',      type: 'marker', enabled: true,  role: 'system', content: '', injection_position: 'relative', injection_depth: 0 },
+  { identifier: 'charDescription',         name: 'Char Description',         type: 'marker', enabled: true,  role: 'system', content: '', injection_position: 'relative', injection_depth: 0 },
+  { identifier: 'charPersonality',         name: 'Char Personality',         type: 'marker', enabled: true,  role: 'system', content: '', injection_position: 'relative', injection_depth: 0 },
+  { identifier: 'scenario',                name: 'Scenario',                 type: 'marker', enabled: true,  role: 'system', content: '', injection_position: 'relative', injection_depth: 0 },
+  { identifier: 'enhanceDefinitions',      name: 'Enhance Definitions',      type: 'prompt', enabled: false, role: 'system', content: '', injection_position: 'relative', injection_depth: 0 },
+  { identifier: 'auxiliaryPrompt',         name: 'Auxiliary Prompt',         type: 'prompt', enabled: true,  role: 'system', content: '', injection_position: 'relative', injection_depth: 0 },
+  { identifier: 'worldInfoAfter',          name: 'World Info (after)',       type: 'marker', enabled: true,  role: 'system', content: '', injection_position: 'relative', injection_depth: 0 },
+  { identifier: 'dialogueExamples',        name: 'Chat Examples',            type: 'marker', enabled: true,  role: 'system', content: '', injection_position: 'relative', injection_depth: 0 },
+  { identifier: 'chatHistory',             name: 'Chat History',             type: 'marker', enabled: true,  role: 'system', content: '', injection_position: 'relative', injection_depth: 0 },
+  { identifier: 'postHistoryInstructions', name: 'Post-History Instructions', type: 'prompt', enabled: true,  role: 'system', content: '', injection_position: 'relative', injection_depth: 0 },
+];
+
+export const BUILTIN_MARKERS = new Set([
+  'worldInfoBefore', 'personaDescription', 'charDescription',
+  'charPersonality', 'scenario', 'worldInfoAfter',
+  'dialogueExamples', 'chatHistory',
+]);
+
+export const BUILTIN_PROMPTS = new Set([
+  'main', 'enhanceDefinitions', 'auxiliaryPrompt', 'postHistoryInstructions',
+]);
+
 export const EwFlowPromptTriggerTypeSchema = z.enum(['all', 'send', 'continue', 'regenerate', 'quiet', 'manual']);
 
 const EwFlowPromptPositionSchema = z.preprocess(
@@ -86,6 +124,7 @@ export const EwFlowConfigSchema = z.object({
   api_preset_id: z.string().default(''),
   generation_options: EwFlowGenerationOptionsSchema.default({}),
   behavior_options: EwFlowBehaviorOptionsSchema.default({}),
+  prompt_order: z.array(EwPromptOrderEntrySchema).default(DEFAULT_PROMPT_ORDER),
   prompt_items: z.array(EwFlowPromptItemSchema).default([]),
   // Legacy fields kept for backward-compatible migration from old configs.
   api_url: z.string().default(''),

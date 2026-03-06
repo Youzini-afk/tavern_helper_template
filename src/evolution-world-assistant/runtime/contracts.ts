@@ -90,6 +90,12 @@ export const FlowRequestSchema = z.object({
     .object({
       name: z.string().default(''),
       description: z.string().default(''),
+      personality: z.string().default(''),
+      scenario: z.string().default(''),
+      persona_description: z.string().default(''),
+      system_prompt: z.string().default(''),
+      jailbreak_prompt: z.string().default(''),
+      dialogue_examples: z.string().default(''),
       worldbook_entries: z
         .array(
           z.object({
@@ -100,7 +106,24 @@ export const FlowRequestSchema = z.object({
         )
         .default([]),
     })
-    .default({ name: '', description: '', worldbook_entries: [] }),
+    .default({ name: '', description: '', personality: '', scenario: '', persona_description: '', system_prompt: '', jailbreak_prompt: '', dialogue_examples: '', worldbook_entries: [] }),
+  world_info: z
+    .object({
+      before: z.string().default(''),
+      after: z.string().default(''),
+    })
+    .default({ before: '', after: '' }),
+  prompt_ordering: z
+    .array(
+      z.object({
+        identifier: z.string(),
+        name: z.string().default(''),
+        type: z.enum(['marker', 'prompt']).default('prompt'),
+        role: z.string().default('system'),
+        enabled: z.boolean().default(true),
+      }),
+    )
+    .default([]),
   global_worldbooks: z
     .array(
       z.object({

@@ -258,6 +258,16 @@
 
         <section class="ew-flow-card__section">
           <div class="ew-flow-card__section-head">
+            <h4>提示词编排</h4>
+          </div>
+          <EwPromptOrderList
+            :prompt-order="flow.prompt_order"
+            @update:prompt-order="updatePromptOrder"
+          />
+        </section>
+
+        <section class="ew-flow-card__section">
+          <div class="ew-flow-card__section-head">
             <h4>提示词配置</h4>
             <div class="ew-inline">
               <EwHelpTip v-if="help('flow.prompt_items')" :meta="help('flow.prompt_items')!" />
@@ -320,12 +330,13 @@
 </template>
 
 <script setup lang="ts">
-import type { EwApiPreset, EwFlowConfig, EwFlowPromptItem } from '../../runtime/types';
+import type { EwApiPreset, EwFlowConfig, EwFlowPromptItem, EwPromptOrderEntry } from '../../runtime/types';
 import { simpleHash } from '../../runtime/helpers';
 import { getFieldHelp } from '../help-meta';
 import EwFieldRow from './EwFieldRow.vue';
 import EwHelpTip from './EwHelpTip.vue';
 import EwRulesEditor from './EwRulesEditor.vue';
+import EwPromptOrderList from './EwPromptOrderList.vue';
 
 type FlowNumberKey = 'priority' | 'timeout_ms' | 'context_turns';
 type GenerationNumberKey = 'max_context_tokens' | 'max_reply_tokens' | 'n_candidates' | 'temperature' | 'frequency_penalty' | 'presence_penalty' | 'top_p';
@@ -379,6 +390,7 @@ function patch(partial: Partial<EwFlowConfig>) { emit('update:modelValue', { ...
 function patchGeneration(partial: Partial<EwFlowConfig['generation_options']>) { patch({ generation_options: { ...flow.value.generation_options, ...partial } }); }
 function patchBehavior(partial: Partial<EwFlowConfig['behavior_options']>) { patch({ behavior_options: { ...flow.value.behavior_options, ...partial } }); }
 function patchPromptItems(promptItems: EwFlowPromptItem[]) { patch({ prompt_items: promptItems }); }
+function updatePromptOrder(order: EwPromptOrderEntry[]) { patch({ prompt_order: order }); }
 function toNumber(raw: string, fallback: number) { const parsed = Number(raw); return Number.isFinite(parsed) ? parsed : fallback; }
 function clamp(value: number, min: number, max: number) { return Math.min(max, Math.max(min, value)); }
 function setEnabled(event: Event) { patch({ enabled: (event.target as HTMLInputElement).checked }); }

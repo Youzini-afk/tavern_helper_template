@@ -2,6 +2,7 @@ import { FlowRequestV1, FlowRequestSchema, TextSliceRule } from './contracts';
 import { EwFlowConfig, EwSettings } from './types';
 import { extractSlices, removeSlices, uuidv4 } from './helpers';
 import { resolveTargetWorldbook, getFullWorldbookContext } from './worldbook-runtime';
+import type { PromptComponents } from './prompt-assembler';
 
 export type BuildRequestInput = {
   settings: EwSettings;
@@ -10,6 +11,8 @@ export type BuildRequestInput = {
   user_input: string;
   request_id?: string;
   serial_results?: Record<string, any>[];
+  /** Pre-collected prompt components from dispatcher (avoids duplicate API calls) */
+  prompt_components?: PromptComponents;
 };
 
 function applyContentFilters(text: string, extractRules: TextSliceRule[], excludeRules: TextSliceRule[]): string {
@@ -133,6 +136,15 @@ export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRe
   const presetInfo = getPresetSnapshot();
   const contextMessages = getContextMessages(input.flow);
 
+  // ── Use pre-collected character fields when available (BUG-4 fix) ──
+  const pc = input.prompt_components;
+  const personality = pc?.charPersonality ?? '';
+  const scenario = pc?.scenario ?? '';
+  const personaDescription = pc?.personaDescription ?? '';
+  const systemPrompt = pc?.main ?? '';
+  const jailbreakPrompt = pc?.jailbreak ?? '';
+  const dialogueExamples = pc?.dialogueExamples ?? '';
+
   const payload = FlowRequestSchema.parse({
     version: 'ew-flow/v1',
     request_id: requestId,
@@ -161,8 +173,25 @@ export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRe
     character_context: {
       name: fullContext.character_name,
       description: fullContext.character_description,
+      personality,
+      scenario,
+      persona_description: personaDescription,
+      system_prompt: systemPrompt,
+      jailbreak_prompt: jailbreakPrompt,
+      dialogue_examples: dialogueExamples,
       worldbook_entries: fullContext.char_worldbook.entries,
     },
+    world_info: {
+      before: pc?.worldInfoBefore ?? '',
+      after: pc?.worldInfoAfter ?? '',
+    },
+    prompt_ordering: input.flow.prompt_order.map(entry => ({
+      identifier: entry.identifier,
+      name: entry.name,
+      type: entry.type,
+      role: entry.role,
+      enabled: entry.enabled,
+    })),
     global_worldbooks: fullContext.global_worldbooks,
     preset_info: presetInfo,
     mvu: getMvuSnapshot(input.message_id),

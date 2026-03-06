@@ -1,6 +1,7 @@
 import { buildFlowRequest } from './context-builder';
 import { FlowResponseSchema } from './contracts';
 import { parseJsonObject } from './helpers';
+import { collectPromptComponents, assembleOrderedPrompts, PromptComponents } from './prompt-assembler';
 import { DispatchFlowAttempt, DispatchFlowResult, EwApiPreset, EwFlowConfig, EwSettings } from './types';
 
 type DispatchInput = {
@@ -134,20 +135,29 @@ async function executeFlowViaLlmConnector(
   flow: EwFlowConfig,
   apiPreset: EwApiPreset,
   body: Record<string, any>,
+  components: PromptComponents,
 ): Promise<NonNullable<DispatchFlowAttempt['response']>> {
   if (typeof generateRaw !== 'function') {
     throw new Error(`[${flow.id}] generateRaw is unavailable`);
   }
 
-  const prompts = [
-    { role: 'system' as const, content: LLM_WORKFLOW_SYSTEM_PROMPT },
-    { role: 'user' as const, content: JSON.stringify(body, null, 2) },
-  ];
+  // Use pre-collected components (from executeFlow) to avoid double collection
+  const orderedPrompts = assembleOrderedPrompts(flow.prompt_order, components);
+
+  // Append workflow instruction and metadata at the end
+  orderedPrompts.push({
+    role: 'system',
+    content: LLM_WORKFLOW_SYSTEM_PROMPT,
+  });
+  orderedPrompts.push({
+    role: 'user',
+    content: JSON.stringify(body, null, 2),
+  });
 
   const generateConfig: Parameters<typeof generateRaw>[0] = {
     should_stream: false,
     should_silence: true,
-    ordered_prompts: prompts,
+    ordered_prompts: orderedPrompts,
   };
 
   if (!apiPreset.use_main_api) {
@@ -194,6 +204,10 @@ async function executeFlow(
   const usesLegacyWorkflowHttp =
     apiPreset.mode === 'workflow_http' && !apiPreset.model.trim() && Boolean(apiPreset.headers_json.trim());
   const attemptApiUrl = usesTavernMain ? 'tavern://main_api' : apiPreset.api_url;
+
+  // Collect prompt components once — shared by buildFlowRequest (metadata) and assembler (messages)
+  const promptComponents = collectPromptComponents(flow);
+
   const request = await buildFlowRequest({
     settings,
     flow,
@@ -201,6 +215,7 @@ async function executeFlow(
     user_input: userInput,
     request_id: requestId,
     serial_results: serialResults,
+    prompt_components: promptComponents,
   });
 
   try {
@@ -214,6 +229,7 @@ async function executeFlow(
           use_main_api: true,
         },
         body,
+        promptComponents,
       );
       return {
         flow,
@@ -236,6 +252,7 @@ async function executeFlow(
           use_main_api: false,
         },
         body,
+        promptComponents,
       );
       return {
         flow,
