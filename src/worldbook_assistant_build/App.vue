@@ -6645,7 +6645,29 @@ async function loadModelList(): Promise<void> {
   }
   apiModelLoading.value = true;
   try {
-    const models = await getModelList({ apiurl: cfg.apiurl, key: cfg.key || undefined });
+    let models: string[];
+
+    // Try TavernHelper's built-in getModelList first; fall back to direct fetch
+    if (typeof getModelList === 'function') {
+      models = await getModelList({ apiurl: cfg.apiurl, key: cfg.key || undefined });
+    } else {
+      // Fallback: direct fetch to OpenAI-compatible /v1/models
+      let baseUrl = cfg.apiurl.replace(/\/+$/, '');
+      if (!baseUrl.endsWith('/v1')) {
+        baseUrl += '/v1';
+      }
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (cfg.key) {
+        headers['Authorization'] = `Bearer ${cfg.key}`;
+      }
+      const resp = await fetch(`${baseUrl}/models`, { method: 'GET', headers });
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+      }
+      const json = await resp.json();
+      models = (json.data || []).map((m: any) => m.id as string).filter(Boolean).sort();
+    }
+
     apiModelList.value = models;
     if (models.length === 0) {
       toastr.info('未获取到模型列表');
@@ -6771,12 +6793,13 @@ async function aiConfigGenerate(): Promise<void> {
 
     const systemPrompt = buildConfigSystemPrompt(existingEntries);
 
-    const result = await generate({
+    const result = await generateRaw({
       user_input: input,
       should_silence: true,
-      injects: [{ role: 'system', content: systemPrompt, position: 'in_chat', depth: 0, should_scan: false }],
-      overrides: { chat_history: { prompts: [] } },
-      max_chat_history: 0,
+      ordered_prompts: [
+        { role: 'system', content: systemPrompt },
+        'user_input',
+      ],
       ...buildCustomApiForGenerate(),
     });
 
