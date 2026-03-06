@@ -244,12 +244,12 @@
             <div class="ew-grid ew-grid--two">
               <section>
                 <div class="ew-subhead"><h6>提取规则</h6></div>
-                <p class="ew-flow-card__hint-text">只保留 start～end 之间的文本发给 AI（如：只提取状态栏）。</p>
+                <p class="ew-flow-card__hint-text">只保留 start～end 之间的文本发给 AI（如：只提取正文）。</p>
                 <EwRulesEditor title="提取规则" :model-value="flow.extract_rules" @update:model-value="value => patch({ extract_rules: value })" />
               </section>
               <section>
                 <div class="ew-subhead"><h6>排除规则</h6></div>
-                <p class="ew-flow-card__hint-text">删掉 start～end 之间的文本（如：去掉 OOC 标记）。</p>
+                <p class="ew-flow-card__hint-text">删掉 start～end 之间的文本（如：去掉思考标记）。</p>
                 <EwRulesEditor title="排除规则" :model-value="flow.exclude_rules" @update:model-value="value => patch({ exclude_rules: value })" />
               </section>
             </div>
