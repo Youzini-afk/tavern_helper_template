@@ -108,6 +108,8 @@
                 <button class="btn" type="button" @click="extractFromChat" style="padding:8px 14px;font-size:13px;">📥 提取</button>
                 <button class="btn" type="button" @click="showApiSettings = true" style="padding:8px 14px;font-size:13px;">⚙️ 设置</button>
                 <button class="btn" type="button" @click="aiConfigPreview = false; aiConfigChanges = []; aiConfigTargetWorldbook = selectedWorldbookName || ''" style="padding:8px 14px;font-size:13px;">🔧 AI配置</button>
+                <button class="btn" type="button" :disabled="!selectedEntry" @click="openEntryHistoryModal" style="padding:8px 14px;font-size:13px;">🕰️ 条目时光机</button>
+                <button class="btn" type="button" :disabled="!selectedWorldbookName" @click="openWorldbookHistoryModal" style="padding:8px 14px;font-size:13px;">⏪ 整本时光机</button>
               </div>
             </section>
             <div class="wb-bindings" v-if="bindings.global.length || bindings.charPrimary || bindings.charAdditional.length || bindings.chat">
@@ -15941,6 +15943,10 @@ watch(hasUnsavedChanges, (val) => {
 .wb-assistant-root.is-mobile {
   padding: 6px;
   gap: 8px;
+
+  .wb-modal-backdrop {
+    position: absolute;
+  }
 
   .wb-header,
   .wb-bindings,
