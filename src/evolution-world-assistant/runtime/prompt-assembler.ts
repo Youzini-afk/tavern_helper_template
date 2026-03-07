@@ -29,6 +29,10 @@ export type PromptComponents = {
   worldInfoAfter: string;
   dialogueExamples: string;
   chatMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string; name?: string }>;
+  /** Extension prompts that need depth-based injection into chat history (ST position=IN_CHAT) */
+  depthInjections: Array<{ content: string; depth: number; role: 'system' | 'user' | 'assistant' }>;
+  /** Extension prompts that go before all other prompts (ST position=BEFORE_PROMPT) */
+  beforePromptInjections: string[];
 };
 
 /**
@@ -49,6 +53,8 @@ export function collectPromptComponents(flow: EwFlowConfig): PromptComponents {
     worldInfoAfter: '',
     dialogueExamples: '',
     chatMessages: [],
+    depthInjections: [],
+    beforePromptInjections: [],
   };
 
   // ── 1. Character card fields ──────────────────────────────────────────
@@ -67,28 +73,50 @@ export function collectPromptComponents(flow: EwFlowConfig): PromptComponents {
     console.debug('[Evolution World] getCharacterCardFields failed:', e);
   }
 
-  // ── 2. World Info ─────────────────────────────────────────────────────
-  // At GENERATION_AFTER_COMMANDS, WI has already been computed by SillyTavern
-  // and stored in extension_prompts. We read the WI content from there.
+  // ── 2. Extension prompts (World Info, Author's Note, vectors, etc.) ──
+  // SillyTavern stores computed extension prompts in `extension_prompts`.
+  // Each entry: { value: string, position: number, depth: number, role: number }
+  //   position: IN_PROMPT(0) = in prompt area, IN_CHAT(1) = depth injection,
+  //             BEFORE_PROMPT(2) = before all prompts, NONE(-1) = skip
+  //   role:     SYSTEM(0), USER(1), ASSISTANT(2)
   try {
     const ctx = typeof SillyTavern !== 'undefined' ? SillyTavern?.getContext() : undefined;
     const extPrompts = ctx?.extensionPrompts ?? (globalThis as any).extension_prompts;
     if (extPrompts && typeof extPrompts === 'object') {
-      const wiBefore: string[] = [];
-      const wiAfter: string[] = [];
+      const roleMap: Record<number, 'system' | 'user' | 'assistant'> = {
+        0: 'system', 1: 'user', 2: 'assistant',
+      };
+      const inPromptEntries: string[] = [];
+
       for (const [, prompt] of Object.entries(extPrompts)) {
         const p = prompt as any;
         if (!p || typeof p.value !== 'string' || !p.value.trim()) continue;
-        // SillyTavern extension_prompts position: 0 = before char defs, 1 = after char defs
-        // We group them into before/after WI slots
-        if (p.position === 0) {
-          wiBefore.push(p.value.trim());
-        } else if (p.position === 1) {
-          wiAfter.push(p.value.trim());
+
+        const role = roleMap[p.role] ?? 'system';
+
+        switch (p.position) {
+          case 0: // IN_PROMPT — in the prompt area (near character definitions)
+            inPromptEntries.push(p.value.trim());
+            break;
+          case 1: // IN_CHAT — depth-based injection into chat history
+            components.depthInjections.push({
+              content: p.value.trim(),
+              depth: typeof p.depth === 'number' ? p.depth : 0,
+              role,
+            });
+            break;
+          case 2: // BEFORE_PROMPT — before all other prompts
+            components.beforePromptInjections.push(p.value.trim());
+            break;
+          // NONE (-1) is intentionally ignored
         }
       }
-      components.worldInfoBefore = wiBefore.join('\n');
-      components.worldInfoAfter = wiAfter.join('\n');
+
+      // IN_PROMPT entries go into worldInfoBefore (same slot as ST's WI-before)
+      if (inPromptEntries.length) {
+        components.worldInfoBefore = [components.worldInfoBefore, ...inPromptEntries]
+          .filter(s => s).join('\n');
+      }
     }
   } catch (e) {
     console.debug('[Evolution World] extension_prompts read failed:', e);
@@ -134,7 +162,7 @@ export function assembleOrderedPrompts(
 ): AssembledMessage[] {
   const result: AssembledMessage[] = [];
   // Deferred injections: prompts with in_chat position that go inside chat history
-  const deferredInjections: Array<{ entry: EwPromptOrderEntry; depth: number }> = [];
+  const deferredInjections: Array<{ content: string; role: 'system' | 'user' | 'assistant'; depth: number }> = [];
   let chatHistoryStartIdx = -1;
 
   for (const entry of promptOrder) {
@@ -143,14 +171,11 @@ export function assembleOrderedPrompts(
     // Defer in_chat injections — they'll be inserted after chat history is placed
     if (entry.injection_position === 'in_chat' && entry.identifier !== 'chatHistory') {
       if (entry.type === 'prompt' && entry.content.trim()) {
-        deferredInjections.push({ entry, depth: entry.injection_depth });
+        deferredInjections.push({ content: entry.content, role: entry.role, depth: entry.injection_depth });
       } else if (entry.type === 'marker') {
         const content = resolveMarkerContent(entry.identifier, components);
         if (content.trim()) {
-          deferredInjections.push({
-            entry: { ...entry, content },
-            depth: entry.injection_depth,
-          });
+          deferredInjections.push({ content, role: entry.role, depth: entry.injection_depth });
         }
       }
       continue;
@@ -173,10 +198,19 @@ export function assembleOrderedPrompts(
       if (content.trim()) {
         result.push({ role: entry.role, content });
       }
-    } else if (entry.content.trim()) {
-      // User-editable prompt — content is entry.content
-      result.push({ role: entry.role, content: entry.content });
+    } else {
+      // User-editable prompt — use entry.content, fallback to marker for 'main'
+      const content = entry.content.trim()
+        || (entry.identifier === 'main' ? components.main : '');
+      if (content.trim()) {
+        result.push({ role: entry.role, content });
+      }
     }
+  }
+
+  // ── Merge extension depth injections (WI depth, Author's Note, etc.) ──
+  for (const inj of components.depthInjections) {
+    deferredInjections.push({ content: inj.content, role: inj.role, depth: inj.depth });
   }
 
   // ── Insert deferred in_chat injections at the correct depth ──
@@ -190,19 +224,24 @@ export function assembleOrderedPrompts(
     // (this preserves correct positions when inserting multiple items)
     deferredInjections.sort((a, b) => b.depth - a.depth);
 
-    for (const { entry, depth } of deferredInjections) {
+    for (const { role, content, depth } of deferredInjections) {
       // Calculate insertion point: end of chat minus depth
       const insertIdx = Math.max(
         chatHistoryStartIdx,
         chatHistoryEndIdx - Math.min(depth, chatLen),
       );
-      result.splice(insertIdx, 0, { role: entry.role, content: entry.content });
+      result.splice(insertIdx, 0, { role, content });
     }
   } else if (deferredInjections.length > 0) {
     // No chat history marker — append deferred items at the end
-    for (const { entry } of deferredInjections) {
-      result.push({ role: entry.role, content: entry.content });
+    for (const { role, content } of deferredInjections) {
+      result.push({ role, content });
     }
+  }
+
+  // ── Prepend BEFORE_PROMPT extension injections ──
+  for (let i = components.beforePromptInjections.length - 1; i >= 0; i--) {
+    result.unshift({ role: 'system', content: components.beforePromptInjections[i] });
   }
 
   return result;
