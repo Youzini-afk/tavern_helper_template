@@ -103,6 +103,7 @@ defineEmits<{
   position: sticky;
   top: 0;
   z-index: 5;
+  flex-shrink: 0;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -174,6 +175,7 @@ defineEmits<{
   position: sticky;
   top: 0;
   z-index: 4;
+  flex-shrink: 0;
   display: flex;
   gap: 0.55rem;
   padding: 0.65rem 1.25rem;
