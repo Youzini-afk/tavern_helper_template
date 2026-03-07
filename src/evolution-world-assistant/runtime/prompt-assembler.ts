@@ -73,15 +73,33 @@ export function collectPromptComponents(flow: EwFlowConfig): PromptComponents {
     console.debug('[Evolution World] getCharacterCardFields failed:', e);
   }
 
-  // ── 2. Extension prompts (World Info, Author's Note, vectors, etc.) ──
+  // ── 2. World Info (before/after) from SillyTavern context ───────────────
+  // ST computes worldInfoBefore/After via getWorldInfoPrompt() and may expose
+  // them on the context object. These are the non-depth WI entries.
+  try {
+    const ctx = typeof SillyTavern !== 'undefined' ? SillyTavern?.getContext() : undefined;
+    if (ctx) {
+      // Try to read pre-computed WI strings from context
+      if (typeof ctx.worldInfoBefore === 'string' && ctx.worldInfoBefore.trim()) {
+        components.worldInfoBefore = ctx.worldInfoBefore;
+      }
+      if (typeof ctx.worldInfoAfter === 'string' && ctx.worldInfoAfter.trim()) {
+        components.worldInfoAfter = ctx.worldInfoAfter;
+      }
+    }
+  } catch (e) {
+    console.debug('[Evolution World] context worldInfo read failed:', e);
+  }
+
+  // ── 3. Extension prompts (depth injections, before-prompt, etc.) ────────
   // SillyTavern stores computed extension prompts in `extension_prompts`.
   // Each entry: { value: string, position: number, depth: number, role: number }
   //   position: IN_PROMPT(0) = in prompt area, IN_CHAT(1) = depth injection,
   //             BEFORE_PROMPT(2) = before all prompts, NONE(-1) = skip
   //   role:     SYSTEM(0), USER(1), ASSISTANT(2)
   try {
-    const ctx = typeof SillyTavern !== 'undefined' ? SillyTavern?.getContext() : undefined;
-    const extPrompts = ctx?.extensionPrompts ?? (globalThis as any).extension_prompts;
+    const ctx2 = typeof SillyTavern !== 'undefined' ? SillyTavern?.getContext() : undefined;
+    const extPrompts = ctx2?.extensionPrompts ?? (globalThis as any).extension_prompts;
     if (extPrompts && typeof extPrompts === 'object') {
       const roleMap: Record<number, 'system' | 'user' | 'assistant'> = {
         0: 'system', 1: 'user', 2: 'assistant',
@@ -112,7 +130,8 @@ export function collectPromptComponents(flow: EwFlowConfig): PromptComponents {
         }
       }
 
-      // IN_PROMPT entries go into worldInfoBefore (same slot as ST's WI-before)
+      // IN_PROMPT entries: append to worldInfoBefore as fallback
+      // (only if we didn't already get WI from context)
       if (inPromptEntries.length) {
         components.worldInfoBefore = [components.worldInfoBefore, ...inPromptEntries]
           .filter(s => s).join('\n');
@@ -143,7 +162,7 @@ export function collectPromptComponents(flow: EwFlowConfig): PromptComponents {
   return components;
 }
 
-type AssembledMessage = { role: 'system' | 'user' | 'assistant'; content: string };
+type AssembledMessage = { role: 'system' | 'user' | 'assistant'; content: string; name?: string };
 
 /**
  * Assemble an ordered array of prompt messages according to a flow's prompt_order.
@@ -188,7 +207,7 @@ export function assembleOrderedPrompts(
         // Chat history expands into multiple user/assistant messages
         for (const msg of components.chatMessages) {
           if (msg.content.trim()) {
-            result.push({ role: msg.role, content: msg.content });
+            result.push({ role: msg.role, content: msg.content, name: msg.name });
           }
         }
         continue;
