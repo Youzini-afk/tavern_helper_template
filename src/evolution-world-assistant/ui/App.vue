@@ -717,7 +717,7 @@ onUnmounted(() => {
   width: 22px;
   height: 28px;
   border-radius: 50%;
-  background: #1e293b;
+  background: var(--SmartThemeQuoteColor, #1e293b);
   transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.6s ease;
 }
 
@@ -748,7 +748,7 @@ onUnmounted(() => {
 /* --- Moon Phase Theme (unscoped) --- */
 .theme-moon-phase .ew-panel {
   /* 深邃夜空蓝与冷月银白 */
-  --SmartThemeQuoteColor: #1e293b;
+  --SmartThemeQuoteColor: #64748b;
   --SmartThemeBodyColor: #e2e8f0;
   /* 月光金/琥珀色强调 */
   --ew-accent: #fbbf24;
@@ -783,6 +783,7 @@ onUnmounted(() => {
 .theme-moon-phase .ew-panel__title {
   background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 50%, #94a3b8 100%) !important;
   -webkit-background-clip: text !important;
+  background-clip: text !important;
   -webkit-text-fill-color: transparent !important;
   position: relative;
 }
@@ -818,7 +819,6 @@ onUnmounted(() => {
 
 /* Section Card: 深空底色 + 繁星背景 */
 .theme-moon-phase .ew-section-card {
-  position: relative;
   overflow: hidden;
   border-color: rgba(148, 163, 184, 0.15) !important;
 }
