@@ -795,8 +795,6 @@ onUnmounted(() => {
 .theme-moon-phase .ew-panel__header {
   background: color-mix(in srgb, #0f172a 40%, rgba(15, 23, 42, 0.85)) !important;
   border-bottom-color: rgba(148, 163, 184, 0.2) !important;
-  overflow: hidden;
-  position: relative;
 }
 
 /* ── Phase 2: SVG 新月图标注入标题 ── */
@@ -842,10 +840,10 @@ onUnmounted(() => {
   transform: translateY(-50%);
   width: 16px;
   height: 16px;
-  /* 精绘 SVG 星盘/罗盘 — 六芒星 + 圆环 */
+  /* 精绘 SVG 星盘/罗盘 — 填充型五角星 + 圆环 */
   background-color: #94a3b8;
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpolygon points='12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpolygon points='12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2'/%3E%3C/svg%3E");
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z'/%3E%3Cpath d='M12 5.5l1.76 3.56 3.93.57-2.84 2.77.67 3.91L12 14.47l-3.52 1.84.67-3.91-2.84-2.77 3.93-.57z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z'/%3E%3Cpath d='M12 5.5l1.76 3.56 3.93.57-2.84 2.77.67 3.91L12 14.47l-3.52 1.84.67-3.91-2.84-2.77 3.93-.57z'/%3E%3C/svg%3E");
   -webkit-mask-size: contain;
   mask-size: contain;
   -webkit-mask-repeat: no-repeat;
@@ -869,10 +867,10 @@ onUnmounted(() => {
   transform: translateY(-50%);
   width: 14px;
   height: 14px;
-  /* 精绘 SVG 卷轴/文件 — 简约科幻风 */
+  /* 精绘 SVG 卷轴/文件 — 填充型科幻风 */
   background-color: #fbbf24;
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cline x1='16' y1='13' x2='8' y2='13'/%3E%3Cline x1='16' y1='17' x2='8' y2='17'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cline x1='16' y1='13' x2='8' y2='13'/%3E%3Cline x1='16' y1='17' x2='8' y2='17'/%3E%3C/svg%3E");
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z'/%3E%3C/svg%3E");
   -webkit-mask-size: contain;
   mask-size: contain;
   -webkit-mask-repeat: no-repeat;
@@ -944,11 +942,13 @@ onUnmounted(() => {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
   background-image:
-    radial-gradient(circle at 15% 25%, rgba(251, 191, 36, 0.18) 1px, transparent 1px),
-    radial-gradient(circle at 72% 55%, rgba(203, 213, 225, 0.15) 1px, transparent 1px),
-    radial-gradient(circle at 42% 78%, rgba(251, 191, 36, 0.12) 1px, transparent 1px),
-    radial-gradient(circle at 88% 18%, rgba(203, 213, 225, 0.14) 1px, transparent 1px);
-  background-size: 100% 100%;
+    radial-gradient(1px 1px at 15% 25%, rgba(251, 191, 36, 0.4) 50%, transparent),
+    radial-gradient(1px 1px at 72% 55%, rgba(203, 213, 225, 0.35) 50%, transparent),
+    radial-gradient(1px 1px at 42% 78%, rgba(251, 191, 36, 0.3) 50%, transparent),
+    radial-gradient(1px 1px at 88% 18%, rgba(203, 213, 225, 0.35) 50%, transparent),
+    radial-gradient(1.2px 1.2px at 30% 50%, rgba(251, 191, 36, 0.25) 50%, transparent),
+    radial-gradient(1px 1px at 60% 35%, rgba(203, 213, 225, 0.3) 50%, transparent);
+  background-size: 83px 89px, 127px 137px, 109px 113px, 97px 101px, 149px 157px, 71px 79px;
   animation: ew-stars-twinkle 2.5s ease-in-out infinite;
   pointer-events: none;
   z-index: -1;
@@ -1132,8 +1132,7 @@ onUnmounted(() => {
    or just hook into #toast-container directly if it's placed outside.
    Assuming #toast-container is global, we force deep starry aesthetic
    when Moon Phase theme is active anywhere. */
-body:has(.theme-moon-phase) #toast-container > div,
-.theme-moon-phase-active #toast-container > div {
+body:has(.theme-moon-phase) #toast-container > div {
   background-color: rgba(15, 23, 42, 0.95) !important;
   border: 1px solid rgba(148, 163, 184, 0.2) !important;
   box-shadow:
@@ -1148,13 +1147,11 @@ body:has(.theme-moon-phase) #toast-container > div,
 }
 
 /* Success Toast */
-body:has(.theme-moon-phase) #toast-container > .toast-success,
-.theme-moon-phase-active #toast-container > .toast-success {
+body:has(.theme-moon-phase) #toast-container > .toast-success {
   border-left: 4px solid #34d399 !important;
   box-shadow: 0 0 20px rgba(52, 211, 153, 0.15), inset 0 1px 0 rgba(251, 191, 36, 0.15) !important;
 }
-body:has(.theme-moon-phase) #toast-container > .toast-success::before,
-.theme-moon-phase-active #toast-container > .toast-success::before {
+body:has(.theme-moon-phase) #toast-container > .toast-success::before {
   content: "";
   position: absolute;
   left: 14px;
@@ -1170,17 +1167,15 @@ body:has(.theme-moon-phase) #toast-container > .toast-success::before,
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
   filter: drop-shadow(0 0 8px rgba(52, 211, 153, 0.8));
-  animation: ew-icon-glow 3s ease-in-out infinite alternate;
+  animation: ew-icon-glow 3s ease-in-out infinite;
 }
 
 /* Error Toast */
-body:has(.theme-moon-phase) #toast-container > .toast-error,
-.theme-moon-phase-active #toast-container > .toast-error {
+body:has(.theme-moon-phase) #toast-container > .toast-error {
   border-left: 4px solid #f87171 !important;
   box-shadow: 0 0 20px rgba(248, 113, 113, 0.15), inset 0 1px 0 rgba(251, 191, 36, 0.15) !important;
 }
-body:has(.theme-moon-phase) #toast-container > .toast-error::before,
-.theme-moon-phase-active #toast-container > .toast-error::before {
+body:has(.theme-moon-phase) #toast-container > .toast-error::before {
   content: "";
   position: absolute;
   left: 14px;
@@ -1196,21 +1191,18 @@ body:has(.theme-moon-phase) #toast-container > .toast-error::before,
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
   filter: drop-shadow(0 0 8px rgba(248, 113, 113, 0.8));
-  animation: ew-icon-glow 3s ease-in-out infinite alternate;
+  animation: ew-icon-glow 3s ease-in-out infinite;
 }
 
-/* Info/Warning overrides for completness */
-body:has(.theme-moon-phase) #toast-container > .toast-info,
-.theme-moon-phase-active #toast-container > .toast-info {
+/* Info/Warning overrides for completeness */
+body:has(.theme-moon-phase) #toast-container > .toast-info {
   border-left: 4px solid #60a5fa !important;
 }
-body:has(.theme-moon-phase) #toast-container > .toast-warning,
-.theme-moon-phase-active #toast-container > .toast-warning {
+body:has(.theme-moon-phase) #toast-container > .toast-warning {
   border-left: 4px solid #fbbf24 !important;
 }
 
-body:has(.theme-moon-phase) #toast-container > div:hover,
-.theme-moon-phase-active #toast-container > div:hover {
+body:has(.theme-moon-phase) #toast-container > div:hover {
   box-shadow:
     0 15px 50px rgba(0, 0, 0, 0.9),
     0 0 30px rgba(251, 191, 36, 0.15),
