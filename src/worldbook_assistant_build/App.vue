@@ -1,5 +1,5 @@
 <template>
-  <div ref="rootRef" class="wb-assistant-root" :class="[focusCineRootClass, { 'is-mobile': isMobile }]" :style="themeStyles">
+  <div ref="rootRef" class="wb-assistant-root" :class="[focusCineRootClass, { 'is-mobile': isMobile, 'is-glass-mode': persistedState.glass_mode }]" :style="themeStyles">
 
     <!-- ═══ Mobile Tab View ═══ -->
     <template v-if="isMobile">
@@ -2228,6 +2228,10 @@
                 <option v-for="item in themeOptions" :key="`setting-theme-${item.key}`" :value="item.key">{{ item.label }}</option>
               </select>
             </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-top:6px;">
+              <input type="checkbox" :checked="persistedState.glass_mode" @change="updatePersistedState(s => s.glass_mode = ($event.target as HTMLInputElement).checked)" />
+              <span>启用毛玻璃特效 (Glassmorphism)</span>
+            </label>
           </div>
           <div style="border-top:1px solid var(--wb-border-subtle,#334155);padding-top:10px;">
             <div style="font-size:13px;font-weight:600;margin-bottom:8px;">API 设置</div>
@@ -3570,6 +3574,7 @@ interface PersistedState {
   layout: LayoutState;
   cross_copy: CrossCopyPersistState;
   sort: { mode: 'mutate' | 'view'; reassign_uid: boolean };
+  glass_mode: boolean;
 }
 
 interface ActivationLog {
@@ -4193,7 +4198,37 @@ const editorShellStyle = computed<Record<string, string> | undefined>(() => {
 });
 
 const themeStyles = computed(() => {
-  return THEMES[currentTheme.value].colors;
+  const baseColors = THEMES[currentTheme.value].colors;
+  if (!persistedState.value.glass_mode) {
+    return baseColors;
+  }
+
+  // Glassmorphism mode: convert specific hex backgrounds to rgba
+  const glassColors: Record<string, string> = { ...baseColors };
+
+  const hexToRgb = (hex: string): string | null => {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}` : null;
+  };
+
+  const rootHex = baseColors['--wb-bg-root'];
+  if (rootHex && rootHex.startsWith('#')) {
+    const rgb = hexToRgb(rootHex);
+    if (rgb) glassColors['--wb-bg-root'] = `rgba(${rgb}, 0.25)`;
+  }
+
+  const panelHex = baseColors['--wb-bg-panel'];
+  if (panelHex && panelHex.startsWith('#')) {
+    const rgb = hexToRgb(panelHex);
+    if (rgb) {
+      glassColors['--wb-bg-panel'] = `rgba(${rgb}, 0.45)`;
+      // Override dropdown and glass-bg for better contrast in glass mode
+      glassColors['--wb-dropdown-bg'] = `rgba(${rgb}, 0.65)`;
+      glassColors['--wb-glass-bg'] = `rgba(${rgb}, 0.75)`;
+    }
+  }
+
+  return glassColors;
 });
 
 const themeOptions = computed(() => {
@@ -6327,6 +6362,7 @@ function createDefaultPersistedState(): PersistedState {
     layout: createDefaultLayoutState(),
     cross_copy: createDefaultCrossCopyPersistState(),
     sort: { mode: 'mutate', reassign_uid: true },
+    glass_mode: true,
   };
 }
 
@@ -6544,6 +6580,7 @@ function normalizePersistedState(input: unknown): PersistedState {
         reassign_uid: raw?.reassign_uid !== false,
       };
     })(),
+    glass_mode: root.glass_mode === true,
   };
 }
 
@@ -12267,10 +12304,34 @@ watch(hasUnsavedChanges, (val) => {
   gap: 12px;
   background: var(--wb-bg-root);
   color: var(--wb-text-main);
+  font-family:
+    system-ui,
+    -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   font-size: 13px;
   line-height: 1.5;
   border-radius: 12px;
   overflow: hidden;
+  container-type: inline-size;
+}
+
+/* Glassmorphism Styles */
+.wb-assistant-root.is-glass-mode {
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.wb-assistant-root.is-glass-mode .wb-editor-container,
+.wb-assistant-root.is-glass-mode .wb-layout-sidebar,
+.wb-assistant-root.is-glass-mode .wb-entry-list,
+.wb-assistant-root.is-glass-mode .st-utility-panel,
+.wb-assistant-root.is-glass-mode .wb-modal-window {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-color: color-mix(in srgb, var(--wb-border-main) 50%, transparent);
+}
+.wb-assistant-root.is-glass-mode .utility-btn {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .focus-cine-overlay {
