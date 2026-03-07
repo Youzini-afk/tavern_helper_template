@@ -33,10 +33,9 @@
 
           <div class="ew-prompt-order__actions">
             <button
-              v-if="entry.type === 'prompt'"
               type="button"
               class="ew-mini-btn"
-              title="编辑"
+              :title="entry.type === 'marker' ? '查看' : '编辑'"
               @click="toggleEdit(entry.identifier)"
             >✎</button>
             <button
@@ -92,6 +91,30 @@
             </label>
           </div>
         </transition>
+
+        <!-- Read-only info panel for 'marker' type entries -->
+        <transition name="ew-expand">
+          <div v-if="editingId === entry.identifier && entry.type === 'marker'" class="ew-prompt-order__editor ew-prompt-order__marker-info">
+            <div class="ew-prompt-order__editor-grid">
+              <label class="ew-prompt-order__editor-label">
+                名称
+                <input type="text" :value="entry.name" disabled />
+              </label>
+              <label class="ew-prompt-order__editor-label">
+                角色
+                <input type="text" :value="entry.role === 'system' ? '系统' : entry.role === 'user' ? '用户' : '助手'" disabled />
+              </label>
+              <label class="ew-prompt-order__editor-label">
+                位置
+                <input type="text" :value="entry.injection_position === 'in_chat' ? '聊天中' : '相对'" disabled />
+              </label>
+            </div>
+            <div class="ew-prompt-order__marker-source">
+              <p class="ew-prompt-order__marker-source-text">此提示词的内容是从其他地方提取的，无法在此处进行编辑。</p>
+              <p class="ew-prompt-order__marker-source-label">来源：&nbsp; {{ getMarkerSource(entry.identifier) }}</p>
+            </div>
+          </div>
+        </transition>
       </div>
     </div>
 
@@ -131,6 +154,21 @@ function toggleEdit(identifier: string) {
 
 function canDelete(entry: EwPromptOrderEntry): boolean {
   return !BUILTIN_MARKERS.has(entry.identifier) && !BUILTIN_PROMPTS.has(entry.identifier);
+}
+
+const MARKER_SOURCES: Record<string, string> = {
+  worldInfoBefore:    'World Info (↑ 角色描述前)',
+  worldInfoAfter:     'World Info (↓ 角色描述后)',
+  charDescription:    '角色卡 — 描述',
+  charPersonality:    '角色卡 — 性格',
+  scenario:           '角色卡 — 情景',
+  personaDescription: '用户 — 角色描述',
+  dialogueExamples:   '角色卡 — 对话示例',
+  chatHistory:        '当前聊天记录',
+};
+
+function getMarkerSource(identifier: string): string {
+  return MARKER_SOURCES[identifier] ?? identifier;
 }
 
 function toggleEnabled(identifier: string) {
@@ -407,6 +445,30 @@ function onDragEnd() {
   resize: vertical;
   min-height: 80px;
   font-family: Consolas, Monaco, monospace;
+}
+
+/* ── Marker info panel ── */
+.ew-prompt-order__marker-info input:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.ew-prompt-order__marker-source {
+  text-align: center;
+  padding: 20px 16px;
+}
+
+.ew-prompt-order__marker-source-text {
+  color: #fbbf24;
+  font-size: 13px;
+  margin: 0 0 8px;
+}
+
+.ew-prompt-order__marker-source-label {
+  color: var(--ew-text, #ddd);
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
 }
 
 /* ── Add button ── */
