@@ -934,7 +934,6 @@ function patchRegexText(index: number, key: 'name' | 'find_regex' | 'replace_str
   .ew-flow-card {
     transition: box-shadow 0.3s ease, border-color 0.3s ease,
                 margin 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-                padding 0.35s cubic-bezier(0.4, 0, 0.2, 1),
                 border-radius 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .ew-flow-card__header {
@@ -944,19 +943,18 @@ function patchRegexText(index: number, key: 'name' | 'find_regex' | 'replace_str
     width: 100%;
     justify-content: flex-start;
   }
-  /* 展开时左右撑满 — 跳出父容器 padding */
+  /* 展开时左右撑满 — 跳出父容器 0.9rem padding */
   .ew-flow-card[data-expanded='1'] {
     margin-left: -0.9rem;
     margin-right: -0.9rem;
-    padding-left: 0.9rem;
-    padding-right: 0.9rem;
-    border-radius: 6px;
-    border-left-color: transparent;
-    border-right-color: transparent;
+    width: calc(100% + 1.8rem);
+    border-radius: 4px;
+    border-left: none;
+    border-right: none;
   }
   .ew-flow-card[data-expanded='1']:hover,
   .ew-flow-card[data-expanded='1']:focus-within {
-    transform: none; /* 展开时不浮起 */
+    transform: none;
   }
   .ew-grid--two {
     grid-template-columns: 1fr;

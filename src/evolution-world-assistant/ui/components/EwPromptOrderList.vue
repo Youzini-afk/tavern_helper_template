@@ -20,16 +20,20 @@
           <span class="ew-prompt-order__icon" :title="entry.type === 'marker' ? '系统标记' : '可编辑提示词'">
             {{ entry.type === 'marker' ? '📌' : '📄' }}
           </span>
-          <span class="ew-prompt-order__name">{{ entry.name || entry.identifier }}</span>
 
-          <template v-if="entry.type === 'prompt'">
-            <span :class="['ew-prompt-order__chip', `ew-prompt-order__chip--${entry.role}`]">{{ entry.role }}</span>
-            <span :class="['ew-prompt-order__chip', entry.injection_position === 'in_chat' ? 'ew-prompt-order__chip--inchat' : 'ew-prompt-order__chip--relative']">
-              {{ entry.injection_position === 'in_chat' ? '聊天中' : '相对' }}
-            </span>
-            <span v-if="entry.injection_position === 'in_chat'" class="ew-prompt-order__chip ew-prompt-order__chip--depth">深度 {{ entry.injection_depth }}</span>
-          </template>
-          <span v-else-if="entry.role !== 'system'" :class="['ew-prompt-order__chip', `ew-prompt-order__chip--${entry.role}`]">{{ entry.role }}</span>
+          <div class="ew-prompt-order__label">
+            <span class="ew-prompt-order__name">{{ entry.name || entry.identifier }}</span>
+            <div class="ew-prompt-order__chips">
+              <template v-if="entry.type === 'prompt'">
+                <span :class="['ew-prompt-order__chip', `ew-prompt-order__chip--${entry.role}`]">{{ entry.role }}</span>
+                <span :class="['ew-prompt-order__chip', entry.injection_position === 'in_chat' ? 'ew-prompt-order__chip--inchat' : 'ew-prompt-order__chip--relative']">
+                  {{ entry.injection_position === 'in_chat' ? '聊天中' : '相对' }}
+                </span>
+                <span v-if="entry.injection_position === 'in_chat'" class="ew-prompt-order__chip ew-prompt-order__chip--depth">深度 {{ entry.injection_depth }}</span>
+              </template>
+              <span v-else-if="entry.role !== 'system'" :class="['ew-prompt-order__chip', `ew-prompt-order__chip--${entry.role}`]">{{ entry.role }}</span>
+            </div>
+          </div>
 
           <div class="ew-prompt-order__actions">
             <button
@@ -309,14 +313,28 @@ function onDragEnd() {
   text-align: center;
 }
 
-.ew-prompt-order__name {
+.ew-prompt-order__label {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ew-prompt-order__name {
   font-size: 14px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--ew-text, #eee);
   font-weight: 500;
+}
+
+.ew-prompt-order__chips {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .ew-prompt-order__item--marker .ew-prompt-order__name {
@@ -545,5 +563,30 @@ function onDragEnd() {
 .ew-expand-leave-from {
   max-height: 400px;
   opacity: 1;
+}
+
+/* ── 移动端提示词列表：两行布局 ── */
+@media (max-width: 900px) {
+  .ew-prompt-order__row {
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    padding: 10px 10px;
+  }
+  .ew-prompt-order__label {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    flex-basis: 0;
+  }
+  .ew-prompt-order__name {
+    white-space: normal;
+    word-break: break-word;
+  }
+  .ew-prompt-order__chips {
+    flex-wrap: wrap;
+  }
+  .ew-prompt-order__editor-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
