@@ -759,7 +759,20 @@ onUnmounted(() => {
   --ew-success: #34d399;
   --ew-danger: #f87171;
 
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%) !important;
+  background:
+    /* 散落星点 — 用多层 radial-gradient 在面板上绘制致密繁星 */
+    radial-gradient(circle at 12% 15%, rgba(251, 191, 36, 0.25) 1px, transparent 1px),
+    radial-gradient(circle at 38% 42%, rgba(203, 213, 225, 0.2) 1px, transparent 1px),
+    radial-gradient(circle at 65% 8%, rgba(251, 191, 36, 0.18) 1px, transparent 1px),
+    radial-gradient(circle at 85% 35%, rgba(203, 213, 225, 0.22) 1px, transparent 1px),
+    radial-gradient(circle at 22% 68%, rgba(251, 191, 36, 0.15) 1px, transparent 1px),
+    radial-gradient(circle at 55% 82%, rgba(203, 213, 225, 0.18) 1px, transparent 1px),
+    radial-gradient(circle at 78% 65%, rgba(251, 191, 36, 0.2) 1px, transparent 1px),
+    radial-gradient(circle at 92% 88%, rgba(203, 213, 225, 0.16) 1px, transparent 1px),
+    radial-gradient(circle at 8% 92%, rgba(251, 191, 36, 0.14) 1px, transparent 1px),
+    radial-gradient(circle at 48% 25%, rgba(203, 213, 225, 0.12) 1px, transparent 1px),
+    /* 底层渐变 */
+    linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%) !important;
   border-color: rgba(148, 163, 184, 0.25) !important;
   box-shadow:
     0 24px 64px rgba(0, 0, 0, 0.7),
@@ -934,7 +947,7 @@ onUnmounted(() => {
   background-size: 100% 100%;
   animation: ew-stars-twinkle 2.5s ease-in-out infinite;
   pointer-events: none;
-  z-index: 0;
+  z-index: -1;
 }
 
 /* 中层：柔和星云弥散 (呼吸光晕) */
@@ -947,7 +960,7 @@ onUnmounted(() => {
     radial-gradient(ellipse at 75% 60%, rgba(123, 164, 235, 0.04) 0%, transparent 55%);
   animation: ew-nebula-pulse 8s ease-in-out infinite;
   pointer-events: none;
-  z-index: 0;
+  z-index: -1;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -1007,7 +1020,7 @@ onUnmounted(() => {
   );
   animation: ew-spotlight-flicker 6s ease-in-out infinite;
   pointer-events: none;
-  z-index: 0;
+  z-index: -1;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
