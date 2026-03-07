@@ -748,14 +748,14 @@ onUnmounted(() => {
 /* --- Moon Phase Theme (unscoped) --- */
 .theme-moon-phase .ew-panel {
   /* 深邃夜空蓝与冷月银白 */
-  --SmartThemeQuoteColor: #64748b;
-  --SmartThemeBodyColor: #e2e8f0;
+  --SmartThemeQuoteColor: #64748b !important;
+  --SmartThemeBodyColor: #e2e8f0 !important;
   /* 月光金/琥珀色强调 */
-  --ew-accent: #fbbf24;
-  --ew-accent-hover: #fcd34d;
-  --ew-accent-glow: rgba(251, 191, 36, 0.35);
-  --ew-success: #34d399;
-  --ew-danger: #f87171;
+  --ew-accent: #fbbf24 !important;
+  --ew-accent-hover: #fcd34d !important;
+  --ew-accent-glow: rgba(251, 191, 36, 0.35) !important;
+  --ew-success: #34d399 !important;
+  --ew-danger: #f87171 !important;
 
   /* 深邃主背景 */
   background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%) !important;
