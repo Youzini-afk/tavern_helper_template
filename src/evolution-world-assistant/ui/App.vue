@@ -859,7 +859,8 @@ onUnmounted(() => {
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
   filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.8));
-  animation: ew-icon-glow 4s ease-in-out infinite;
+  animation: ew-moon-rise 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.3s both,
+             ew-icon-glow 4s ease-in-out 0.9s infinite;
 }
 
 /* ── Phase 2: SVG 星盘图标注入 Section Card 标题 ── */
@@ -885,7 +886,8 @@ onUnmounted(() => {
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
   filter: drop-shadow(0 0 4px rgba(148, 163, 184, 0.6));
-  animation: ew-icon-glow-silver 6s ease-in-out infinite;
+  animation: ew-compass-spin-in 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) 0.5s both,
+             ew-icon-glow-silver 6s ease-in-out 1.2s infinite;
 }
 
 /* ── Phase 2: SVG 卷轴图标注入 Flow/API Card 标题 ── */
@@ -913,6 +915,7 @@ onUnmounted(() => {
   mask-repeat: no-repeat;
   filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.6));
   opacity: 0.8;
+  animation: ew-scroll-unroll 0.5s cubic-bezier(0.5, 2, 0.5, 1) 0.6s both;
 }
 
 /* 标签栏 */
@@ -1026,6 +1029,83 @@ onUnmounted(() => {
   50% {
     filter: drop-shadow(0 0 8px rgba(148, 163, 184, 0.9));
     transform: translateY(-50%) scale(1.05);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Phase 2.5: 装饰元素入场动画 (Entrance Micro-Animations)
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* 🌙 新月：破晓升起 — 从下方浮现 + 旋转 + 发光渐入 */
+@keyframes ew-moon-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(calc(-50% + 12px)) rotate(-20deg) scale(0.4);
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(calc(-50% - 2px)) rotate(3deg) scale(1.1);
+    filter: drop-shadow(0 0 10px rgba(251, 191, 36, 1));
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(-50%) rotate(0deg) scale(1);
+    filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.8));
+  }
+}
+
+/* ⭐ 星盘：魔法阵成型 — 从极小旋转放大展开 */
+@keyframes ew-compass-spin-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-50%) scale(0) rotate(-180deg);
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1.15) rotate(10deg);
+    filter: drop-shadow(0 0 10px rgba(148, 163, 184, 1));
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1) rotate(0deg);
+    filter: drop-shadow(0 0 4px rgba(148, 163, 184, 0.6));
+  }
+}
+
+/* 📄 卷轴：画轴展开 — Y 轴从压扁到弹出 */
+@keyframes ew-scroll-unroll {
+  0% {
+    opacity: 0;
+    transform: translateY(-50%) scaleY(0) scaleX(0.8);
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-50%) scaleY(1.2) scaleX(1.05);
+    filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.9));
+  }
+  100% {
+    opacity: 0.8;
+    transform: translateY(-50%) scaleY(1) scaleX(1);
+    filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.6));
+  }
+}
+
+/* ✅❌ Toast 图标：灵光爆现 — 放大闪烁后缩回 */
+@keyframes ew-toast-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(-50%) scale(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1.4);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
   }
 }
 
@@ -1221,7 +1301,8 @@ body:has(.theme-moon-phase) #toast-container > .toast-success::before {
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
   filter: drop-shadow(0 0 8px rgba(52, 211, 153, 0.8));
-  animation: ew-icon-glow 3s ease-in-out infinite;
+  animation: ew-toast-pop 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both,
+             ew-icon-glow 3s ease-in-out 0.4s infinite;
 }
 
 /* Error Toast */
@@ -1245,7 +1326,8 @@ body:has(.theme-moon-phase) #toast-container > .toast-error::before {
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
   filter: drop-shadow(0 0 8px rgba(248, 113, 113, 0.8));
-  animation: ew-icon-glow 3s ease-in-out infinite;
+  animation: ew-toast-pop 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both,
+             ew-icon-glow 3s ease-in-out 0.4s infinite;
 }
 
 /* Info/Warning overrides for completeness */
