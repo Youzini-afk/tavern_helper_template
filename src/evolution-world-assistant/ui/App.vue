@@ -717,7 +717,7 @@ onUnmounted(() => {
   width: 22px;
   height: 28px;
   border-radius: 50%;
-  background: var(--SmartThemeQuoteColor, #1e293b);
+  background: #161e2e;
   transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.6s ease;
 }
 
