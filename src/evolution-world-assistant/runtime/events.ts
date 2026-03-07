@@ -11,6 +11,7 @@ import {
 } from './state';
 import { runWorkflow } from './pipeline';
 import { initFloorBindingEvents, disposeFloorBindingEvents } from './floor-binding';
+import { runIncrementalHideCheck } from './hide-engine';
 
 const listenerStops: EventOnReturn[] = [];
 const domCleanup: Array<() => void> = [];
@@ -98,6 +99,13 @@ async function onGenerationAfterCommands(
   const decision = shouldHandleGenerationAfter(type, params, dryRun, settings);
   if (!decision.ok) {
     return;
+  }
+
+  // Apply incremental hide check before workflow so AI context is up-to-date
+  try {
+    runIncrementalHideCheck(settings.hide_settings);
+  } catch (e) {
+    console.warn('[Evolution World] Hide check failed:', e);
   }
 
   const messageId = getRuntimeState().last_send?.message_id ?? getLastMessageId();

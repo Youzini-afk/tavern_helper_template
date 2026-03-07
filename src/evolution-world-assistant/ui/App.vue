@@ -164,6 +164,67 @@
             </EwFieldRow>
           </div>
         </EwSectionCard>
+
+        <EwSectionCard title="隐藏设置" subtitle="批量隐藏旧楼层（节省 tokens）或限制界面渲染数量（提升流畅度）。">
+          <div class="ew-grid two">
+            <EwFieldRow label="隐藏楼层">
+              <button
+                type="button"
+                class="ew-switch"
+                role="switch"
+                :aria-checked="store.settings.hide_settings.enabled ? 'true' : 'false'"
+                @click="store.settings.hide_settings.enabled = !store.settings.hide_settings.enabled"
+              >
+                <span class="ew-switch__track" :data-enabled="store.settings.hide_settings.enabled ? '1' : '0'">
+                  <span class="ew-switch__thumb" />
+                </span>
+                <span class="ew-switch__text">{{ store.settings.hide_settings.enabled ? '已开启' : '已关闭' }}</span>
+              </button>
+            </EwFieldRow>
+            <EwFieldRow label="保留最新 N 条">
+              <input
+                v-model.number="store.settings.hide_settings.hide_last_n"
+                type="number"
+                min="0"
+                step="1"
+                placeholder="0 表示不隐藏"
+                :disabled="!store.settings.hide_settings.enabled"
+              />
+            </EwFieldRow>
+            <EwFieldRow label="限制楼层渲染">
+              <button
+                type="button"
+                class="ew-switch"
+                role="switch"
+                :aria-checked="store.settings.hide_settings.limiter_enabled ? 'true' : 'false'"
+                @click="store.settings.hide_settings.limiter_enabled = !store.settings.hide_settings.limiter_enabled"
+              >
+                <span class="ew-switch__track" :data-enabled="store.settings.hide_settings.limiter_enabled ? '1' : '0'">
+                  <span class="ew-switch__thumb" />
+                </span>
+                <span class="ew-switch__text">{{ store.settings.hide_settings.limiter_enabled ? '已开启' : '已关闭' }}</span>
+              </button>
+            </EwFieldRow>
+            <EwFieldRow label="仅渲染最新 M 条">
+              <input
+                v-model.number="store.settings.hide_settings.limiter_count"
+                type="number"
+                min="1"
+                step="1"
+                placeholder="例如 20"
+                :disabled="!store.settings.hide_settings.limiter_enabled"
+              />
+            </EwFieldRow>
+          </div>
+          <div class="ew-actions-wrap" style="margin-top: 0.75rem;">
+            <button type="button" class="ew-btn" @click="onApplyHide">
+              立即应用隐藏
+            </button>
+            <button type="button" class="ew-btn ew-btn--danger" @click="onUnhideAll">
+              取消全部隐藏
+            </button>
+          </div>
+        </EwSectionCard>
       </template>
 
       <template v-else-if="store.activeTab === 'flows'">
@@ -228,6 +289,7 @@
 
 <script setup lang="ts">
 import type { EwApiPreset, EwFlowConfig } from '../runtime/types';
+import { runFullHideCheck, unhideAll, applyFloorLimit } from '../runtime/hide-engine';
 import EwApiPresetCard from './components/EwApiPresetCard.vue';
 import EwFieldRow from './components/EwFieldRow.vue';
 import EwFlowCard from './components/EwFlowCard.vue';
@@ -267,6 +329,18 @@ function updateApiPreset(index: number, nextPreset: EwApiPreset) {
 
 function getPresetBindCount(presetId: string) {
   return store.settings.flows.filter(flow => flow.api_preset_id === presetId).length;
+}
+
+function onApplyHide() {
+  runFullHideCheck(store.settings.hide_settings);
+  applyFloorLimit(store.settings.hide_settings);
+  showEwNotice({ title: '隐藏助手', message: '隐藏设置已应用', level: 'success' });
+}
+
+function onUnhideAll() {
+  store.settings.hide_settings.hide_last_n = 0;
+  unhideAll();
+  showEwNotice({ title: '隐藏助手', message: '已取消全部隐藏', level: 'info' });
 }
 
 function openImportFilePicker() {

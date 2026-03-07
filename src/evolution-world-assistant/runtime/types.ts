@@ -163,6 +163,14 @@ export const EwSettingsSchema = z.object({
   meta_marker: z.string().default('EW_RUNTIME_META'),
   runtime_worldbook_prefix: z.string().default('EW_RUNTIME::'),
   max_scan_worldbooks: z.coerce.number().int().min(1).default(20),
+
+  // ── Hide settings (global) ──
+  hide_settings: z.object({
+    enabled: z.boolean().default(false),
+    hide_last_n: z.coerce.number().int().min(0).default(0),
+    limiter_enabled: z.boolean().default(false),
+    limiter_count: z.coerce.number().int().min(1).default(20),
+  }).default({ enabled: false, hide_last_n: 0, limiter_enabled: false, limiter_count: 20 }),
 });
 
 export const WorldbookOperationSchema = z.object({
