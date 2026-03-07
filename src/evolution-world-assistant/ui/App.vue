@@ -745,19 +745,20 @@ onUnmounted(() => {
 
 <!-- Moon Phase theme: MUST be unscoped so selectors can cross component boundaries -->
 <style>
-/* --- Moon Phase Theme (unscoped) --- */
+/* ═══════════════════════════════════════════════════════════════════
+   Moon Phase Theme (unscoped) — Deep Starry Night Aesthetic
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Phase 0: CSS Variables & Root Panel ── */
 .theme-moon-phase .ew-panel {
-  /* 深邃夜空蓝与冷月银白 */
   --SmartThemeQuoteColor: #64748b;
   --SmartThemeBodyColor: #e2e8f0;
-  /* 月光金/琥珀色强调 */
   --ew-accent: #fbbf24;
   --ew-accent-hover: #fcd34d;
   --ew-accent-glow: rgba(251, 191, 36, 0.35);
   --ew-success: #34d399;
   --ew-danger: #f87171;
 
-  /* 深邃主背景 */
   background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%) !important;
   border-color: rgba(148, 163, 184, 0.25) !important;
   box-shadow:
@@ -777,15 +778,90 @@ onUnmounted(() => {
 .theme-moon-phase .ew-panel__header {
   background: color-mix(in srgb, #0f172a 40%, rgba(15, 23, 42, 0.85)) !important;
   border-bottom-color: rgba(148, 163, 184, 0.2) !important;
+  overflow: hidden;
+  position: relative;
 }
 
-/* 标题银白月光流光质感 */
+/* ── Phase 2: SVG 新月图标注入标题 ── */
 .theme-moon-phase .ew-panel__title {
   background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 50%, #94a3b8 100%) !important;
   -webkit-background-clip: text !important;
   background-clip: text !important;
   -webkit-text-fill-color: transparent !important;
   position: relative;
+  padding-left: 28px !important;
+}
+.theme-moon-phase .ew-panel__title::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  /* 精绘 SVG 新月 — 纯矢量弯月含内弧 */
+  background-color: #fbbf24;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z'/%3E%3C/svg%3E");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.8));
+  animation: ew-icon-glow 4s ease-in-out infinite;
+}
+
+/* ── Phase 2: SVG 星盘图标注入 Section Card 标题 ── */
+.theme-moon-phase .ew-section-card__title {
+  color: #f8fafc !important;
+  position: relative;
+  padding-left: 24px !important;
+}
+.theme-moon-phase .ew-section-card__title::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  /* 精绘 SVG 星盘/罗盘 — 六芒星 + 圆环 */
+  background-color: #94a3b8;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpolygon points='12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpolygon points='12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2'/%3E%3C/svg%3E");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  filter: drop-shadow(0 0 4px rgba(148, 163, 184, 0.6));
+  animation: ew-icon-glow-silver 6s ease-in-out infinite;
+}
+
+/* ── Phase 2: SVG 卷轴图标注入 Flow/API Card 标题 ── */
+.theme-moon-phase .ew-flow-card__title,
+.theme-moon-phase .ew-api-card__title {
+  position: relative;
+  padding-left: 22px !important;
+}
+.theme-moon-phase .ew-flow-card__title::before,
+.theme-moon-phase .ew-api-card__title::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  /* 精绘 SVG 卷轴/文件 — 简约科幻风 */
+  background-color: #fbbf24;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cline x1='16' y1='13' x2='8' y2='13'/%3E%3Cline x1='16' y1='17' x2='8' y2='17'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cline x1='16' y1='13' x2='8' y2='13'/%3E%3Cline x1='16' y1='17' x2='8' y2='17'/%3E%3C/svg%3E");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.6));
+  opacity: 0.8;
 }
 
 /* 标签栏 */
@@ -794,56 +870,149 @@ onUnmounted(() => {
   border-bottom-color: rgba(148, 163, 184, 0.15) !important;
 }
 
-/* 已激活标签: 银色边框 + 星光底色 */
+/* ── Phase 3: 激活标签 + 流光扫光效果 ── */
 .theme-moon-phase .ew-panel__tab[data-active='1'] {
   border-color: rgba(148, 163, 184, 0.5) !important;
   background: rgba(251, 191, 36, 0.12) !important;
   color: #f8fafc !important;
   box-shadow: 0 4px 16px rgba(251, 191, 36, 0.15) !important;
+  position: relative;
+  overflow: hidden;
+}
+.theme-moon-phase .ew-panel__tab[data-active='1']::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(253, 224, 71, 0.08) 30%,
+    rgba(251, 191, 36, 0.15) 50%,
+    rgba(253, 224, 71, 0.08) 70%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: ew-starlight-sweep 3s ease-in-out infinite;
+  pointer-events: none;
 }
 .theme-moon-phase .ew-panel__tab:hover:not([data-active='1']) {
   background: rgba(251, 191, 36, 0.05) !important;
   color: #e2e8f0 !important;
 }
 
-/* 繁星漂移动画 */
-@keyframes ew-stars-drift {
-  0%, 100% { transform: translateY(0); opacity: 0.2; }
-  50% { transform: translateY(-10px); opacity: 0.5; }
+/* ═══════════════════════════════════════════════════════════════════
+   Phase 1: 高精度繁星背景 + 精细闪烁动画
+   ═══════════════════════════════════════════════════════════════════ */
+
+@keyframes ew-stars-twinkle {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.85; }
 }
 
-@keyframes ew-star-pulse {
-  0%, 100% { opacity: 0.15; transform: scale(1); }
-  50% { opacity: 0.4; transform: scale(1.02); }
+@keyframes ew-nebula-pulse {
+  0%, 100% { opacity: 0.08; transform: scale(1); }
+  50% { opacity: 0.18; transform: scale(1.03); }
 }
 
-/* Section Card: 深空底色 + 繁星背景 */
+/* Section Card: 深空底色 + 高密度像素级星场 */
 .theme-moon-phase .ew-section-card {
   overflow: hidden;
   border-color: rgba(148, 163, 184, 0.15) !important;
 }
+
+/* 底层：密集 1px 像素星场 (4 层径向渐变) */
 .theme-moon-phase .ew-section-card::before {
   content: "";
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  background:
-    radial-gradient(1px 1px at 20% 30%, #fbbf24 100%, transparent),
-    radial-gradient(1px 1px at 70% 60%, #cbd5e1 100%, transparent),
-    radial-gradient(1.5px 1.5px at 40% 80%, #fbbf24 100%, transparent);
-  background-size: 150px 150px;
-  animation: ew-stars-drift 8s ease-in-out infinite;
+  background-image:
+    radial-gradient(circle at 15% 25%, rgba(251, 191, 36, 0.18) 1px, transparent 1px),
+    radial-gradient(circle at 72% 55%, rgba(203, 213, 225, 0.15) 1px, transparent 1px),
+    radial-gradient(circle at 42% 78%, rgba(251, 191, 36, 0.12) 1px, transparent 1px),
+    radial-gradient(circle at 88% 18%, rgba(203, 213, 225, 0.14) 1px, transparent 1px);
+  background-size: 100% 100%;
+  animation: ew-stars-twinkle 2.5s ease-in-out infinite;
   pointer-events: none;
   z-index: 0;
 }
+
+/* 中层：柔和星云弥散 (呼吸光晕) */
 .theme-moon-phase .ew-section-card::after {
   content: "";
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: radial-gradient(ellipse at center, rgba(251, 191, 36, 0.05) 0%, transparent 60%);
-  animation: ew-star-pulse 6s ease-in-out infinite;
+  background:
+    radial-gradient(ellipse at 25% 40%, rgba(251, 191, 36, 0.06) 0%, transparent 55%),
+    radial-gradient(ellipse at 75% 60%, rgba(123, 164, 235, 0.04) 0%, transparent 55%);
+  animation: ew-nebula-pulse 8s ease-in-out infinite;
   pointer-events: none;
   z-index: 0;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Phase 2: 图标发光动画 (SVG Icons)
+   ═══════════════════════════════════════════════════════════════════ */
+
+@keyframes ew-icon-glow {
+  0%, 100% {
+    filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.8));
+    transform: translateY(-50%) scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 12px rgba(251, 191, 36, 1));
+    transform: translateY(-50%) scale(1.08);
+  }
+}
+
+@keyframes ew-icon-glow-silver {
+  0%, 100% {
+    filter: drop-shadow(0 0 4px rgba(148, 163, 184, 0.6));
+    transform: translateY(-50%) scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 8px rgba(148, 163, 184, 0.9));
+    transform: translateY(-50%) scale(1.05);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Phase 3: 探照灯 + 流光动画
+   ═══════════════════════════════════════════════════════════════════ */
+
+@keyframes ew-starlight-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+@keyframes ew-spotlight-flicker {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.6; }
+}
+
+/* 面板 Body 底层探照灯柔光 */
+.theme-moon-phase .ew-panel__body {
+  position: relative;
+}
+.theme-moon-phase .ew-panel__body::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: radial-gradient(
+    ellipse at 50% 20%,
+    rgba(251, 191, 36, 0.06) 0%,
+    rgba(123, 164, 235, 0.03) 30%,
+    transparent 65%
+  );
+  animation: ew-spotlight-flicker 6s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Preserved base styles: switches, buttons, inputs, etc.
+   ═══════════════════════════════════════════════════════════════════ */
 
 .theme-moon-phase .ew-switch__track[data-enabled='1'] {
   border-color: rgba(251, 191, 36, 0.5) !important;
@@ -856,10 +1025,9 @@ onUnmounted(() => {
   box-shadow: 0 0 12px rgba(52, 211, 153, 0.15) !important;
 }
 
-/* --- Red / danger element overrides --- */
 .theme-moon-phase .ew-btn--primary {
   background: var(--ew-accent) !important;
-  color: #451a03 !important; /* Dark text on bright gold */
+  color: #451a03 !important;
   border-color: var(--ew-accent) !important;
   box-shadow: 0 0 12px rgba(251, 191, 36, 0.3) !important;
 }
@@ -876,7 +1044,6 @@ onUnmounted(() => {
   box-shadow: 0 0 12px rgba(220, 38, 38, 0.15) !important;
 }
 
-/* Normal button hover */
 .theme-moon-phase .ew-btn {
   border-color: rgba(148, 163, 184, 0.3) !important;
 }
@@ -885,7 +1052,6 @@ onUnmounted(() => {
   border-color: rgba(251, 191, 36, 0.4) !important;
 }
 
-/* Input / select / textarea backgrounds */
 .theme-moon-phase input,
 .theme-moon-phase select,
 .theme-moon-phase textarea {
@@ -900,30 +1066,37 @@ onUnmounted(() => {
   box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.15) !important;
 }
 
-/* Summary stats cards */
 .theme-moon-phase .ew-summary-card {
   background: rgba(15, 23, 42, 0.4) !important;
   border-color: rgba(148, 163, 184, 0.15) !important;
 }
 .theme-moon-phase .ew-summary-card strong {
-  color: #fbbf24 !important; /* Gold text */
+  color: #fbbf24 !important;
 }
 
-/* Section card titles */
-.theme-moon-phase .ew-section-card__title {
-  color: #f8fafc !important;
-}
-
-/* Flow/API card borders */
+/* ── Phase 2: 卡片展开时的三层悬浮阴影 ── */
 .theme-moon-phase .ew-flow-card,
 .theme-moon-phase .ew-api-card {
   border-color: rgba(148, 163, 184, 0.2) !important;
   background: rgba(15, 23, 42, 0.35) !important;
+  transition: box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.4s ease !important;
 }
 .theme-moon-phase .ew-flow-card:hover,
 .theme-moon-phase .ew-api-card:hover {
   border-color: rgba(251, 191, 36, 0.3) !important;
-  box-shadow: 0 4px 16px rgba(251, 191, 36, 0.08) !important;
+  box-shadow:
+    0 4px 20px rgba(251, 191, 36, 0.12),
+    inset 0 1px 0 rgba(148, 163, 184, 0.08) !important;
+}
+
+/* 展开态：三重浮雕阴影爆发 (对齐正则美化选项卡效果) */
+.theme-moon-phase .ew-flow-card[data-expanded='1'],
+.theme-moon-phase .ew-api-card[data-expanded='1'] {
+  border-color: rgba(251, 191, 36, 0.4) !important;
+  box-shadow:
+    0 8px 40px rgba(251, 191, 36, 0.2),
+    0 0 40px rgba(251, 191, 36, 0.08),
+    inset 0 1px 0 rgba(251, 191, 36, 0.15) !important;
 }
 
 /* Scrollbar */
