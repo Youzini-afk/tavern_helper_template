@@ -153,6 +153,11 @@ function setMode(event: Event) {
 }
 
 async function loadModels() {
+  if (preset.value.mode === 'llm_connector') {
+    toastr.info('酒馆连接器模式使用酒馆主API，无需手动加载模型列表', 'Evolution World');
+    return;
+  }
+
   const apiurl = preset.value.api_url.trim();
   if (!apiurl) {
     toastr.warning('请先填写 API URL', 'Evolution World');
@@ -160,27 +165,61 @@ async function loadModels() {
   }
 
   loadingModels.value = true;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+
   try {
     // Build the /v1/models endpoint from the base URL
     const base = apiurl.replace(/\/+$/, '');
     const modelsUrl = base.endsWith('/models') ? base : `${base}/models`;
 
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    // Merge default + custom headers (same pattern as dispatcher.ts)
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    // Parse user-defined custom headers
+    const headersJson = preset.value.headers_json?.trim();
+    if (headersJson) {
+      try {
+        const custom = JSON.parse(headersJson);
+        if (custom && typeof custom === 'object') {
+          Object.assign(headers, custom);
+        }
+      } catch {
+        // Non-fatal: custom headers parse failure
+      }
+    }
+
     const apiKey = preset.value.api_key.trim();
     if (apiKey) {
       headers['Authorization'] = `Bearer ${apiKey}`;
     }
 
-    const resp = await fetch(modelsUrl, { method: 'GET', headers });
+    const resp = await fetch(modelsUrl, {
+      method: 'GET',
+      headers,
+      signal: controller.signal,
+    });
+
     if (!resp.ok) {
       throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
     }
 
     const json = await resp.json();
-    // OpenAI-compatible format: { data: [{ id: "model-name" }, ...] }
-    const rawList: string[] = Array.isArray(json.data)
-      ? json.data.map((m: any) => m.id ?? m.name ?? '').filter(Boolean)
-      : Array.isArray(json) ? json.map((m: any) => String(m.id ?? m)).filter(Boolean) : [];
+
+    // Support multiple response formats:
+    // 1. OpenAI standard: { data: [{ id: "model-name" }, ...] }
+    // 2. Plain array: ["model-a", "model-b"]
+    // 3. Array of objects: [{ id: "model-name" }]
+    let rawList: string[];
+    if (Array.isArray(json.data)) {
+      rawList = json.data.map((m: any) => String(m.id ?? m.name ?? '')).filter(Boolean);
+    } else if (Array.isArray(json)) {
+      rawList = json.map((m: any) => (typeof m === 'string' ? m : String(m.id ?? m.name ?? ''))).filter(Boolean);
+    } else {
+      rawList = [];
+    }
 
     const deduped = Array.from(new Set(rawList.map(item => item.trim()).filter(Boolean)));
     const current = preset.value.model.trim();
@@ -191,9 +230,14 @@ async function loadModels() {
     });
     toastr.success(`已加载 ${model_candidates.length} 个模型`, 'Evolution World');
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    toastr.error(`加载模型失败: ${message}`, 'Evolution World');
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      toastr.error('加载模型超时 (10s)', 'Evolution World');
+    } else {
+      const message = error instanceof Error ? error.message : String(error);
+      toastr.error(`加载模型失败: ${message}`, 'Evolution World');
+    }
   } finally {
+    clearTimeout(timeout);
     loadingModels.value = false;
   }
 }
