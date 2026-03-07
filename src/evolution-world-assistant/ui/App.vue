@@ -384,7 +384,7 @@ async function onImportFileChange(event: Event) {
       level: 'error',
       duration_ms: 4600,
     });
-    toastr.error(`import failed: ${message}`, 'Evolution World');
+    toastr.error(`导入失败: ${message}`, 'Evolution World');
   } finally {
     if (input) {
       input.value = '';
@@ -1133,8 +1133,17 @@ onUnmounted(() => {
    Assuming #toast-container is global, we force deep starry aesthetic
    when Moon Phase theme is active anywhere. */
 body:has(.theme-moon-phase) #toast-container > div {
-  background-color: rgba(15, 23, 42, 0.95) !important;
-  border: 1px solid rgba(148, 163, 184, 0.2) !important;
+  background:
+    /* 微型星点 — 让提示框也有星空感 */
+    radial-gradient(1px 1px at 15% 20%, rgba(251, 191, 36, 0.4) 50%, transparent),
+    radial-gradient(1px 1px at 65% 40%, rgba(203, 213, 225, 0.3) 50%, transparent),
+    radial-gradient(1px 1px at 85% 75%, rgba(251, 191, 36, 0.3) 50%, transparent),
+    radial-gradient(1px 1px at 35% 85%, rgba(203, 213, 225, 0.25) 50%, transparent),
+    /* 底色 */
+    linear-gradient(135deg, rgba(15, 23, 42, 0.97) 0%, rgba(30, 41, 59, 0.95) 100%) !important;
+  background-size: 67px 71px, 97px 103px, 83px 89px, 113px 119px, 100% 100% !important;
+  border: 1px solid rgba(148, 163, 184, 0.25) !important;
+  border-top: 2px solid rgba(251, 191, 36, 0.5) !important;
   box-shadow:
     0 10px 40px rgba(0, 0, 0, 0.8),
     0 0 20px rgba(251, 191, 36, 0.08),
@@ -1143,7 +1152,17 @@ body:has(.theme-moon-phase) #toast-container > div {
   color: #f8fafc !important;
   backdrop-filter: blur(16px) !important;
   padding: 16px 16px 16px 50px !important;
-  background-image: none !important; /* Disable default toastr icons initially */
+  background-image: none !important; /* override in specific toast types below */
+}
+
+/* Toast title (toastr renders a .toast-title element) */
+body:has(.theme-moon-phase) #toast-container .toast-title {
+  color: #fbbf24 !important;
+  font-weight: 600 !important;
+  text-shadow: 0 0 8px rgba(251, 191, 36, 0.3) !important;
+}
+body:has(.theme-moon-phase) #toast-container .toast-message {
+  color: #cbd5e1 !important;
 }
 
 /* Success Toast */

@@ -182,9 +182,9 @@ export const useEwStore = defineStore('evolution-world-store', () => {
         inject_reply: false,
       });
       if (!result.ok) {
-        toastr.error(result.reason ?? 'manual run failed', 'Evolution World');
+        toastr.error(result.reason ?? '手动运行失败', 'Evolution World');
       } else {
-        toastr.success('manual run succeeded', 'Evolution World');
+        toastr.success('手动运行成功', 'Evolution World');
       }
     } finally {
       busy.value = false;
@@ -196,14 +196,14 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     try {
       const api = window.EvolutionWorldAPI;
       if (!api) {
-        toastr.error('EvolutionWorldAPI not ready', 'Evolution World');
+        toastr.error('EvolutionWorldAPI 尚未就绪', 'Evolution World');
         return;
       }
       const result = await api.rollbackController();
       if (!result.ok) {
-        toastr.error(result.reason ?? 'rollback failed', 'Evolution World');
+        toastr.error(result.reason ?? '回滚失败', 'Evolution World');
       } else {
-        toastr.success('controller rollback succeeded', 'Evolution World');
+        toastr.success('控制器回滚成功', 'Evolution World');
       }
     } finally {
       busy.value = false;
@@ -214,8 +214,8 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     const payload = JSON.stringify(settings.value, null, 2);
     navigator.clipboard
       .writeText(payload)
-      .then(() => toastr.success('config copied to clipboard', 'Evolution World'))
-      .catch(() => toastr.error('failed to copy config', 'Evolution World'));
+      .then(() => toastr.success('配置已复制到剪贴板', 'Evolution World'))
+      .catch(() => toastr.error('复制配置失败', 'Evolution World'));
   }
 
   function importConfig() {
@@ -226,7 +226,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
         level: 'warning',
         duration_ms: 3600,
       });
-      toastr.warning('import text is empty', 'Evolution World');
+      toastr.warning('导入内容为空', 'Evolution World');
       return;
     }
 
@@ -242,7 +242,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
         level: 'success',
         duration_ms: 3200,
       });
-      toastr.success('config imported', 'Evolution World');
+      toastr.success('配置已导入', 'Evolution World');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       showEwNotice({
@@ -251,7 +251,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
         level: 'error',
         duration_ms: 4800,
       });
-      toastr.error(`import failed: ${message}`, 'Evolution World');
+      toastr.error(`导入失败: ${message}`, 'Evolution World');
     }
   }
 
@@ -263,7 +263,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     }
 
     if (result.ok) {
-      toastr.success('config is valid', 'Evolution World');
+      toastr.success('配置校验通过 ✓', 'Evolution World');
       return;
     }
 
@@ -275,14 +275,14 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     try {
       const result = await window.EvolutionWorldAPI?.validateControllerSyntax();
       if (!result) {
-        toastr.error('EvolutionWorldAPI not ready', 'Evolution World');
+        toastr.error('EvolutionWorldAPI 尚未就绪', 'Evolution World');
         return;
       }
 
       if (result.ok) {
-        toastr.success('controller syntax is valid', 'Evolution World');
+        toastr.success('控制器语法校验通过 ✓', 'Evolution World');
       } else {
-        toastr.error(result.reason ?? 'controller syntax invalid', 'Evolution World');
+        toastr.error(result.reason ?? '控制器语法无效', 'Evolution World');
       }
     } finally {
       busy.value = false;
