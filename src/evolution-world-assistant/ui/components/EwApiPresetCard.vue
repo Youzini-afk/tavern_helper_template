@@ -153,11 +153,6 @@ function setMode(event: Event) {
 }
 
 async function loadModels() {
-  if (typeof getModelList !== 'function') {
-    toastr.error('当前环境不支持 getModelList', 'Evolution World');
-    return;
-  }
-
   const apiurl = preset.value.api_url.trim();
   if (!apiurl) {
     toastr.warning('请先填写 API URL', 'Evolution World');
@@ -166,11 +161,28 @@ async function loadModels() {
 
   loadingModels.value = true;
   try {
-    const list = await getModelList({
-      apiurl,
-      key: preset.value.api_key.trim() || undefined,
-    });
-    const deduped = Array.from(new Set(list.map(item => item.trim()).filter(Boolean)));
+    // Build the /v1/models endpoint from the base URL
+    const base = apiurl.replace(/\/+$/, '');
+    const modelsUrl = base.endsWith('/models') ? base : `${base}/models`;
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const apiKey = preset.value.api_key.trim();
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+
+    const resp = await fetch(modelsUrl, { method: 'GET', headers });
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+    }
+
+    const json = await resp.json();
+    // OpenAI-compatible format: { data: [{ id: "model-name" }, ...] }
+    const rawList: string[] = Array.isArray(json.data)
+      ? json.data.map((m: any) => m.id ?? m.name ?? '').filter(Boolean)
+      : Array.isArray(json) ? json.map((m: any) => String(m.id ?? m)).filter(Boolean) : [];
+
+    const deduped = Array.from(new Set(rawList.map(item => item.trim()).filter(Boolean)));
     const current = preset.value.model.trim();
     const model_candidates = current && !deduped.includes(current) ? [current, ...deduped] : deduped;
     patch({
