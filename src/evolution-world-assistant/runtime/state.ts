@@ -122,6 +122,13 @@ export function shouldHandleGenerationAfter(
     return { ok: false, reason: `unsupported_type:${type}` };
   }
 
+  // CR-2: continue/regenerate/swipe don't create new send records, so the
+  // gate_ttl freshness check would almost always reject them. Skip it.
+  const noSendTypes = new Set(['continue', 'regenerate', 'swipe']);
+  if (noSendTypes.has(type)) {
+    return { ok: true, reason: 'ok' };
+  }
+
   const lastSend = state.last_send;
   const lastIntent = state.last_send_intent;
   const hasFreshSend = Boolean(lastSend && now() - lastSend.at <= settings.gate_ttl_ms);

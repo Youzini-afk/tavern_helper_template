@@ -111,21 +111,21 @@ async function onGenerationAfterCommands(
   const messageId = getRuntimeState().last_send?.message_id ?? getLastMessageId();
   let userInput = getRuntimeState().last_send?.user_input ?? getRuntimeState().last_send_intent?.user_input ?? '';
 
-  // CR-5: For continue/regenerate/swipe, the user hasn't typed new input.
-  // Fall back to the last user message so the workflow still runs.
-  if (!userInput.trim()) {
-    const genType = getRuntimeState().last_generation?.type ?? '';
-    if (['continue', 'regenerate', 'swipe'].includes(genType)) {
-      try {
-        const msgs = getChatMessages(`0-${getLastMessageId()}`, { hide_state: 'unhidden' });
-        const lastUserMsg = [...msgs].reverse().find((m: any) => m.role === 'user');
-        userInput = lastUserMsg?.message ?? '';
-      } catch { /* ignore */ }
-    }
+  // CR-4: For continue/regenerate/swipe, the user hasn't typed new input.
+  // Fall back to the last user message so the workflow has context.
+  const genType = getRuntimeState().last_generation?.type ?? '';
+  const isNonSendType = ['continue', 'regenerate', 'swipe'].includes(genType);
+  if (!userInput.trim() && isNonSendType) {
+    try {
+      const msgs = getChatMessages(`0-${getLastMessageId()}`, { hide_state: 'unhidden' });
+      const lastUserMsg = [...msgs].reverse().find((m: any) => m.role === 'user');
+      userInput = lastUserMsg?.message ?? '';
+    } catch { /* ignore */ }
   }
 
-  if (!userInput.trim()) {
-    console.debug('[Evolution World] skipped workflow: user input is empty (continue/regen may not capture input)');
+  // Only block on empty input for normal send — continue/regen/swipe can proceed without it
+  if (!userInput.trim() && !isNonSendType) {
+    console.debug('[Evolution World] skipped workflow: user input is empty');
     return;
   }
   clearSendContext();

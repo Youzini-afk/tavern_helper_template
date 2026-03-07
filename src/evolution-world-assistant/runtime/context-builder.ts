@@ -111,7 +111,9 @@ function getPresetSnapshot(): { name: string; enabled_prompts: Array<{ id: strin
 }
 
 export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRequestV1> {
-  const chatId = String(SillyTavern.getCurrentChatId?.() ?? SillyTavern.chatId ?? 'unknown');
+  const chatId = String(
+    (typeof SillyTavern !== 'undefined' ? SillyTavern?.getCurrentChatId?.() ?? (SillyTavern as any).chatId : null) ?? 'unknown',
+  );
   const requestId = input.request_id ?? uuidv4();
 
   // Resolve the target worldbook (character card's primary worldbook).

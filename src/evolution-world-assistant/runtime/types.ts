@@ -148,7 +148,7 @@ export const EwSettingsSchema = z.object({
   enabled: z.boolean().default(false),
   total_timeout_ms: z.coerce.number().int().positive().default(15000),
   dispatch_mode: z.enum(['parallel', 'serial']).default('parallel'),
-  failure_policy: z.enum(['stop_generation', 'continue_generation', 'retry_once', 'notify_only']).default('stop_generation'),
+  failure_policy: z.enum(['stop_generation', 'continue_generation', 'retry_once', 'notify_only', 'allow_partial_success']).default('stop_generation'),
   controller_entry_name: z.string().default('EW/Controller'),
   dynamic_entry_prefix: z.string().default('EW/Dyn/'),
   gate_ttl_ms: z.coerce.number().int().positive().default(12000),

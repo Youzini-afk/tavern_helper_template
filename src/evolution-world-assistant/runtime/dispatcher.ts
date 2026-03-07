@@ -71,6 +71,13 @@ function toErrorMessage(error: unknown): string {
 }
 
 function parseJsonFromText(rawText: string, flowId: string): Record<string, any> {
+  // CR-10: Try direct parse first — handles clean JSON output without regex issues
+  try {
+    const direct = JSON.parse(rawText.trim());
+    if (direct && typeof direct === 'object' && !Array.isArray(direct)) {
+      return direct;
+    }
+  } catch { /* fall through to regex extraction */ }
   const trimmed = rawText.trim();
   const withoutFence = trimmed
     .replace(/^```(?:json)?\s*/i, '')
@@ -275,7 +282,7 @@ async function executeFlow(
       throw new Error(`[${flow.id}] api_url is empty`);
     }
 
-    const headers = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...parseJsonObject(apiPreset.headers_json),
     };
@@ -395,21 +402,37 @@ export async function dispatchFlows(input: DispatchInput): Promise<DispatchFlows
     ),
   );
 
-  const failed = attempts.find(attempt => !attempt.ok);
-  if (failed) {
-    throw new DispatchFlowsError(failed.error ?? `[${failed.flow.id}] failed`, attempts);
+  const succeeded = attempts.filter(
+    (attempt): attempt is DispatchFlowAttempt & { response: NonNullable<DispatchFlowAttempt['response']> } =>
+      attempt.ok && Boolean(attempt.response),
+  );
+  const failed = attempts.filter(attempt => !attempt.ok);
+
+  if (failed.length > 0) {
+    // CR-3: allow_partial_success — use whatever succeeded, only throw if nothing worked
+    if (input.settings.failure_policy === 'allow_partial_success') {
+      if (succeeded.length === 0) {
+        throw new DispatchFlowsError(
+          failed.map(f => f.error ?? `[${f.flow.id}] failed`).join('; '),
+          attempts,
+        );
+      }
+      console.warn(
+        `[EW] allow_partial_success: ${failed.length} flow(s) failed, ${succeeded.length} succeeded — using partial results`,
+      );
+    } else {
+      // Default: any failure → throw
+      const first = failed[0];
+      throw new DispatchFlowsError(first.error ?? `[${first.flow.id}] failed`, attempts);
+    }
   }
 
   return {
-    results: attempts
-      .filter((attempt): attempt is DispatchFlowAttempt & { response: NonNullable<DispatchFlowAttempt['response']> } => {
-        return attempt.ok && Boolean(attempt.response);
-      })
-      .map(attempt => ({
-        flow: attempt.flow,
-        flow_order: attempt.flow_order,
-        response: attempt.response,
-      })),
+    results: succeeded.map(attempt => ({
+      flow: attempt.flow,
+      flow_order: attempt.flow_order,
+      response: attempt.response,
+    })),
     attempts,
   };
 }

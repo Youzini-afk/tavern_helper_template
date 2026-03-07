@@ -275,6 +275,7 @@ export function assembleOrderedPrompts(
 function resolveMarkerContent(identifier: string, components: PromptComponents): string {
   switch (identifier) {
     case 'main':               return components.main;
+    case 'enhanceDefinitions': return components.main; // CR-1: ST treats this as an extension of main
     case 'charDescription':    return components.charDescription;
     case 'charPersonality':    return components.charPersonality;
     case 'scenario':           return components.scenario;

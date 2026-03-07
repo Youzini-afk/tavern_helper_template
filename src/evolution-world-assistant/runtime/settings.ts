@@ -168,6 +168,7 @@ function migratePromptItems(flow: EwFlowConfig): EwFlowConfig {
   for (const item of flow.prompt_items) {
     // Avoid duplicates — check if identifier already exists
     if (migratedOrder.some(e => e.identifier === item.id)) continue;
+    const oldItem = item as any; // may carry legacy depth field
     migratedOrder.push({
       identifier: item.id,
       name: item.name || '迁移提示词',
@@ -176,7 +177,8 @@ function migratePromptItems(flow: EwFlowConfig): EwFlowConfig {
       role: item.role as 'system' | 'user' | 'assistant',
       content: item.content,
       injection_position: item.position === 'in_chat' ? 'in_chat' : 'relative',
-      injection_depth: 0,
+      injection_depth: typeof oldItem.injection_depth === 'number' ? oldItem.injection_depth
+        : typeof oldItem.depth === 'number' ? oldItem.depth : 0,
     });
   }
   return { ...flow, prompt_order: migratedOrder };

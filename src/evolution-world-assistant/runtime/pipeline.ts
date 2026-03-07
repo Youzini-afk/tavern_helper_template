@@ -80,7 +80,9 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
   const startedAt = Date.now();
   const settings = getSettings();
   const requestId = uuidv4();
-  const currentChatId = String(SillyTavern.getCurrentChatId?.() ?? SillyTavern.chatId ?? 'unknown');
+  const currentChatId = String(
+    (typeof SillyTavern !== 'undefined' ? SillyTavern?.getCurrentChatId?.() ?? (SillyTavern as any).chatId : null) ?? 'unknown',
+  );
   let attempts: DispatchFlowAttempt[] = [];
 
   try {

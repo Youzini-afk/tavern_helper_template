@@ -278,11 +278,11 @@
 </template>
 
 <script setup lang="ts">
-import type { EwApiPreset, EwFlowConfig, EwFlowPromptItem, EwPromptOrderEntry } from '../../runtime/types';
+import type { EwApiPreset, EwFlowConfig, EwPromptOrderEntry } from '../../runtime/types';
 import { simpleHash } from '../../runtime/helpers';
 import { getFieldHelp } from '../help-meta';
 import EwFieldRow from './EwFieldRow.vue';
-import EwHelpTip from './EwHelpTip.vue';
+
 import EwRulesEditor from './EwRulesEditor.vue';
 import EwPromptOrderList from './EwPromptOrderList.vue';
 
@@ -291,13 +291,13 @@ type GenerationNumberKey = 'max_context_tokens' | 'max_reply_tokens' | 'n_candid
 type GenerationBoolKey = 'unlock_context_length' | 'stream';
 type BehaviorBoolKey = 'continue_prefill' | 'squash_system_messages' | 'enable_function_calling' | 'send_inline_media' | 'request_thinking';
 type BehaviorSelectKey = 'name_behavior' | 'reasoning_effort' | 'verbosity';
-type PromptTriggerType = EwFlowPromptItem['trigger_types'][number];
+
 
 const props = defineProps<{ modelValue: EwFlowConfig; apiPresets: EwApiPreset[]; index: number; expanded: boolean }>();
 const emit = defineEmits<{ (event: 'toggle-expand'): void; (event: 'remove'): void; (event: 'update:modelValue', value: EwFlowConfig): void }>();
 
 const flow = computed(() => props.modelValue);
-const expandedPromptId = ref<string | null>(null);
+
 const selectedPreset = computed(() => props.apiPresets.find(preset => preset.id === flow.value.api_preset_id) ?? null);
 const endpointSummary = computed(() => {
   const preset = selectedPreset.value;
@@ -320,24 +320,10 @@ const endpointSummary = computed(() => {
 });
 const presetLabel = computed(() => selectedPreset.value?.name?.trim() || '未绑定');
 
-const PROMPT_TRIGGER_OPTIONS: Array<{ value: PromptTriggerType; label: string }> = [
-  { value: 'all', label: 'All types (default)' },
-  { value: 'send', label: '发送' },
-  { value: 'continue', label: '继续' },
-  { value: 'regenerate', label: '重试/重生' },
-  { value: 'quiet', label: '静默' },
-  { value: 'manual', label: '手动' },
-];
-
-watch(() => flow.value.prompt_items.map(item => item.id), ids => {
-  if (expandedPromptId.value && !ids.includes(expandedPromptId.value)) expandedPromptId.value = null;
-});
-
 function help(key: string) { return getFieldHelp(key); }
 function patch(partial: Partial<EwFlowConfig>) { emit('update:modelValue', { ...flow.value, ...partial }); }
 function patchGeneration(partial: Partial<EwFlowConfig['generation_options']>) { patch({ generation_options: { ...flow.value.generation_options, ...partial } }); }
 function patchBehavior(partial: Partial<EwFlowConfig['behavior_options']>) { patch({ behavior_options: { ...flow.value.behavior_options, ...partial } }); }
-function patchPromptItems(promptItems: EwFlowPromptItem[]) { patch({ prompt_items: promptItems }); }
 function updatePromptOrder(order: EwPromptOrderEntry[]) { patch({ prompt_order: order }); }
 function toNumber(raw: string, fallback: number) { const parsed = Number(raw); return Number.isFinite(parsed) ? parsed : fallback; }
 function clamp(value: number, min: number, max: number) { return Math.min(max, Math.max(min, value)); }
@@ -362,56 +348,6 @@ function setBehaviorToggle(key: BehaviorBoolKey) {
 function setBehaviorSelectByEvent(key: BehaviorSelectKey, event: Event) {
   patchBehavior({ [key]: (event.target as HTMLSelectElement).value as EwFlowConfig['behavior_options'][typeof key] } as Partial<EwFlowConfig['behavior_options']>);
 }
-function makePromptItem(index: number): EwFlowPromptItem {
-  return {
-    id: `prompt_${simpleHash(`${flow.value.id}-${index}-${Date.now()}`)}`,
-    name: `提示词 ${index + 1}`,
-    enabled: true,
-    role: 'system',
-    position: 'relative',
-    trigger_types: ['all'],
-    content: '',
-  };
-}
-function addPromptItem() {
-  const nextItems = [...flow.value.prompt_items, makePromptItem(flow.value.prompt_items.length)];
-  patchPromptItems(nextItems);
-  expandedPromptId.value = nextItems[nextItems.length - 1]?.id ?? null;
-}
-function removePromptItem(promptId: string) { patchPromptItems(flow.value.prompt_items.filter(item => item.id !== promptId)); }
-function movePromptItem(promptId: string, direction: -1 | 1) {
-  const currentIndex = flow.value.prompt_items.findIndex(item => item.id === promptId);
-  if (currentIndex < 0) return;
-  const nextIndex = currentIndex + direction;
-  if (nextIndex < 0 || nextIndex >= flow.value.prompt_items.length) return;
-  const nextItems = [...flow.value.prompt_items];
-  const [moved] = nextItems.splice(currentIndex, 1);
-  if (!moved) return;
-  nextItems.splice(nextIndex, 0, moved);
-  patchPromptItems(nextItems);
-}
-function togglePromptExpand(promptId: string) { expandedPromptId.value = expandedPromptId.value === promptId ? null : promptId; }
-function patchPromptItem(promptId: string, partial: Partial<EwFlowPromptItem>) {
-  patchPromptItems(flow.value.prompt_items.map(item => (item.id === promptId ? { ...item, ...partial } : item)));
-}
-function setPromptEnabled(promptId: string, event: Event) { patchPromptItem(promptId, { enabled: (event.target as HTMLInputElement).checked }); }
-function patchPromptText(promptId: string, key: 'name' | 'content', event: Event) { patchPromptItem(promptId, { [key]: (event.target as HTMLInputElement | HTMLTextAreaElement).value }); }
-function patchPromptRole(promptId: string, event: Event) { patchPromptItem(promptId, { role: (event.target as HTMLSelectElement).value as EwFlowPromptItem['role'] }); }
-function patchPromptPosition(promptId: string, event: Event) { patchPromptItem(promptId, { position: (event.target as HTMLSelectElement).value as EwFlowPromptItem['position'] }); }
-function getPromptPrimaryTrigger(item: EwFlowPromptItem): PromptTriggerType {
-  const [first] = item.trigger_types;
-  return first ?? 'all';
-}
-function patchPromptTriggerTypes(promptId: string, event: Event) {
-  const value = (event.target as HTMLSelectElement).value as PromptTriggerType;
-  patchPromptItem(promptId, { trigger_types: [value] });
-}
-function promptTriggerSummary(item: EwFlowPromptItem) {
-  const value = getPromptPrimaryTrigger(item);
-  const matched = PROMPT_TRIGGER_OPTIONS.find(option => option.value === value);
-  return matched?.label ?? value;
-}
-
 
 function addCustomRegex() {
   const nextRules = [...flow.value.custom_regex_rules, {

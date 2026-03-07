@@ -232,8 +232,13 @@ function onDragOver(toIdx: number) {
 
 function onDragEnd() {
   if (dragPreview.value) {
-    emit('update:promptOrder', dragPreview.value);
-    dragPreview.value = null;
+    const finalOrder = dragPreview.value;
+    // CR-6: emit new order first, then clear preview on nextTick
+    // to avoid a one-frame flicker back to old props.promptOrder
+    emit('update:promptOrder', finalOrder);
+    nextTick(() => {
+      dragPreview.value = null;
+    });
   }
   dragFromIdx = -1;
 }
