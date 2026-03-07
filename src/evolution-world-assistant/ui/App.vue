@@ -1123,4 +1123,98 @@ onUnmounted(() => {
 .theme-moon-phase .ew-panel__body::-webkit-scrollbar-thumb:hover {
   background: rgba(148, 163, 184, 0.5) !important;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Phase 4: Toastr Notification Styling (Moon Phase Integration)
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Require the app root to be in the theme for this to safely trigger,
+   or just hook into #toast-container directly if it's placed outside.
+   Assuming #toast-container is global, we force deep starry aesthetic
+   when Moon Phase theme is active anywhere. */
+body:has(.theme-moon-phase) #toast-container > div,
+.theme-moon-phase-active #toast-container > div {
+  background-color: rgba(15, 23, 42, 0.95) !important;
+  border: 1px solid rgba(148, 163, 184, 0.2) !important;
+  box-shadow:
+    0 10px 40px rgba(0, 0, 0, 0.8),
+    0 0 20px rgba(251, 191, 36, 0.08),
+    inset 0 1px 0 rgba(251, 191, 36, 0.15) !important;
+  border-radius: 12px !important;
+  color: #f8fafc !important;
+  backdrop-filter: blur(16px) !important;
+  padding: 16px 16px 16px 50px !important;
+  background-image: none !important; /* Disable default toastr icons initially */
+}
+
+/* Success Toast */
+body:has(.theme-moon-phase) #toast-container > .toast-success,
+.theme-moon-phase-active #toast-container > .toast-success {
+  border-left: 4px solid #34d399 !important;
+  box-shadow: 0 0 20px rgba(52, 211, 153, 0.15), inset 0 1px 0 rgba(251, 191, 36, 0.15) !important;
+}
+body:has(.theme-moon-phase) #toast-container > .toast-success::before,
+.theme-moon-phase-active #toast-container > .toast-success::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  background-color: #34d399;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 11.08V12a10 10 0 1 1-5.93-9.14'/%3E%3Cpolyline points='22 4 12 14.01 9 11.01'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 11.08V12a10 10 0 1 1-5.93-9.14'/%3E%3Cpolyline points='22 4 12 14.01 9 11.01'/%3E%3C/svg%3E");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  filter: drop-shadow(0 0 8px rgba(52, 211, 153, 0.8));
+  animation: ew-icon-glow 3s ease-in-out infinite alternate;
+}
+
+/* Error Toast */
+body:has(.theme-moon-phase) #toast-container > .toast-error,
+.theme-moon-phase-active #toast-container > .toast-error {
+  border-left: 4px solid #f87171 !important;
+  box-shadow: 0 0 20px rgba(248, 113, 113, 0.15), inset 0 1px 0 rgba(251, 191, 36, 0.15) !important;
+}
+body:has(.theme-moon-phase) #toast-container > .toast-error::before,
+.theme-moon-phase-active #toast-container > .toast-error::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  background-color: #f87171;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='12' y1='8' x2='12' y2='12'/%3E%3Cline x1='12' y1='16' x2='12.01' y2='16'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='12' y1='8' x2='12' y2='12'/%3E%3Cline x1='12' y1='16' x2='12.01' y2='16'/%3E%3C/svg%3E");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  filter: drop-shadow(0 0 8px rgba(248, 113, 113, 0.8));
+  animation: ew-icon-glow 3s ease-in-out infinite alternate;
+}
+
+/* Info/Warning overrides for completness */
+body:has(.theme-moon-phase) #toast-container > .toast-info,
+.theme-moon-phase-active #toast-container > .toast-info {
+  border-left: 4px solid #60a5fa !important;
+}
+body:has(.theme-moon-phase) #toast-container > .toast-warning,
+.theme-moon-phase-active #toast-container > .toast-warning {
+  border-left: 4px solid #fbbf24 !important;
+}
+
+body:has(.theme-moon-phase) #toast-container > div:hover,
+.theme-moon-phase-active #toast-container > div:hover {
+  box-shadow:
+    0 15px 50px rgba(0, 0, 0, 0.9),
+    0 0 30px rgba(251, 191, 36, 0.15),
+    inset 0 1px 0 rgba(251, 191, 36, 0.25) !important;
+}
+
 </style>
