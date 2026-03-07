@@ -122,8 +122,8 @@ export const EwFlowConfigSchema = z.object({
   priority: z.coerce.number().int().default(100),
   timeout_ms: z.coerce.number().int().positive().default(8000),
   api_preset_id: z.string().default(''),
-  generation_options: EwFlowGenerationOptionsSchema.default({}),
-  behavior_options: EwFlowBehaviorOptionsSchema.default({}),
+  generation_options: EwFlowGenerationOptionsSchema.default(() => EwFlowGenerationOptionsSchema.parse({})),
+  behavior_options: EwFlowBehaviorOptionsSchema.default(() => EwFlowBehaviorOptionsSchema.parse({})),
   prompt_order: z.array(EwPromptOrderEntrySchema).default(DEFAULT_PROMPT_ORDER),
   prompt_items: z.array(EwFlowPromptItemSchema).default([]),
   // Legacy fields kept for backward-compatible migration from old configs.

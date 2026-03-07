@@ -85,7 +85,7 @@ export async function commitMergedPlan(
   }
 
   // Apply declarative diff to worldbook entries.
-  let nextEntries = applyDeclarativeDiff(
+  const nextEntries = applyDeclarativeDiff(
     beforeEntries,
     mergedPlan.worldbook.desired_entries,
     mergedPlan.worldbook.remove_entries,
@@ -94,13 +94,11 @@ export async function commitMergedPlan(
   // Write the EJS controller entry into the character worldbook.
   const ctrlExisting = nextEntries.find(e => e.name === settings.controller_entry_name);
   if (ctrlExisting) {
-    const cloned = klona(nextEntries);
-    const ctrl = cloned.find(e => e.name === settings.controller_entry_name)!;
-    ctrl.content = controllerTemplate;
-    ctrl.enabled = true;
-    nextEntries = cloned;
+    // CR-3: nextEntries is already a deep clone from applyDeclarativeDiff — modify in-place.
+    ctrlExisting.content = controllerTemplate;
+    ctrlExisting.enabled = true;
   } else {
-    nextEntries = [...nextEntries, ensureDefaultEntry(settings.controller_entry_name, controllerTemplate, true, nextEntries, true)];
+    nextEntries.push(ensureDefaultEntry(settings.controller_entry_name, controllerTemplate, true, nextEntries, true));
   }
 
   // Commit all changes in one atomic operation.

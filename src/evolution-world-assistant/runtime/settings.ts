@@ -345,6 +345,7 @@ export function subscribeLastIo(listener: IoListener): { stop: () => void } {
 }
 
 export function saveControllerBackup(chatId: string, worldbookName: string, controllerContent: string) {
+  const MAX_BACKUPS = 10;
   writeScriptStorage(previous => {
     const backups = { ...(previous.backups ?? {}) };
     backups[chatId] = {
@@ -352,6 +353,17 @@ export function saveControllerBackup(chatId: string, worldbookName: string, cont
       worldbook_name: worldbookName,
       controller_content: controllerContent,
     };
+
+    // CR-4: LRU eviction — keep only the most recent MAX_BACKUPS entries.
+    const entries = Object.entries(backups);
+    if (entries.length > MAX_BACKUPS) {
+      entries.sort((a, b) => (b[1].at ?? 0) - (a[1].at ?? 0));
+      const keysToRemove = entries.slice(MAX_BACKUPS).map(e => e[0]);
+      for (const key of keysToRemove) {
+        delete backups[key];
+      }
+    }
+
     return { ...previous, backups };
   });
 }

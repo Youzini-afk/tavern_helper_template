@@ -1,5 +1,6 @@
 import {
   EwSettings,
+  EwSettingsSchema,
   LastIoSummary,
   RunSummary,
 } from '../runtime/types';
@@ -18,9 +19,7 @@ import {
 import { runWorkflow } from '../runtime/pipeline';
 import { showEwNotice } from './notice';
 
-// M-3: Use shared factory functions instead of duplicating definitions.
-const createApiPreset = (index: number) => createDefaultApiPreset(index);
-const createFlow = (index: number, apiPresetId: string) => createDefaultFlow(index, apiPresetId);
+
 
 export const useEwStore = defineStore('evolution-world-store', () => {
   const settings = ref<EwSettings>(getSettings());
@@ -85,7 +84,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
 
   function addApiPreset() {
     const next = klona(settings.value);
-    const newPreset = createApiPreset(next.api_presets.length + 1);
+    const newPreset = createDefaultApiPreset(next.api_presets.length + 1);
     next.api_presets.push(newPreset);
     settings.value = next;
     expandedApiPresetId.value = newPreset.id;
@@ -97,7 +96,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     _.remove(next.api_presets, preset => preset.id === presetId);
 
     if (next.api_presets.length === 0) {
-      next.api_presets.push(createApiPreset(1));
+      next.api_presets.push(createDefaultApiPreset(1));
     }
 
     const fallbackPresetId = next.api_presets[0].id;
@@ -120,9 +119,9 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   function addFlow() {
     const next = klona(settings.value);
     if (next.api_presets.length === 0) {
-      next.api_presets.push(createApiPreset(1));
+      next.api_presets.push(createDefaultApiPreset(1));
     }
-    const newFlow = createFlow(next.flows.length + 1, next.api_presets[0].id);
+    const newFlow = createDefaultFlow(next.flows.length + 1, next.api_presets[0].id);
     next.flows.push(newFlow);
     settings.value = next;
     expandedFlowId.value = newFlow.id;
@@ -134,9 +133,9 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     _.remove(next.flows, flow => flow.id === flowId);
     if (next.flows.length === 0) {
       if (next.api_presets.length === 0) {
-        next.api_presets.push(createApiPreset(1));
+        next.api_presets.push(createDefaultApiPreset(1));
       }
-      next.flows.push(createFlow(1, next.api_presets[0].id));
+      next.flows.push(createDefaultFlow(1, next.api_presets[0].id));
     }
     settings.value = next;
     if (expandedFlowId.value === flowId) {
@@ -233,6 +232,8 @@ export const useEwStore = defineStore('evolution-world-store', () => {
 
     try {
       const parsed = JSON.parse(importText.value);
+      // CR-2: Validate against schema before replacing, so invalid JSON is caught explicitly.
+      EwSettingsSchema.parse(parsed);
       replaceSettings(parsed as EwSettings);
       settings.value = getSettings();
       showEwNotice({

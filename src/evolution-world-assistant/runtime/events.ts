@@ -109,7 +109,21 @@ async function onGenerationAfterCommands(
   }
 
   const messageId = getRuntimeState().last_send?.message_id ?? getLastMessageId();
-  const userInput = getRuntimeState().last_send?.user_input ?? getRuntimeState().last_send_intent?.user_input ?? '';
+  let userInput = getRuntimeState().last_send?.user_input ?? getRuntimeState().last_send_intent?.user_input ?? '';
+
+  // CR-5: For continue/regenerate/swipe, the user hasn't typed new input.
+  // Fall back to the last user message so the workflow still runs.
+  if (!userInput.trim()) {
+    const genType = getRuntimeState().last_generation?.type ?? '';
+    if (['continue', 'regenerate', 'swipe'].includes(genType)) {
+      try {
+        const msgs = getChatMessages(`0-${getLastMessageId()}`, { hide_state: 'unhidden' });
+        const lastUserMsg = [...msgs].reverse().find((m: any) => m.role === 'user');
+        userInput = lastUserMsg?.message ?? '';
+      } catch { /* ignore */ }
+    }
+  }
+
   if (!userInput.trim()) {
     console.debug('[Evolution World] skipped workflow: user input is empty (continue/regen may not capture input)');
     return;

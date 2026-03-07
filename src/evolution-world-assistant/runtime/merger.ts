@@ -94,8 +94,15 @@ export function mergeFlowResults(results: MergeInput): MergedPlan {
     }
   }
 
+  const fallbackController: ControllerModel = {
+    template_id: 'entry_selector_v1',
+    variables: [],
+    rules: [],
+    fallback_entries: [],
+  };
+
   if (!controllerModel) {
-    throw new Error('merged result missing controller_model');
+    console.warn('[EW Merger] No flow returned controller_model — using empty fallback.');
   }
 
   return {
@@ -107,7 +114,7 @@ export function mergeFlowResults(results: MergeInput): MergedPlan {
       })),
       remove_entries: [...removeMap.keys()].map(name => ({ name })),
     },
-    controller_model: controllerModel.value,
+    controller_model: controllerModel ? controllerModel.value : fallbackController,
     reply_instruction: replyParts.join('\n\n'),
     diagnostics,
   };
