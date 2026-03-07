@@ -689,63 +689,94 @@ onUnmounted(() => {
 }
 
 /* --- Moon Phase Theme --- */
-.theme-moon-phase {
-  /* 基础主色：深灰蓝月夜 */
-  --ew-bg-primary: #0f172a;
-  --ew-bg-surface: linear-gradient(135deg, #1a1f2e 0%, #2d3748 50%, #1a1f2e 100%);
-  --ew-bg-surface-hover: linear-gradient(135deg, rgba(45, 55, 72, 0.5) 0%, rgba(26, 31, 46, 0.6) 100%);
-  --ew-bg-inset: rgba(15, 23, 42, 0.4);
-
-  /* 边框：月光蓝 / 紫灰 */
-  --ew-border: rgba(123, 164, 235, 0.25);
-  --ew-border-focus: rgba(139, 92, 246, 0.5);
-
-  /* 阴影：柔和月光发光感 */
-  --ew-shadow-sm: 0 4px 24px rgba(123, 164, 235, 0.1), inset 0 1px 0 rgba(148, 163, 184, 0.05);
-  --ew-shadow-md: 0 8px 40px rgba(139, 92, 246, 0.15), inset 0 1px 0 rgba(148, 163, 184, 0.1);
-
-  /* 文字颜色：冷月银白 */
-  --ew-text-primary: #f8fafc;
-  --ew-text-secondary: #c4b5fd;
-  --ew-text-muted: #94a3b8;
-
-  /* 品牌色/强调色：浅紫月光 */
+/* Override the base theme variables that ALL components read via color-mix() */
+:deep(.theme-moon-phase) .ew-panel {
+  /* 月夜冷蓝色调替换默认灰蓝 */
+  --SmartThemeQuoteColor: #4a6fa5;
+  --SmartThemeBodyColor: #e0e8f5;
+  /* 月相紫色强调 */
   --ew-accent: #a78bfa;
   --ew-accent-hover: #c4b5fd;
-  --ew-accent-bg: rgba(139, 92, 246, 0.15);
+  --ew-accent-glow: rgba(167, 139, 250, 0.4);
+  --ew-success: #38bdf8;
+  --ew-danger: #fb7185;
+
+  /* 更深的面板背景 */
+  background:
+    radial-gradient(ellipse at 15% 5%, rgba(99, 102, 241, 0.08), transparent 50%),
+    radial-gradient(ellipse at 85% 95%, rgba(56, 189, 248, 0.06), transparent 50%),
+    color-mix(in srgb, #1e293b 25%, rgba(8, 12, 22, 0.88));
+  border-color: rgba(99, 102, 241, 0.25);
+  box-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.6),
+    0 0 80px rgba(99, 102, 241, 0.06),
+    inset 0 1px 1px rgba(148, 163, 184, 0.1);
+}
+
+/* 遮罩层月夜色调 */
+:deep(.theme-moon-phase).ew-overlay {
+  background:
+    radial-gradient(circle at 10% 0%, rgba(99, 102, 241, 0.1), transparent 45%),
+    radial-gradient(circle at 90% 100%, rgba(56, 189, 248, 0.08), transparent 40%),
+    rgba(2, 6, 15, 0.72);
+}
+
+/* 头部渐变月色 */
+:deep(.theme-moon-phase) .ew-panel__header {
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, #334155 30%, rgba(8, 12, 22, 0.85)),
+    color-mix(in srgb, #1e293b 20%, rgba(8, 12, 22, 0.8))
+  );
+  border-bottom-color: rgba(99, 102, 241, 0.2);
+}
+
+/* 标题月光渐变 */
+:deep(.theme-moon-phase) .ew-panel__title {
+  background: linear-gradient(135deg, #f1f5f9 0%, #c4b5fd 60%, #818cf8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* 标签栏月色 */
+:deep(.theme-moon-phase) .ew-panel__tabs {
+  background: color-mix(in srgb, #1e293b 18%, rgba(6, 10, 18, 0.6));
+  border-bottom-color: rgba(99, 102, 241, 0.15);
+}
+
+/* 已激活标签月光紫 */
+:deep(.theme-moon-phase) .ew-panel__tab[data-active='1'] {
+  border-color: #818cf8;
+  background: rgba(99, 102, 241, 0.2);
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3);
 }
 
 /* 月晕呼吸特效 */
 @keyframes ew-halo-breath {
-  0%, 100% { opacity: 0.2; transform: scale(1); }
-  50% { opacity: 0.4; transform: scale(1.02); }
+  0%, 100% { opacity: 0.15; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(1.01); }
 }
 
-:deep(.theme-moon-phase) .ew-flow-card {
+/* Section Card 月光底色 */
+:deep(.theme-moon-phase) .ew-section-card {
   position: relative;
   overflow: hidden;
 }
-:deep(.theme-moon-phase) .ew-flow-card::before {
+:deep(.theme-moon-phase) .ew-section-card::after {
   content: "";
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: radial-gradient(circle at 10% 20%, rgba(123, 164, 235, 0.12) 0%, rgba(96, 165, 250, 0.05) 25%, transparent 45%);
-  animation: ew-halo-breath 8s ease-in-out infinite;
+  background: radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.07) 0%, transparent 50%);
+  animation: ew-halo-breath 10s ease-in-out infinite;
   pointer-events: none;
   z-index: 0;
 }
-:deep(.theme-moon-phase) .ew-api-card {
-  position: relative;
-  overflow: hidden;
-}
-:deep(.theme-moon-phase) .ew-api-card::before {
-  content: "";
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.1) 0%, rgba(167, 139, 250, 0.05) 20%, transparent 40%);
-  animation: ew-halo-breath 6s ease-in-out infinite reverse;
-  pointer-events: none;
-  z-index: 0;
+
+/* Switch 月光紫 */
+:deep(.theme-moon-phase) .ew-switch__track[data-enabled='1'] {
+  border-color: rgba(129, 140, 248, 0.5);
+  background: rgba(99, 102, 241, 0.3);
 }
 
 </style>
+
