@@ -118,7 +118,7 @@ async function onGenerationAfterCommands(
 
   setProcessing(true);
   try {
-    const result = await runWorkflow({
+    let result = await runWorkflow({
       message_id: messageId,
       user_input: userInput,
       mode: 'auto',
@@ -126,9 +126,34 @@ async function onGenerationAfterCommands(
     });
 
     if (!result.ok) {
-      stopGenerationNow();
-      toastr.error(`动态世界流程失败，本轮已中止: ${result.reason ?? 'unknown error'}`, 'Evolution World');
-      return;
+      const policy = settings.failure_policy ?? 'stop_generation';
+
+      if (policy === 'retry_once') {
+        toastr.warning(`工作流首次失败，正在重试… (${result.reason ?? ''})`, 'Evolution World');
+        result = await runWorkflow({
+          message_id: messageId,
+          user_input: userInput,
+          mode: 'auto',
+          inject_reply: true,
+        });
+      }
+
+      if (!result.ok) {
+        switch (policy) {
+          case 'continue_generation':
+            toastr.warning(`工作流失败，AI 继续生成: ${result.reason ?? 'unknown'}`, 'Evolution World');
+            break;
+          case 'notify_only':
+            toastr.info(`工作流失败: ${result.reason ?? 'unknown'}`, 'Evolution World');
+            break;
+          case 'stop_generation':
+          case 'retry_once':
+          default:
+            stopGenerationNow();
+            toastr.error(`动态世界流程失败，本轮已中止: ${result.reason ?? 'unknown error'}`, 'Evolution World');
+            return;
+        }
+      }
     }
   } finally {
     setProcessing(false);

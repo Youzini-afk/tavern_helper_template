@@ -160,7 +160,12 @@
         >
           <div class="ew-grid two">
             <EwFieldRow label="失败策略" :help="help('failure_policy')">
-              <input :value="'失败即中止发送'" type="text" disabled />
+              <select v-model="store.settings.failure_policy">
+                <option value="stop_generation">失败即中止发送</option>
+                <option value="continue_generation">静默继续生成</option>
+                <option value="retry_once">失败重试一次</option>
+                <option value="notify_only">仅通知（不中止）</option>
+              </select>
             </EwFieldRow>
           </div>
         </EwSectionCard>

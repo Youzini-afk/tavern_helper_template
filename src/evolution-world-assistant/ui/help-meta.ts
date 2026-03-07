@@ -76,8 +76,8 @@ const FIELD_HELP_LIST: FieldHelpMeta[] = [
   {
     key: 'failure_policy',
     label: '失败策略',
-    shortHelp: '当前固定为“失败即中止发送”。',
-    detailHelp: '任一关键工作流失败、schema 非法或语法校验失败都会停止本轮生成且不提交变更。',
+    shortHelp: '工作流失败时的处理方式。',
+    detailHelp: '失败即中止：停止 AI 生成并提示错误。静默继续：显示警告但 AI 照常生成。失败重试一次：自动重试一次，仍失败则中止。仅通知：仅弹出提示，不影响生成。',
     isAdvanced: true,
   },
   {
