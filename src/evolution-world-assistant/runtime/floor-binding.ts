@@ -15,9 +15,10 @@ const floorBindingListenerStops: EventOnReturn[] = [];
  * Mark floor entries: write entry names, Dyn content snapshots, and Controller
  * snapshot into the chat message's `data` field.
  *
- * The stored snapshots enable:
- * - Automatic orphan cleanup when individual floors are deleted
- * - Full purge + restore when switching chats (shujuku pattern)
+ * Each message stores the complete state of all EW entries at that point.
+ * On CHAT_CHANGED, purgeAndRestoreForChat reads the latest surviving
+ * snapshot to restore the worldbook — covering delete-floor (rollback),
+ * new-chat (clean slate), and switch-back (full restore).
  */
 export async function markFloorEntries(
   messageId: number,
@@ -68,154 +69,67 @@ export function getFloorEntryNames(messageId: number): string[] {
   return _.get(messages[0].data, EW_FLOOR_DATA_KEY, []);
 }
 
-/**
- * Get all floor bindings: map of message_id -> entry names.
- */
-function getAllFloorBindings(): Map<number, string[]> {
-  const lastId = getLastMessageId();
-  if (lastId < 0) {
-    return new Map();
-  }
-
-  const bindings = new Map<number, string[]>();
-  const allMessages = getChatMessages(`0-${lastId}`);
-
-  for (const msg of allMessages) {
-    const entries: string[] = _.get(msg.data, EW_FLOOR_DATA_KEY, []);
-    if (entries.length > 0) {
-      bindings.set(msg.message_id, entries);
-    }
-  }
-
-  return bindings;
-}
-
 // ── Chat Message Scanning ─────────────────────────────────────
 
 /**
- * Find the latest Controller snapshot from surviving chat messages.
- * Scans all messages from newest to oldest.
+ * Scan all surviving messages and return the latest snapshots.
+ * Reads messages once and extracts both Controller and Dyn snapshots
+ * in a single pass for efficiency.
  */
-function findLatestControllerSnapshot(): string | null {
+function collectLatestSnapshots(): {
+  controller: string | null;
+  dyn: Map<string, DynSnapshot>;
+} {
   const lastId = getLastMessageId();
   if (lastId < 0) {
-    return null;
+    return { controller: null, dyn: new Map() };
   }
 
   const allMessages = getChatMessages(`0-${lastId}`);
-  for (let i = allMessages.length - 1; i >= 0; i--) {
-    const snapshot: string | undefined = _.get(allMessages[i].data, EW_CONTROLLER_DATA_KEY);
-    if (typeof snapshot === 'string' && snapshot.length > 0) {
-      return snapshot;
-    }
-  }
-  return null;
-}
+  const dynMerged = new Map<string, DynSnapshot>();
+  let latestController: string | null = null;
 
-/**
- * Collect all Dyn entry snapshots from all surviving chat messages.
- * Later messages overwrite earlier ones for the same entry name (latest wins).
- */
-function collectDynSnapshotsFromChat(): Map<string, DynSnapshot> {
-  const lastId = getLastMessageId();
-  if (lastId < 0) {
-    return new Map();
-  }
-
-  const allMessages = getChatMessages(`0-${lastId}`);
-  const merged = new Map<string, DynSnapshot>();
-
-  // Iterate oldest to newest so latest wins
+  // Iterate oldest to newest: latest wins for both Dyn and Controller.
   for (const msg of allMessages) {
+    // Dyn snapshots
     const snapshots: DynSnapshot[] | undefined = _.get(msg.data, EW_DYN_SNAPSHOTS_KEY);
     if (Array.isArray(snapshots)) {
       for (const snap of snapshots) {
         if (snap.name && typeof snap.content === 'string') {
-          merged.set(snap.name, snap);
+          dynMerged.set(snap.name, snap);
         }
       }
     }
+
+    // Controller snapshot
+    const ctrlSnap: string | undefined = _.get(msg.data, EW_CONTROLLER_DATA_KEY);
+    if (typeof ctrlSnap === 'string' && ctrlSnap.length > 0) {
+      latestController = ctrlSnap;
+    }
   }
 
-  return merged;
+  return { controller: latestController, dyn: dynMerged };
 }
 
-// ── Orphan Cleanup (Floor Deletion) ──────────────────────────
-
-/**
- * Cleanup orphaned entries when individual floors are deleted.
- * Also auto-rolls back Controller to the latest surviving snapshot.
- */
-export async function cleanupOrphanedEntries(settings: EwSettings): Promise<number> {
-  const target = await resolveTargetWorldbook(settings);
-  const bindings = getAllFloorBindings();
-
-  // Collect all entry names that are still validly bound to existing floors.
-  const validEntryNames = new Set<string>();
-  for (const entries of bindings.values()) {
-    for (const name of entries) {
-      validEntryNames.add(name);
-    }
-  }
-
-  // If no bindings exist, this is handled by purgeAndRestoreForChat instead.
-  if (bindings.size === 0) {
-    return 0;
-  }
-
-  const orphanedNames: string[] = [];
-  for (const entry of target.entries) {
-    if (entry.name.startsWith(settings.dynamic_entry_prefix) && !validEntryNames.has(entry.name)) {
-      orphanedNames.push(entry.name);
-    }
-  }
-
-  // Auto-rollback Controller to latest surviving snapshot.
-  let controllerRolledBack = false;
-  if (orphanedNames.length > 0) {
-    const latestSnapshot = findLatestControllerSnapshot();
-    const ctrlEntry = target.entries.find(e => e.name === settings.controller_entry_name);
-    if (latestSnapshot !== null && ctrlEntry && ctrlEntry.content !== latestSnapshot) {
-      ctrlEntry.content = latestSnapshot;
-      controllerRolledBack = true;
-    } else if (latestSnapshot === null && ctrlEntry) {
-      // No surviving snapshots → delete Controller content.
-      ctrlEntry.content = '';
-      ctrlEntry.enabled = false;
-      controllerRolledBack = true;
-    }
-  }
-
-  if (orphanedNames.length === 0 && !controllerRolledBack) {
-    return 0;
-  }
-
-  const orphanSet = new Set(orphanedNames);
-  const filteredEntries = target.entries.filter(entry => !orphanSet.has(entry.name));
-  await replaceWorldbook(target.worldbook_name, filteredEntries, { render: 'debounced' });
-
-  if (controllerRolledBack) {
-    console.info(`[Evolution World] Controller auto-rolled back to latest surviving snapshot`);
-  }
-
-  return orphanedNames.length;
-}
-
-// ── Full Purge + Restore (Chat Switch) ──────────────────────
+// ── Unified Purge + Restore ─────────────────────────────────
 
 /**
  * Purge all EW-generated entries from worldbook, then restore from the
  * current chat's message data snapshots.
  *
- * Called on CHAT_CHANGED to ensure clean state for each chat.
- * Follows shujuku's pattern: worldbook entries are ephemeral derivatives
- * of the chat message data (source of truth).
+ * This is the SINGLE handler for all CHAT_CHANGED events:
+ *
+ *   Delete floor  → deleted message's snapshot gone → restores previous message's state (rollback)
+ *   New chat      → no messages with snapshots     → clean slate (purge only)
+ *   Switch back   → old chat's messages still have snapshots → full restore
+ *
+ * Worldbook entries are treated as ephemeral derivatives of chat message data.
  */
 export async function purgeAndRestoreForChat(settings: EwSettings): Promise<void> {
   const target = await resolveTargetWorldbook(settings);
 
   // Step 1: Remove all EW/Dyn/* entries and clear EW/Controller.
-  let nextEntries = target.entries.filter(
+  const nextEntries = target.entries.filter(
     entry => !entry.name.startsWith(settings.dynamic_entry_prefix),
   );
   const ctrlEntry = nextEntries.find(e => e.name === settings.controller_entry_name);
@@ -224,21 +138,18 @@ export async function purgeAndRestoreForChat(settings: EwSettings): Promise<void
     ctrlEntry.enabled = false;
   }
 
-  // Step 2: Restore from current chat's message data.
-  const dynSnapshots = collectDynSnapshotsFromChat();
-  const controllerSnapshot = findLatestControllerSnapshot();
+  // Step 2: Restore from current chat's latest surviving snapshots.
+  const { controller: controllerSnapshot, dyn: dynSnapshots } = collectLatestSnapshots();
 
-  if (dynSnapshots.size > 0) {
-    for (const snap of dynSnapshots.values()) {
-      const existing = nextEntries.find(e => e.name === snap.name);
-      if (existing) {
-        existing.content = snap.content;
-        existing.enabled = snap.enabled;
-      } else {
-        nextEntries.push(
-          ensureDefaultEntry(snap.name, snap.content, snap.enabled, nextEntries),
-        );
-      }
+  for (const snap of dynSnapshots.values()) {
+    const existing = nextEntries.find(e => e.name === snap.name);
+    if (existing) {
+      existing.content = snap.content;
+      existing.enabled = snap.enabled;
+    } else {
+      nextEntries.push(
+        ensureDefaultEntry(snap.name, snap.content, snap.enabled, nextEntries),
+      );
     }
   }
 
@@ -257,27 +168,18 @@ export async function purgeAndRestoreForChat(settings: EwSettings): Promise<void
   const restoredDyn = dynSnapshots.size;
   const restoredCtrl = controllerSnapshot ? 1 : 0;
   console.info(
-    `[Evolution World] Chat switch: purged old entries, restored ${restoredDyn} Dyn + ${restoredCtrl} Controller from chat snapshots`,
+    `[Evolution World] purgeAndRestore: ${restoredDyn} Dyn + ${restoredCtrl} Controller restored from chat snapshots`,
   );
 }
 
 // ── Event Handlers ──────────────────────────────────────────
 
 /**
- * Handle chat changes: purge + restore on chat switch, cleanup orphans on floor deletion.
+ * Handle all CHAT_CHANGED events with unified purge + restore.
  */
 async function onChatChanged(settings: EwSettings): Promise<void> {
   try {
-    // Always run purge+restore first to handle chat switches cleanly.
     await purgeAndRestoreForChat(settings);
-
-    // Then run orphan cleanup for any floor deletions within the same chat.
-    if (settings.auto_cleanup_orphans) {
-      const cleaned = await cleanupOrphanedEntries(settings);
-      if (cleaned > 0) {
-        console.info(`[Evolution World] cleaned up ${cleaned} orphaned entries`);
-      }
-    }
   } catch (error) {
     console.warn('[Evolution World] chat change handling failed:', error);
   }
