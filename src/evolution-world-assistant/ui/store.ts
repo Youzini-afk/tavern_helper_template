@@ -232,6 +232,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
       (flow as any).api_url = '';
       (flow as any).api_key = '';
       (flow as any).headers_json = '';
+      (flow as any).api_preset_id = '';
     }
     const payload = JSON.stringify(safeSettings, null, 2);
     navigator.clipboard
@@ -298,6 +299,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
       delete copy.api_url;
       delete copy.api_key;
       delete copy.headers_json;
+      delete copy.api_preset_id;
       return copy;
     });
     return { ew_flow_export: true, version: 1, flows: safeFlows };

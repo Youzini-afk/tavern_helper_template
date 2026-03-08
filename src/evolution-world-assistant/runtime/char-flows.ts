@@ -23,7 +23,7 @@ interface CharFlowsPayload {
 // ── 敏感字段过滤 ────────────────────────────────────────────
 
 /** 写入 EW/Flows 时排除的字段（敏感 / 仅本地） */
-const EXCLUDED_FIELDS = new Set(['api_url', 'api_key', 'headers_json']);
+const EXCLUDED_FIELDS = new Set(['api_url', 'api_key', 'headers_json', 'api_preset_id']);
 
 /**
  * 从 flow 配置中去除敏感字段，返回安全的纯数据对象。
