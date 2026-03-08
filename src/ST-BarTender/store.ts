@@ -111,6 +111,85 @@ export const useStore = defineStore('preset-control', () => {
   // ========== AI 加载状态 ==========
   const isLoading = ref(false);
 
+  // ========== 模型列表 ==========
+  const modelCandidates = ref<string[]>([]);
+  const isLoadingModels = ref(false);
+
+  /** 从自定义 API 端点获取模型列表 */
+  async function loadModels() {
+    const api = settings.value.api;
+    if (api.mode !== 'custom') {
+      toastr.info('当前使用酒馆 API，模型由酒馆管理');
+      return;
+    }
+
+    if (!api.custom_url?.trim()) {
+      toastr.warning('请先填写 API 地址');
+      return;
+    }
+
+    isLoadingModels.value = true;
+    try {
+      const base = api.custom_url.replace(/\/+$/, '');
+      const modelsUrl = base.endsWith('/models') ? base : `${base}/models`;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10_000);
+
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (api.custom_key?.trim()) {
+        headers['Authorization'] = `Bearer ${api.custom_key.trim()}`;
+      }
+
+      try {
+        const resp = await fetch(modelsUrl, {
+          method: 'GET',
+          headers,
+          signal: controller.signal,
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+
+        const json = await resp.json();
+
+        // 响应格式规范化（兼容多种 API 实现）
+        let rawList: string[] = [];
+        if (json.data && Array.isArray(json.data)) {
+          // OpenAI 标准格式: { data: [{ id: "model-name" }] }
+          rawList = json.data.map((m: any) => String(m.id ?? m.name ?? ''));
+        } else if (Array.isArray(json)) {
+          // 纯数组格式: ["model1", "model2"] 或 [{ id: "model1" }]
+          rawList = json.map((m: any) => (typeof m === 'string' ? m : String(m.id ?? m.name ?? '')));
+        }
+
+        const models = Array.from(new Set(rawList.map(s => s.trim()).filter(Boolean)));
+        modelCandidates.value = models;
+
+        if (models.length > 0) {
+          toastr.success(`已获取 ${models.length} 个模型`);
+          // 如果当前没有选中模型，自动选中第一个
+          if (!api.custom_model?.trim()) {
+            api.custom_model = models[0];
+          }
+        } else {
+          toastr.warning('未获取到任何模型');
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          throw new Error('获取模型列表超时 (10s)');
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toastr.error(`获取模型列表失败: ${msg}`);
+      console.error('[预设控制] 获取模型列表失败:', err);
+    } finally {
+      isLoadingModels.value = false;
+    }
+  }
+
   // ========== 面板显示 ==========
   const panelOpen = ref(settings.value.panel_open);
 
@@ -268,9 +347,12 @@ export const useStore = defineStore('preset-control', () => {
     presetEntries,
     presetParams,
     isLoading,
+    modelCandidates,
+    isLoadingModels,
     panelOpen,
     scanPreset,
     sendChat,
+    loadModels,
     getBoundValue,
     executeAction,
     autoGenerateFromPreset,

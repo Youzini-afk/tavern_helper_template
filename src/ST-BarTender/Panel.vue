@@ -48,7 +48,27 @@
         </div>
         <div class="pc-panel__api-row">
           <label class="pc-panel__api-label">模型</label>
-          <input v-model="store.settings.api.custom_model" class="pc-panel__api-input" placeholder="gpt-4o-mini" />
+          <select
+            v-if="store.modelCandidates.length > 0"
+            v-model="store.settings.api.custom_model"
+            class="pc-panel__api-select pc-panel__api-model-select"
+          >
+            <option v-for="m in store.modelCandidates" :key="m" :value="m">{{ m }}</option>
+          </select>
+          <input
+            v-else
+            v-model="store.settings.api.custom_model"
+            class="pc-panel__api-input"
+            placeholder="gpt-4o-mini"
+          />
+          <button
+            class="pc-panel__api-fetch-btn"
+            :disabled="store.isLoadingModels"
+            title="获取模型列表"
+            @click="store.loadModels()"
+          >
+            <i :class="store.isLoadingModels ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-rotate'" />
+          </button>
         </div>
         <div class="pc-panel__api-row">
           <label class="pc-panel__api-label">源</label>
@@ -294,6 +314,37 @@ onUnmounted(() => {
   color: rgba(255, 255, 255, 0.85);
   font-size: 12px;
   outline: none;
+}
+
+.pc-panel__api-model-select {
+  max-width: none;
+}
+
+.pc-panel__api-fetch-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  background: rgba(100, 181, 246, 0.1);
+  color: rgba(100, 181, 246, 0.8);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 12px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.pc-panel__api-fetch-btn:hover:not(:disabled) {
+  background: rgba(100, 181, 246, 0.2);
+  color: rgba(100, 181, 246, 1);
+  border-color: rgba(100, 181, 246, 0.3);
+}
+
+.pc-panel__api-fetch-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .pc-panel__body {
