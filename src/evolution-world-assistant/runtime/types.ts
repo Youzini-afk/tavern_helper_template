@@ -154,7 +154,7 @@ export const EwSettingsSchema = z.object({
   gate_ttl_ms: z.coerce.number().int().positive().default(12000),
   floor_binding_enabled: z.boolean().default(true),
   auto_cleanup_orphans: z.boolean().default(true),
-  snapshot_storage: z.enum(['message_data', 'file']).default('message_data'),
+  snapshot_storage: z.enum(['message_data', 'file']).default('file'),
   theme_moon: z.boolean().default(false),
   ui_open: z.boolean().default(false),
   api_presets: z.array(EwApiPresetSchema).default([]),
