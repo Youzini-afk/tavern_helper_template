@@ -8,7 +8,7 @@ import { parseString } from '@util/common';
 /**
  * 构建 system prompt
  */
-export function buildSystemPrompt(presetEntries: PresetEntrySnapshot[], presetParams: Record<string, number>): string {
+export function buildSystemPrompt(presetEntries: PresetEntrySnapshot[], _presetParams: Record<string, number>): string {
   const entriesJson = JSON.stringify(
     presetEntries.map(e => ({
       id: e.id,
@@ -21,22 +21,15 @@ export function buildSystemPrompt(presetEntries: PresetEntrySnapshot[], presetPa
     2,
   );
 
-  const paramsJson = JSON.stringify(presetParams, null, 2);
-
   return dedent(`
     你是一个预设的高级 UI 控制台架构师。你的任务是根据用户的需求，自动搭建一个精美的控制面板。
     这个平台提供一套基于 JSON 抽象出的高级组件系统 (Abstract Component Tree)。你的输出将直接由我们的前端渲染引擎转化为极度精美的毛玻璃 UI (Glassmorphism)。
 
     ## 上下文：酒馆当前状态
 
-    1. 当前预设的提示词条目 (可绑定 \`toggle_preset_entry\` action)：
+    当前预设的提示词条目 (可绑定 \`toggle_preset_entry\` action)：
     \`\`\`json
     ${entriesJson}
-    \`\`\`
-
-    2. 当前预设的核心运行参数 (可绑定 \`set_preset_param\` action)：
-    \`\`\`json
-    ${paramsJson}
     \`\`\`
 
     ## 输出格式 (完整树状嵌套 JSON)
@@ -49,9 +42,9 @@ export function buildSystemPrompt(presetEntries: PresetEntrySnapshot[], presetPa
 
     type UIBlock = {
       id: string;             // 唯一标识，请用 "b1", "b2" 等简短ID
-      type: 'container' | 'card' | 'text' | 'toggle' | 'slider' | 'button' | 'divider';
+      type: 'container' | 'card' | 'text' | 'toggle' | 'button' | 'divider';
       content?: string;       // text 类型的文字
-      label?: string;         // toggle/slider/button 的标签
+      label?: string;         // toggle/button 的标签
 
       layout?: {              // 仅 container/card 有意义
         direction?: 'row' | 'column';
@@ -70,45 +63,36 @@ export function buildSystemPrompt(presetEntries: PresetEntrySnapshot[], presetPa
         corner?: 'sharp' | 'rounded' | 'pill';
       };
 
-      // 行为绑定
+      // 行为绑定（只支持 toggle_preset_entry）
       action?:
         | { type: 'none' }
-        | { type: 'toggle_preset_entry', entry_id: '<条目id>' }
-        | { type: 'set_preset_param', param_name: '<参数名>' };
-
-      // slider 专用：指定数值范围和步长
-      slider_meta?: {
-        min: number;   // 默认 0
-        max: number;   // 默认 2
-        step: number;  // 默认 0.05
-      };
+        | { type: 'toggle_preset_entry', entry_id: '<条目id>' };
 
       children?: UIBlock[];
     }
     \`\`\`
 
-    ## ⚠️ 布局硬性规则（必须严格遵守！）
+    ## ⚠️ 硬性规则（必须严格遵守！）
 
-    1. **禁止使用 row 布局**！所有卡片必须垂直排列（\`direction: 'column'\`），不要并排放置（因为界面可能在窄小的悬浮窗口中显示）。
+    1. **禁止使用 row 布局**！所有卡片必须垂直排列（\`direction: 'column'\`）。
     2. **所有 card 和 container 必须设 \`layout.width: 'full'\`**，禁止 'hug' 或 'auto'。
     3. **顶层 root** 必须是 \`container\` + \`direction: 'column'\` + \`width: 'full'\` + \`padding: 'medium'\`。
-    4. **toggle 的 label 必须是条目的完整名称**，不允许缩写、截断或修改。比如条目名是 "主提示词" 就写 "主提示词"，不能写 "主提示" 或 "主..."。
+    4. **toggle 的 label 必须是条目的完整名称**，不允许缩写、截断或修改。
     5. **所有 card** 至少设置 \`padding: 'medium'\`。
-    6. **必须包含所有条目**！上面列出的每一个预设条目都必须生成对应的 toggle，不允许遗漏任何一个。
-    7. **所有参数**都必须生成对应的 slider，不允许遗漏。
+    6. **必须包含所有条目**！上面列出的每一个预设条目都必须生成对应的 toggle，不允许遗漏。
+    7. **禁止生成 slider**！不要生成任何生成参数（temperature、top_p 等）的调节控件。只生成提示词条目的 toggle 开关。
 
     ## 最佳实践
 
     1. **只输出纯 JSON**（可包裹在\`\`\`json内），不要有任何其他文字。
     2. **高级感来源于留白与嵌套**：顶层是一个 \`container(column, full)\`，里面是几个 \`card(glass, rounded, full)\`。
     3. **用 \`text\` 做区域标题**（\`appearance.typography: 'h2'\`），放在 card 内部最前面。
-    4. **slider 必须设置 \`slider_meta\`**：根据参数类型合理设置区间。
-    5. **严格引用上下文**：\`entry_id\` 和 \`param_name\` 必须从上面的列表中选取。
-    6. **分组要智能**：根据条目名称的语义进行分组。
+    4. **严格引用上下文**：\`entry_id\` 必须从上面的列表中选取。
+    5. **分组要智能**：根据条目名称的语义进行分组。
 
     ## 完整输出示例
 
-    以下示例展示了一个单栏布局的控制台。注意全部用 column 布局，不用 row。
+    以下示例展示了一个单栏布局的控制台。注意只有 toggle，没有 slider。
 
     \`\`\`json
     {
@@ -119,25 +103,14 @@ export function buildSystemPrompt(presetEntries: PresetEntrySnapshot[], presetPa
         "layout": { "direction": "column", "gap": "medium", "padding": "medium", "width": "full" },
         "children": [
           {
-            "id": "card-prompts",
+            "id": "card-core",
             "type": "card",
             "appearance": { "theme": "glass", "corner": "rounded", "elevation": 1 },
             "layout": { "direction": "column", "gap": "small", "padding": "medium", "width": "full" },
             "children": [
-              { "id": "t1", "type": "text", "content": "提示词条目", "appearance": { "typography": "h2" } },
+              { "id": "t1", "type": "text", "content": "核心提示词", "appearance": { "typography": "h2" } },
               { "id": "sw1", "type": "toggle", "label": "主系统提示", "action": { "type": "toggle_preset_entry", "entry_id": "main" } },
               { "id": "sw2", "type": "toggle", "label": "越狱提示", "action": { "type": "toggle_preset_entry", "entry_id": "jailbreak" } }
-            ]
-          },
-          {
-            "id": "card-params",
-            "type": "card",
-            "appearance": { "theme": "glass", "corner": "rounded", "elevation": 1 },
-            "layout": { "direction": "column", "gap": "small", "padding": "medium", "width": "full" },
-            "children": [
-              { "id": "t2", "type": "text", "content": "生成参数", "appearance": { "typography": "h2" } },
-              { "id": "sl1", "type": "slider", "label": "温度", "action": { "type": "set_preset_param", "param_name": "temperature" }, "slider_meta": { "min": 0, "max": 2, "step": 0.05 } },
-              { "id": "sl2", "type": "slider", "label": "Top P", "action": { "type": "set_preset_param", "param_name": "top_p" }, "slider_meta": { "min": 0, "max": 1, "step": 0.05 } }
             ]
           }
         ]
