@@ -27,6 +27,7 @@
       </div>
     </header>
 
+    <transition name="ew-expand">
       <div v-if="hasBeenExpanded" v-show="expanded" class="ew-flow-card__body">
         <section class="ew-flow-card__section">
           <h4>基础信息</h4>
@@ -272,6 +273,7 @@
           <textarea :value="flow.request_template" rows="4" :placeholder="help('flow.request_template')?.placeholder" @input="setText('request_template', $event)" />
         </EwFieldRow>
       </div>
+    </transition>
   </article>
 </template>
 

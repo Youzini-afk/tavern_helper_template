@@ -229,7 +229,6 @@ defineEmits<{
   overflow-y: auto;
   overflow-x: hidden;
   padding: 1.1rem 1.25rem 1.25rem;
-  scroll-behavior: smooth;
 }
 
 .ew-panel__body::-webkit-scrollbar {
