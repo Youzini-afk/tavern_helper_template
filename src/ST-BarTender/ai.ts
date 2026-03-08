@@ -254,50 +254,44 @@ export async function callAI(
 
   if (apiConfig.mode === 'custom' && apiConfig.custom_url) {
     // === 自定义 API ===
-    if (!stApi?.getRequestHeaders) {
-      throw new Error('SillyTavern.getRequestHeaders 不可用');
-    }
-
     const useStream = !!(apiConfig.gen_stream && onStream);
 
-    const requestBody = {
-      messages: messages,
-      model: (apiConfig.custom_model || '').replace(/^models\//, ''),
-      max_tokens: apiConfig.gen_max_tokens || 64000,
-      temperature: apiConfig.gen_temperature ?? 0.7,
-      top_p: apiConfig.gen_top_p ?? 0.95,
-      stream: useStream,
-      chat_completion_source: 'custom',
-      group_names: [],
-      include_reasoning: false,
-      reasoning_effort: 'medium',
-      enable_web_search: false,
-      request_images: false,
-      custom_prompt_post_processing: 'strict',
-      reverse_proxy: apiConfig.custom_url,
-      proxy_password: '',
-      custom_url: apiConfig.custom_url,
-      custom_include_headers: apiConfig.custom_key
-        ? `Authorization: Bearer ${apiConfig.custom_key}`
-        : '',
-    };
+    if (useStream) {
+      // === 流式：直接调用自定义 API（绕过 ST 代理，因为 ST 代理不转发 SSE） ===
+      const baseUrl = apiConfig.custom_url.replace(/\/+$/, '');
+      const streamUrl = `${baseUrl}/chat/completions`;
 
-    console.info('[预设控制] 正在通过自定义 API 调用...', { stream: useStream });
-    const response = await fetchFn('/api/backends/chat-completions/generate', {
-      method: 'POST',
-      headers: { ...stApi.getRequestHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    });
+      const streamBody = {
+        messages,
+        model: (apiConfig.custom_model || '').replace(/^models\//, ''),
+        max_tokens: apiConfig.gen_max_tokens || 64000,
+        temperature: apiConfig.gen_temperature ?? 0.7,
+        top_p: apiConfig.gen_top_p ?? 0.95,
+        stream: true,
+      };
 
-    if (!response.ok) {
-      const errTxt = await response.text();
-      throw new Error(`API 请求失败: ${response.status} ${errTxt}`);
-    }
+      const streamHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (apiConfig.custom_key) {
+        streamHeaders['Authorization'] = `Bearer ${apiConfig.custom_key}`;
+      }
 
-    if (useStream && response.body) {
+      console.info('[预设控制] 流式直接调用:', streamUrl);
+      const response = await fetch(streamUrl, {
+        method: 'POST',
+        headers: streamHeaders,
+        body: JSON.stringify(streamBody),
+      });
+
+      if (!response.ok) {
+        const errTxt = await response.text();
+        throw new Error(`API 请求失败: ${response.status} ${errTxt}`);
+      }
+
       // === SSE 流式读取 ===
       rawResponse = '';
-      const reader = response.body.getReader();
+      const reader = response.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
 
@@ -307,7 +301,7 @@ export async function callAI(
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // 保留未完成的行
+        buffer = lines.pop() || '';
 
         for (const line of lines) {
           const trimmed = line.trim();
@@ -327,7 +321,45 @@ export async function callAI(
         }
       }
     } else {
-      // === 非流式：等完整响应 ===
+      // === 非流式：通过 ST 代理 ===
+      if (!stApi?.getRequestHeaders) {
+        throw new Error('SillyTavern.getRequestHeaders 不可用');
+      }
+
+      const requestBody = {
+        messages: messages,
+        model: (apiConfig.custom_model || '').replace(/^models\//, ''),
+        max_tokens: apiConfig.gen_max_tokens || 64000,
+        temperature: apiConfig.gen_temperature ?? 0.7,
+        top_p: apiConfig.gen_top_p ?? 0.95,
+        stream: false,
+        chat_completion_source: 'custom',
+        group_names: [],
+        include_reasoning: false,
+        reasoning_effort: 'medium',
+        enable_web_search: false,
+        request_images: false,
+        custom_prompt_post_processing: 'strict',
+        reverse_proxy: apiConfig.custom_url,
+        proxy_password: '',
+        custom_url: apiConfig.custom_url,
+        custom_include_headers: apiConfig.custom_key
+          ? `Authorization: Bearer ${apiConfig.custom_key}`
+          : '',
+      };
+
+      console.info('[预设控制] 非流式通过 ST 代理调用...');
+      const response = await fetchFn('/api/backends/chat-completions/generate', {
+        method: 'POST',
+        headers: { ...stApi.getRequestHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errTxt = await response.text();
+        throw new Error(`API 请求失败: ${response.status} ${errTxt}`);
+      }
+
       const data = await response.json();
       if (data?.choices?.[0]) {
         rawResponse = (data.choices[0].message?.content || '').trim();
