@@ -2,31 +2,57 @@
 // 预设控制脚本入口
 // ============================================================
 
-import { createScriptIdIframe, teleportStyle } from '@util/script';
+import { createScriptIdDiv, createScriptIdIframe, teleportStyle } from '@util/script';
 import Panel from './Panel.vue';
 import { useStore } from './store';
 
-const BUTTON_NAME = '预设控制';
+const SCRIPT_NAME = '预设控制';
 
 $(() => {
-  // 注册脚本按钮
-  appendInexistentScriptButtons([{ name: BUTTON_NAME, visible: true }]);
+  // ============================================================
+  // 1. 在魔法棒面板（#extensions_settings2）中注册入口按钮
+  // ============================================================
+  const $trigger = createScriptIdDiv().appendTo('#extensions_settings2');
 
+  const triggerApp = createApp({
+    template: `
+      <div class="preset-control-trigger" @click="toggle">
+        <i class="fa-solid fa-sliders"></i>
+        <span>${SCRIPT_NAME}</span>
+      </div>
+    `,
+    setup() {
+      return {
+        toggle() {
+          togglePanel();
+        },
+      };
+    },
+  });
+  triggerApp.mount($trigger[0]);
+
+  // 将触发按钮样式注入到酒馆页面
+  const { destroy: destroyTriggerStyle } = teleportStyle();
+
+  // ============================================================
+  // 2. 悬浮面板（独立 iframe）
+  // ============================================================
   let $iframe: JQuery<HTMLIFrameElement> | null = null;
-  let app: ReturnType<typeof createApp> | null = null;
+  let panelApp: ReturnType<typeof createApp> | null = null;
   let pinia: ReturnType<typeof createPinia> | null = null;
-  let styleDestroy: (() => void) | null = null;
+  let destroyPanelStyle: (() => void) | null = null;
 
-  function openPanel() {
+  function togglePanel() {
     if ($iframe) {
-      // 已存在，切换显示
       $iframe.toggle();
       return;
     }
+    openPanel();
+  }
 
-    // 创建隔离 iframe
+  function openPanel() {
     pinia = createPinia();
-    app = createApp(Panel).use(pinia);
+    panelApp = createApp(Panel).use(pinia);
 
     $iframe = createScriptIdIframe()
       .css({
@@ -44,7 +70,6 @@ $(() => {
       .on('load', function () {
         const iframeDoc = this.contentDocument!;
 
-        // iframe 内部的 body 需要允许穿透
         iframeDoc.body.style.cssText = `
           margin: 0;
           padding: 0;
@@ -55,25 +80,22 @@ $(() => {
           overflow: hidden;
         `;
 
-        // 面板容器需要接收事件
         const mountDiv = iframeDoc.createElement('div');
         mountDiv.style.cssText = 'pointer-events: auto; position: fixed; top: 0; left: 0;';
         iframeDoc.body.appendChild(mountDiv);
 
-        // 注入 Font Awesome（from parent）
+        // 注入 Font Awesome
         const faLink = iframeDoc.createElement('link');
         faLink.rel = 'stylesheet';
         faLink.href = 'https://testingcf.jsdelivr.net/npm/@fortawesome/fontawesome-free@6/css/all.min.css';
         iframeDoc.head.appendChild(faLink);
 
-        // 传送样式
+        // 传送样式到 iframe
         const { destroy } = teleportStyle(iframeDoc.head);
-        styleDestroy = destroy;
+        destroyPanelStyle = destroy;
 
-        // 挂载 Vue
-        app!.mount(mountDiv);
+        panelApp!.mount(mountDiv);
 
-        // 初始化 store
         const store = useStore(pinia!);
         store.panelOpen = true;
         store.scanPreset();
@@ -82,30 +104,21 @@ $(() => {
       });
   }
 
-  function closePanel() {
-    if ($iframe) {
-      $iframe.hide();
-    }
-  }
-
-  // 按钮点击事件
-  eventOn(getButtonEvent(BUTTON_NAME), () => {
-    if ($iframe && $iframe.is(':visible')) {
-      closePanel();
-    } else {
-      openPanel();
-    }
-  });
-
-  // 卸载
+  // ============================================================
+  // 3. 卸载
+  // ============================================================
   $(window).on('pagehide', () => {
-    app?.unmount();
+    panelApp?.unmount();
     $iframe?.remove();
-    styleDestroy?.();
-    app = null;
+    destroyPanelStyle?.();
+    triggerApp.unmount();
+    $trigger.remove();
+    destroyTriggerStyle();
+
+    panelApp = null;
     $iframe = null;
     pinia = null;
-    styleDestroy = null;
+    destroyPanelStyle = null;
   });
 
   console.info('[预设控制] 脚本已加载');
