@@ -28,7 +28,7 @@
     </header>
 
     <transition name="ew-expand">
-      <div v-if="expanded" class="ew-flow-card__body">
+      <div v-if="hasBeenExpanded" v-show="expanded" class="ew-flow-card__body">
         <section class="ew-flow-card__section">
           <h4>基础信息</h4>
           <div class="ew-grid ew-grid--two">
@@ -297,6 +297,11 @@ const props = defineProps<{ modelValue: EwFlowConfig; apiPresets: EwApiPreset[];
 const emit = defineEmits<{ (event: 'toggle-expand'): void; (event: 'remove'): void; (event: 'update:modelValue', value: EwFlowConfig): void }>();
 
 const flow = computed(() => props.modelValue);
+
+// "Once-expanded" pattern: after first expansion, keep DOM alive (v-show)
+// to avoid re-mount cost on subsequent toggles.
+const hasBeenExpanded = ref(props.expanded);
+watch(() => props.expanded, (val) => { if (val) hasBeenExpanded.value = true; });
 
 const selectedPreset = computed(() => props.apiPresets.find(preset => preset.id === flow.value.api_preset_id) ?? null);
 const endpointSummary = computed(() => {
