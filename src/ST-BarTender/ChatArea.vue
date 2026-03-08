@@ -56,16 +56,15 @@
         </div>
         <div class="prompt-dialog__body">
           <textarea
-            v-model="store.settings.custom_system_prompt"
+            v-model="effectivePrompt"
             class="prompt-dialog__textarea"
-            :placeholder="store.getDefaultSystemPrompt()"
           />
         </div>
         <div class="prompt-dialog__footer">
-          <button class="prompt-dialog__reset" @click="store.settings.custom_system_prompt = ''">
+          <button class="prompt-dialog__reset" @click="resetPrompt">
             <i class="fa-solid fa-rotate-left" /> 恢复默认
           </button>
-          <span class="prompt-dialog__hint">留空则使用自动生成的提示词</span>
+          <span class="prompt-dialog__hint">编辑后自动保存，恢复默认将使用自动生成的提示词</span>
         </div>
       </div>
     </div>
@@ -97,13 +96,26 @@ const store = useStore();
 const inputText = ref('');
 const promptDialogOpen = ref(false);
 
-function openPromptDialog() {
-  // 打开时如果还没自定义，先填入当前自动生成的默认提示词
-  if (!store.settings.custom_system_prompt) {
+// 可写计算属性：显示自定义或默认，只有用户实际编辑时才写入 custom_system_prompt
+const effectivePrompt = computed({
+  get: () => {
+    if (store.settings.custom_system_prompt) {
+      return store.settings.custom_system_prompt;
+    }
     store.scanPreset();
-    store.settings.custom_system_prompt = store.getDefaultSystemPrompt();
-  }
+    return store.getDefaultSystemPrompt();
+  },
+  set: (val: string) => {
+    store.settings.custom_system_prompt = val;
+  },
+});
+
+function openPromptDialog() {
   promptDialogOpen.value = true;
+}
+
+function resetPrompt() {
+  store.settings.custom_system_prompt = '';
 }
 const messagesRef = ref<HTMLElement>();
 

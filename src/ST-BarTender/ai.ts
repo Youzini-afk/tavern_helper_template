@@ -173,30 +173,7 @@ export async function callAI(
   apiConfig: ApiConfig,
   customSystemPrompt?: string,
 ): Promise<WidgetConfig> {
-  let systemPrompt: string;
-  if (customSystemPrompt?.trim()) {
-    // 用户自定义 prompt：追加当前预设上下文，确保 AI 有数据可用
-    const entriesJson = JSON.stringify(
-      presetEntries.map(e => ({ id: e.id, name: e.name, enabled: e.enabled, role: e.role, position: e.position_type })),
-      null, 2,
-    );
-    const paramsJson = JSON.stringify(presetParams, null, 2);
-    systemPrompt = `${customSystemPrompt.trim()}
-
----
-## 当前预设条目
-\`\`\`json
-${entriesJson}
-\`\`\`
-
-## 当前预设参数
-\`\`\`json
-${paramsJson}
-\`\`\`
-`;
-  } else {
-    systemPrompt = buildSystemPrompt(presetEntries, presetParams);
-  }
+  const systemPrompt = customSystemPrompt?.trim() || buildSystemPrompt(presetEntries, presetParams);
 
   const config: GenerateRawConfig = {
     user_input: userMessage,
