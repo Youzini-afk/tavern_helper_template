@@ -19,34 +19,31 @@
       <span aria-hidden="true">?</span>
     </button>
 
-    <Teleport to="body">
-      <div
-        v-if="open"
-        :id="tipId"
-        ref="bubbleRef"
-        class="ew-help-tip__bubble"
-        role="tooltip"
-        :style="bubbleStyle"
-        @click.stop
-        @mouseenter="clearCloseTimer"
-        @mouseleave="handleBubbleMouseLeave"
+    <div
+      v-if="open"
+      :id="tipId"
+      class="ew-help-tip__bubble"
+      role="tooltip"
+      :style="bubbleStyle"
+      @click.stop
+      @mouseenter="clearCloseTimer"
+      @mouseleave="handleBubbleMouseLeave"
+    >
+      <p class="ew-help-tip__short">{{ props.meta.shortHelp }}</p>
+
+      <button
+        v-if="props.meta.detailHelp && !showDetail"
+        type="button"
+        class="ew-help-tip__more-link"
+        :aria-expanded="showDetail ? 'true' : 'false'"
+        :aria-controls="detailId"
+        @click.stop="showMoreDetail"
       >
-        <p class="ew-help-tip__short">{{ props.meta.shortHelp }}</p>
+        点击查看更多
+      </button>
 
-        <button
-          v-if="props.meta.detailHelp && !showDetail"
-          type="button"
-          class="ew-help-tip__more-link"
-          :aria-expanded="showDetail ? 'true' : 'false'"
-          :aria-controls="detailId"
-          @click.stop="showMoreDetail"
-        >
-          点击查看更多
-        </button>
-
-        <p v-if="showDetail" :id="detailId" class="ew-help-tip__detail">{{ props.meta.detailHelp }}</p>
-      </div>
-    </Teleport>
+      <p v-if="showDetail" :id="detailId" class="ew-help-tip__detail">{{ props.meta.detailHelp }}</p>
+    </div>
   </div>
 </template>
 
@@ -61,7 +58,6 @@ const props = defineProps<{
 }>();
 
 const rootRef = ref<HTMLElement | null>(null);
-const bubbleRef = ref<HTMLElement | null>(null);
 const open = ref(false);
 const showDetail = ref(false);
 const locked = ref(false);
@@ -75,33 +71,23 @@ const bubbleStyle = ref<Record<string, string>>({});
 function positionBubble() {
   if (!rootRef.value) return;
   const rect = rootRef.value.getBoundingClientRect();
-  const bubbleWidth = 340; // max-width ~22rem
+  const bubbleWidth = Math.min(340, window.innerWidth - 16);
 
-  // Position below the trigger, align right edge
-  let top = rect.bottom + 6;
+  // Align right edge to trigger right edge
   let left = rect.right - bubbleWidth;
-
-  // Clamp within viewport
   if (left < 8) left = 8;
   if (left + bubbleWidth > window.innerWidth - 8) {
     left = window.innerWidth - bubbleWidth - 8;
   }
-  // If bottom overflows, show above
-  if (top + 200 > window.innerHeight) {
-    top = rect.top - 6; // will use transform to push up
-    bubbleStyle.value = {
-      position: 'fixed',
-      top: `${top}px`,
-      left: `${left}px`,
-      transform: 'translateY(-100%)',
-    };
-    return;
-  }
+
+  // Default: below the trigger
+  const top = rect.bottom + 6;
 
   bubbleStyle.value = {
     position: 'fixed',
     top: `${top}px`,
     left: `${left}px`,
+    width: `${bubbleWidth}px`,
   };
 }
 
@@ -226,10 +212,6 @@ function handleFocusOut(event: FocusEvent) {
   if (nextTarget && rootRef.value?.contains(nextTarget)) {
     return;
   }
-  // Also check if focus moved to the teleported bubble
-  if (nextTarget && bubbleRef.value?.contains(nextTarget)) {
-    return;
-  }
   closeIfAllowed();
 }
 
@@ -243,9 +225,6 @@ function onPointerDown(event: Event) {
   }
   const target = event.target as Node | null;
   if (target && rootRef.value?.contains(target)) {
-    return;
-  }
-  if (target && bubbleRef.value?.contains(target)) {
     return;
   }
   close();
@@ -321,13 +300,9 @@ onUnmounted(() => {
   background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 52%, rgba(0, 0, 0, 0.2));
   outline: none;
 }
-</style>
 
-<style>
-/* Bubble styles are global because the element is teleported to body */
 .ew-help-tip__bubble {
   z-index: 99999;
-  width: min(22rem, calc(100vw - 2rem));
   border-radius: 0.9rem;
   border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 56%, transparent);
   background: color-mix(in srgb, var(--SmartThemeQuoteColor, #394a61) 18%, rgba(10, 14, 20, 0.93));
@@ -338,7 +313,6 @@ onUnmounted(() => {
   backdrop-filter: blur(16px) saturate(125%);
   -webkit-backdrop-filter: blur(16px) saturate(125%);
   padding: 0.65rem 0.72rem;
-  pointer-events: auto;
 }
 
 .ew-help-tip__short,
