@@ -6,7 +6,7 @@
       class="fb-ball"
       :class="{ 'fb-ball--active': store.ballMenuOpen }"
       :style="ballStyle"
-      @mousedown="onMouseDown"
+      @mousedown.prevent="onMouseDown"
     >
       <i class="fa-solid fa-sliders" />
     </div>
@@ -30,6 +30,7 @@ import BubbleMenu from './BubbleMenu.vue';
 const store = useStore();
 
 const BALL_SIZE = 48;
+const CLICK_THRESHOLD = 5; // 拖拽判定阈值（像素）
 
 // ---------- 位置状态 ----------
 const ballPos = ref({
@@ -48,11 +49,14 @@ const ballStyle = computed(() => ({
 const ballRef = ref<HTMLElement>();
 const isDragging = ref(false);
 const hasMoved = ref(false);
+const startPos = { x: 0, y: 0 };
 const dragOffset = { x: 0, y: 0 };
 
 function onMouseDown(e: MouseEvent) {
   isDragging.value = true;
   hasMoved.value = false;
+  startPos.x = e.clientX;
+  startPos.y = e.clientY;
   dragOffset.x = e.clientX - ballPos.value.x;
   dragOffset.y = e.clientY - ballPos.value.y;
 
@@ -67,26 +71,29 @@ function onMouseDown(e: MouseEvent) {
 function onMouseMove(e: MouseEvent) {
   if (!isDragging.value) return;
 
-  const dx = e.clientX - dragOffset.x - ballPos.value.x;
-  const dy = e.clientY - dragOffset.y - ballPos.value.y;
-  if (!hasMoved.value && Math.abs(dx) + Math.abs(dy) > 3) {
+  // 用起始位置判断是否真的拖拽了
+  const dx = Math.abs(e.clientX - startPos.x);
+  const dy = Math.abs(e.clientY - startPos.y);
+  if (!hasMoved.value && dx + dy > CLICK_THRESHOLD) {
     hasMoved.value = true;
   }
 
-  ballPos.value.x = e.clientX - dragOffset.x;
-  ballPos.value.y = e.clientY - dragOffset.y;
+  if (hasMoved.value) {
+    ballPos.value.x = e.clientX - dragOffset.x;
+    ballPos.value.y = e.clientY - dragOffset.y;
+  }
 }
 
 function onMouseUp() {
   isDragging.value = false;
   cleanupDragListeners();
 
-  // 保存位置
-  store.settings.ball_x = ballPos.value.x;
-  store.settings.ball_y = ballPos.value.y;
-
-  // 只有没拖拽才触发点击
-  if (!hasMoved.value) {
+  if (hasMoved.value) {
+    // 拖拽结束：保存位置
+    store.settings.ball_x = ballPos.value.x;
+    store.settings.ball_y = ballPos.value.y;
+  } else {
+    // 点击：切换菜单
     store.toggleBallMenu();
   }
 }
@@ -137,6 +144,7 @@ onUnmounted(() => {
   position: fixed;
   z-index: 99998;
   pointer-events: none;
+  inset: 0;
 }
 
 .fb-ball {

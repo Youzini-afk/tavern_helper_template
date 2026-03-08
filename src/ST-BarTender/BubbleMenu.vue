@@ -1,5 +1,9 @@
 <template>
-  <Teleport to="body">
+  <div>
+    <!-- 点击外部关闭 -->
+    <div class="bm-backdrop" @mousedown="emit('close')" />
+
+    <!-- 气泡菜单 -->
     <div ref="menuRef" class="bm-menu" :style="menuStyle" @mousedown.stop>
       <!-- 标题栏 -->
       <div class="bm-header">
@@ -19,10 +23,7 @@
         <BlockRenderer :block="store.widgetConfig.root" />
       </div>
     </div>
-
-    <!-- 点击外部关闭 -->
-    <div class="bm-backdrop" @mousedown="emit('close')" />
-  </Teleport>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -93,7 +94,8 @@ const menuStyle = computed(() => {
 .bm-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 99997;
+  z-index: 99998;
+  pointer-events: auto;
 }
 
 .bm-menu {
