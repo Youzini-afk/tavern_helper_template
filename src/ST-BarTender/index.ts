@@ -134,7 +134,7 @@ function openPanel() {
       `;
 
       const mountDiv = iframeDoc.createElement('div');
-      mountDiv.style.cssText = 'pointer-events: auto; position: fixed; top: 0; left: 0;';
+      mountDiv.style.cssText = 'pointer-events: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;';
       iframeDoc.body.appendChild(mountDiv);
 
       // 注入 Font Awesome

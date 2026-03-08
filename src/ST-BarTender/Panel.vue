@@ -166,6 +166,7 @@ onUnmounted(() => {
 .pc-panel {
   position: fixed;
   z-index: 99999;
+  pointer-events: auto;
   display: flex;
   flex-direction: column;
   border-radius: 12px;
