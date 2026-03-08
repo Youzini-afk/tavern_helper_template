@@ -2,7 +2,7 @@
 // AI 调用模块 — 与 AI 交互，生成抽象组件树
 // ============================================================
 
-import { WidgetConfigSchema, type ApiConfig, type PresetEntrySnapshot, type WidgetConfig } from './schema';
+import { WidgetConfigSchema, type ApiConfig, type PresetEntrySnapshot, type UIBlock, type WidgetConfig } from './schema';
 import { parseString } from '@util/common';
 
 /**
@@ -87,10 +87,18 @@ export function buildSystemPrompt(presetEntries: PresetEntrySnapshot[], presetPa
     }
     \`\`\`
 
+    ## ⚠️ 布局硬性规则（必须严格遵守！）
+
+    1. **所有 card 和 container 必须设 \`layout.width: 'full'\`**，禁止使用 'hug' 或 'auto'。
+    2. **顶层 root** 必须是 \`container\` + \`direction: 'column'\` + \`width: 'full'\` + \`padding: 'medium'\`。
+    3. **若用 row 布局并排放卡片**，row container 设 \`width: 'full'\`，内部每个 card 也设 \`width: 'full'\`（flex 自动均分）。
+    4. **toggle 的 label** 必须是完整名称，不要缩写或截断。
+    5. **所有 card** 至少设置 \`padding: 'medium'\`。
+
     ## 最佳实践
 
     1. **只输出纯 JSON**（可包裹在\`\`\`json内），不要有任何其他文字。
-    2. **高级感来源于留白与嵌套**：顶层是一个 \`container(column)\`，里面是几个 \`card(glass, rounded)\`。
+    2. **高级感来源于留白与嵌套**：顶层是一个 \`container(column, full)\`，里面是几个 \`card(glass, rounded, full)\`。
     3. **用 \`text\` 做区域标题**（\`appearance.typography: 'h2'\`），放在 card 内部最前面。
     4. **slider 必须设置 \`slider_meta\`**：根据参数类型合理设置区间。例如 temperature 用 \`{min:0, max:2, step:0.05}\`，max_context 用 \`{min:1024, max:200000, step:1024}\`。
     5. **严格引用上下文**：\`entry_id\` 和 \`param_name\` 必须从上面的列表中选取，不要凭空创造。
@@ -98,7 +106,7 @@ export function buildSystemPrompt(presetEntries: PresetEntrySnapshot[], presetPa
 
     ## 完整输出示例
 
-    以下示例展示了一个包含两个卡片的控制台：左边是条目开关，右边是参数调节。
+    以下示例展示了一个包含两个卡片的控制台。注意所有 card/container 都用了 \`width: 'full'\`。
 
     \`\`\`json
     {
@@ -106,12 +114,12 @@ export function buildSystemPrompt(presetEntries: PresetEntrySnapshot[], presetPa
       "root": {
         "id": "root",
         "type": "container",
-        "layout": { "direction": "column", "gap": "medium", "padding": "medium" },
+        "layout": { "direction": "column", "gap": "medium", "padding": "medium", "width": "full" },
         "children": [
           {
             "id": "row1",
             "type": "container",
-            "layout": { "direction": "row", "gap": "medium", "align": "stretch" },
+            "layout": { "direction": "row", "gap": "medium", "align": "stretch", "width": "full" },
             "children": [
               {
                 "id": "card-prompts",
@@ -164,8 +172,49 @@ function extractJson(text: string): string {
 }
 
 /**
- * 调用 AI 生成面板配置
+ * 后处理：修正 AI 返回的不合理布局值
  */
+function sanitizeBlock(block: UIBlock, isRoot = false): UIBlock {
+  const b = { ...block };
+
+  // card 和 container 强制 width: 'full'
+  if (b.type === 'card' || b.type === 'container') {
+    if (!b.layout) b.layout = {};
+    // 'hug' 和 'auto' 会导致内容过窄，强制改为 'full'
+    if (!b.layout.width || b.layout.width === 'hug' || b.layout.width === 'auto') {
+      b.layout.width = 'full';
+    }
+    // card 至少要有 padding
+    if (b.type === 'card' && !b.layout.padding) {
+      b.layout.padding = 'medium';
+    }
+  }
+
+  // root 节点强制 column + full
+  if (isRoot) {
+    if (!b.layout) b.layout = {};
+    b.layout.direction = 'column';
+    b.layout.width = 'full';
+    if (!b.layout.padding) b.layout.padding = 'medium';
+    if (!b.layout.gap) b.layout.gap = 'medium';
+  }
+
+  // 递归处理子节点
+  if (b.children) {
+    b.children = b.children.map(child => sanitizeBlock(child));
+  }
+
+  return b;
+}
+
+function sanitizeWidgetConfig(config: WidgetConfig): WidgetConfig {
+  return {
+    ...config,
+    root: sanitizeBlock(config.root, true),
+  };
+}
+
+
 export async function callAI(
   userMessage: string,
   presetEntries: PresetEntrySnapshot[],
@@ -267,6 +316,8 @@ export async function callAI(
     throw new Error(`AI 返回的 JSON 不符合预期格式:\n${errorInfo}`);
   }
 
-  console.info('[预设控制] 解析成功:', result.data);
-  return result.data;
+  // 后处理：自动修正 AI 返回的不合理布局值
+  const sanitized = sanitizeWidgetConfig(result.data);
+  console.info('[预设控制] 解析并修正成功:', sanitized);
+  return sanitized;
 }

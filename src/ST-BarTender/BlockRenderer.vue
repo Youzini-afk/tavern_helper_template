@@ -100,6 +100,9 @@ const appearanceClasses = computed(() => {
   display: flex;
   box-sizing: border-box;
 }
+.ub-card {
+  min-width: 180px; /* 防止卡片被极端压缩 */
+}
 
 .lo-dir-row { flex-direction: row; }
 .lo-dir-column { flex-direction: column; }
@@ -128,7 +131,7 @@ const appearanceClasses = computed(() => {
 .lo-w-auto { width: auto; }
 .lo-w-full { width: 100%; }
 .lo-w-half { width: 50%; }
-.lo-w-hug { width: max-content; }
+.lo-w-hug { width: 100%; } /* 防止 AI 用 hug 导致内容过窄 */
 
 /* =========================================
    Appearance Tokens (ap-*)
