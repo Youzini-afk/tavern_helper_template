@@ -13,7 +13,7 @@ import {
   type Settings,
   type ActionBinding,
 } from './schema';
-import { callAI } from './ai';
+import { callAI, buildSystemPrompt } from './ai';
 
 export const useStore = defineStore('preset-control', () => {
   // ========== 持久化设置（存入酒馆脚本变量）==========
@@ -222,7 +222,10 @@ export const useStore = defineStore('preset-control', () => {
     try {
       scanPreset();
 
-      const result = await callAI(userMessage, presetEntries.value, presetParams.value, settings.value.api);
+      const result = await callAI(
+        userMessage, presetEntries.value, presetParams.value,
+        settings.value.api, settings.value.custom_system_prompt,
+      );
 
       chatHistory.value.push({
         id: uid(),
@@ -363,5 +366,6 @@ export const useStore = defineStore('preset-control', () => {
     autoGenerateFromPreset,
     refreshFromPreset,
     clearChat,
+    getDefaultSystemPrompt: () => buildSystemPrompt(presetEntries.value, presetParams.value),
   };
 });

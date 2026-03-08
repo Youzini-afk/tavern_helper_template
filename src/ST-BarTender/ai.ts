@@ -8,7 +8,7 @@ import { parseString } from '@util/common';
 /**
  * 构建 system prompt
  */
-function buildSystemPrompt(presetEntries: PresetEntrySnapshot[], presetParams: Record<string, number>): string {
+export function buildSystemPrompt(presetEntries: PresetEntrySnapshot[], presetParams: Record<string, number>): string {
   const entriesJson = JSON.stringify(
     presetEntries.map(e => ({
       id: e.id,
@@ -171,8 +171,9 @@ export async function callAI(
   presetEntries: PresetEntrySnapshot[],
   presetParams: Record<string, number>,
   apiConfig: ApiConfig,
+  customSystemPrompt?: string,
 ): Promise<WidgetConfig> {
-  const systemPrompt = buildSystemPrompt(presetEntries, presetParams);
+  const systemPrompt = customSystemPrompt?.trim() || buildSystemPrompt(presetEntries, presetParams);
 
   const config: GenerateRawConfig = {
     user_input: userMessage,
