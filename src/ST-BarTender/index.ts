@@ -112,12 +112,13 @@ function mountFloatingBall() {
   destroyStyle = style.destroy;
 
   // 监听 panelOpen → 自动挂载并打开面板（供悬浮球齿轮按钮触发）
+  // immediate: true → 如果上次 panel_open=true 被持久化，刷新后自动恢复面板
   const store = useStore(pinia);
   watch(() => store.panelOpen, (open) => {
     if (open) {
       openMainPanel();
     }
-  });
+  }, { immediate: true });
 
   // 监听 show_in_wand → 动态安装/卸载魔法棒菜单项
   watch(() => store.settings.show_in_wand, (show) => {
