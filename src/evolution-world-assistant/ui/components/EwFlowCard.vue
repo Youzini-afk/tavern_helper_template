@@ -24,6 +24,16 @@
         <button type="button" class="ew-flow-card__action" @click="$emit('export')">
           导出
         </button>
+        <button type="button" class="ew-flow-card__action" @click="openFlowFilePicker">
+          导入
+        </button>
+        <input
+          ref="flowFileInput"
+          type="file"
+          accept=".json,application/json"
+          style="display:none"
+          @change="onImportFile"
+        />
         <button type="button" class="ew-flow-card__action ew-flow-card__action--danger" @click="$emit('remove')">
           删除
         </button>
@@ -282,6 +292,7 @@
 
 <script setup lang="ts">
 import type { EwApiPreset, EwFlowConfig, EwPromptOrderEntry } from '../../runtime/types';
+import { EwFlowConfigSchema } from '../../runtime/types';
 import { simpleHash } from '../../runtime/helpers';
 import { getFieldHelp } from '../help-meta';
 import EwFieldRow from './EwFieldRow.vue';
@@ -381,6 +392,47 @@ function patchRegexText(index: number, key: 'name' | 'find_regex' | 'replace_str
     i === index ? { ...rule, [key]: (event.target as HTMLInputElement).value } : rule,
   );
   patch({ custom_regex_rules: nextRules });
+}
+
+// ── Per-flow import ──
+const flowFileInput = ref<HTMLInputElement | null>(null);
+
+function openFlowFilePicker() {
+  flowFileInput.value?.click();
+}
+
+async function onImportFile(event: Event) {
+  const input = event.target as HTMLInputElement | null;
+  const file = input?.files?.[0];
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+
+    // Support both raw flow object and wrapped { ew_flow_export, flows } format
+    let rawFlow: unknown;
+    if (parsed?.ew_flow_export === true && Array.isArray(parsed.flows)) {
+      if (parsed.flows.length === 0) {
+        toastr.warning('导出文件中没有工作流', 'Evolution World');
+        return;
+      }
+      rawFlow = parsed.flows[0];
+    } else {
+      rawFlow = parsed;
+    }
+
+    const validated = EwFlowConfigSchema.parse(rawFlow);
+    // Preserve current flow's ID so it overwrites in-place
+    validated.id = flow.value.id;
+    emit('update:modelValue', validated);
+    toastr.success('工作流已导入覆盖', 'Evolution World');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    toastr.error(`导入失败: ${message}`, 'Evolution World');
+  } finally {
+    if (input) input.value = '';
+  }
 }
 </script>
 
