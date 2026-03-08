@@ -2,6 +2,7 @@ import { EwSettings } from './types';
 import { resolveTargetWorldbook } from './worldbook-runtime';
 
 const EW_FLOOR_DATA_KEY = 'ew_entries';
+const EW_CONTROLLER_DATA_KEY = 'ew_controller';
 
 const floorBindingListenerStops: EventOnReturn[] = [];
 
@@ -11,8 +12,8 @@ const floorBindingListenerStops: EventOnReturn[] = [];
  * This follows shujuku's pattern of using `ChatMessage.data` for per-floor metadata,
  * enabling automatic cleanup when floors are deleted.
  */
-export async function markFloorEntries(messageId: number, entryNames: string[]): Promise<void> {
-  if (entryNames.length === 0) {
+export async function markFloorEntries(messageId: number, entryNames: string[], controllerSnapshot?: string): Promise<void> {
+  if (entryNames.length === 0 && !controllerSnapshot) {
     return;
   }
 
@@ -25,8 +26,16 @@ export async function markFloorEntries(messageId: number, entryNames: string[]):
   const existingEntries: string[] = _.get(msg.data, EW_FLOOR_DATA_KEY, []);
   const mergedEntries = _.uniq([...existingEntries, ...entryNames]);
 
+  const nextData: Record<string, unknown> = {
+    ...msg.data,
+    [EW_FLOOR_DATA_KEY]: mergedEntries,
+  };
+  if (controllerSnapshot !== undefined) {
+    nextData[EW_CONTROLLER_DATA_KEY] = controllerSnapshot;
+  }
+
   await setChatMessages(
-    [{ message_id: messageId, data: { ...msg.data, [EW_FLOOR_DATA_KEY]: mergedEntries } }],
+    [{ message_id: messageId, data: nextData }],
     { refresh: 'none' },
   );
 }
@@ -100,16 +109,57 @@ export async function cleanupOrphanedEntries(settings: EwSettings): Promise<numb
     }
   }
 
-  if (orphanedNames.length === 0) {
+  // Auto-rollback Controller: find the latest surviving message with a Controller snapshot.
+  let controllerRolledBack = false;
+  if (orphanedNames.length > 0) {
+    const latestSnapshot = findLatestControllerSnapshot();
+    const ctrlEntry = target.entries.find(e => e.name === settings.controller_entry_name);
+    if (latestSnapshot !== null && ctrlEntry && ctrlEntry.content !== latestSnapshot) {
+      ctrlEntry.content = latestSnapshot;
+      controllerRolledBack = true;
+    } else if (latestSnapshot === null && ctrlEntry) {
+      // No surviving snapshots → disable the Controller entry.
+      ctrlEntry.enabled = false;
+      controllerRolledBack = true;
+    }
+  }
+
+  if (orphanedNames.length === 0 && !controllerRolledBack) {
     return 0;
   }
 
-  // Remove orphaned entries from the worldbook.
+  // Remove orphaned entries from the worldbook (and apply Controller rollback if needed).
   const orphanSet = new Set(orphanedNames);
   const filteredEntries = target.entries.filter(entry => !orphanSet.has(entry.name));
   await replaceWorldbook(target.worldbook_name, filteredEntries, { render: 'debounced' });
 
+  if (controllerRolledBack) {
+    console.info(`[Evolution World] Controller auto-rolled back to latest surviving snapshot`);
+  }
+
   return orphanedNames.length;
+}
+
+/**
+ * Find the latest Controller snapshot from surviving chat messages.
+ * Scans all messages from newest to oldest, returns the first ew_controller found.
+ * Returns null if no snapshot exists.
+ */
+function findLatestControllerSnapshot(): string | null {
+  const lastId = getLastMessageId();
+  if (lastId < 0) {
+    return null;
+  }
+
+  const allMessages = getChatMessages(`0-${lastId}`);
+  // Iterate from newest to oldest
+  for (let i = allMessages.length - 1; i >= 0; i--) {
+    const snapshot: string | undefined = _.get(allMessages[i].data, EW_CONTROLLER_DATA_KEY);
+    if (typeof snapshot === 'string' && snapshot.length > 0) {
+      return snapshot;
+    }
+  }
+  return null;
 }
 
 /**
