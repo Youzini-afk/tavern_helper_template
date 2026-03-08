@@ -410,6 +410,9 @@ watch(
   line-height: 1.6;
   outline: none;
   transition: border-color 0.2s;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 .prompt-dialog__textarea:focus {
