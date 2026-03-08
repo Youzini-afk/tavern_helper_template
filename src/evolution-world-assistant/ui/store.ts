@@ -221,10 +221,21 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   }
 
   function exportConfig() {
-    const payload = JSON.stringify(settings.value, null, 2);
+    // 安全导出：去除所有 API 敏感信息
+    const safeSettings = klona(settings.value);
+    for (const preset of safeSettings.api_presets) {
+      preset.api_key = '';
+      preset.api_url = '';
+      preset.headers_json = '';
+    }
+    for (const flow of safeSettings.flows) {
+      (flow as any).api_url = '';
+      (flow as any).api_key = '';
+    }
+    const payload = JSON.stringify(safeSettings, null, 2);
     navigator.clipboard
       .writeText(payload)
-      .then(() => toastr.success('配置已复制到剪贴板', 'Evolution World'))
+      .then(() => toastr.success('配置已复制到剪贴板（已去除 API 密钥）', 'Evolution World'))
       .catch(() => toastr.error('复制配置失败', 'Evolution World'));
   }
 
@@ -280,7 +291,14 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   }
 
   function buildFlowExportPayload(flows: EwFlowConfig[]) {
-    return { ew_flow_export: true, version: 1, flows };
+    // 安全导出：去除每条 flow 的 api_url / api_key 敏感字段
+    const safeFlows = flows.map(flow => {
+      const copy = klona(flow) as Record<string, unknown>;
+      delete copy.api_url;
+      delete copy.api_key;
+      return copy;
+    });
+    return { ew_flow_export: true, version: 1, flows: safeFlows };
   }
 
   function sanitizeFilename(name: string) {
