@@ -175,6 +175,9 @@ export async function callAI(
 ): Promise<WidgetConfig> {
   const systemPrompt = customSystemPrompt?.trim() || buildSystemPrompt(presetEntries, presetParams);
 
+  console.info('[预设控制] system prompt 长度:', systemPrompt.length, '字符');
+  console.info('[预设控制] API 模式:', apiConfig.mode, apiConfig.mode === 'custom' ? apiConfig.custom_url : '(使用酒馆API)');
+
   const config: GenerateRawConfig = {
     user_input: userMessage,
     should_silence: true,
@@ -193,8 +196,28 @@ export async function callAI(
     };
   }
 
-  console.info('[预设控制] 正在调用 AI...');
-  const rawResponse = await generateRaw(config);
+  console.info('[预设控制] 正在调用 generateRaw...', JSON.stringify({
+    has_custom_api: !!config.custom_api,
+    user_input_length: userMessage.length,
+    prompt_count: config.ordered_prompts?.length,
+  }));
+
+  // 添加超时保护，防止无限等待
+  const TIMEOUT_MS = 90_000;
+  let rawResponse: string;
+  try {
+    rawResponse = await Promise.race([
+      generateRaw(config),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`generateRaw 超时 (${TIMEOUT_MS / 1000}s)，请检查 API 连接`)), TIMEOUT_MS),
+      ),
+    ]);
+  } catch (err) {
+    console.error('[预设控制] generateRaw 失败:', err);
+    throw err;
+  }
+
+  console.info('[预设控制] generateRaw 返回, 长度:', rawResponse?.length ?? 0);
 
   const jsonStr = extractJson(rawResponse);
 
