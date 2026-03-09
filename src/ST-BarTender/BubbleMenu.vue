@@ -56,6 +56,9 @@
         :class="expandsLeft ? 'bm-resize--corner-left' : 'bm-resize--corner-right'"
         @mousedown.prevent="onResizeStart($event, expandsLeft ? 'corner-left' : 'corner-right')"
       />
+
+      <!-- 主题切换径向扩散动画覆盖层 -->
+      <div v-if="bmOverlayVisible" class="bm-theme-overlay" :style="bmOverlayStyle" />
     </div>
   </div>
 </template>
@@ -77,6 +80,39 @@ const emit = defineEmits<{
 
 const store = useStore();
 const menuRef = ref<HTMLElement>();
+
+// ========== 主题切换动画覆盖层 ==========
+const bmOverlayVisible = ref(false);
+const bmOverlayStyle = ref<Record<string, string>>({});
+
+watch(() => store.themeTransition, (t) => {
+  if (t?.active && menuRef.value) {
+    const rect = menuRef.value.getBoundingClientRect();
+    const x = t.clientX - rect.left;
+    const y = t.clientY - rect.top;
+    const radius = Math.hypot(
+      Math.max(x, rect.width - x),
+      Math.max(y, rect.height - y),
+    );
+    bmOverlayStyle.value = {
+      background: t.targetBg,
+      clipPath: `circle(0px at ${x}px ${y}px)`,
+      transition: 'none',
+    };
+    bmOverlayVisible.value = true;
+    nextTick(() => {
+      requestAnimationFrame(() => {
+        bmOverlayStyle.value = {
+          background: t.targetBg,
+          clipPath: `circle(${radius}px at ${x}px ${y}px)`,
+          transition: 'clip-path 800ms ease-in-out',
+        };
+      });
+    });
+  } else if (t === null) {
+    bmOverlayVisible.value = false;
+  }
+});
 
 const menuWidth = computed({
   get: () => store.settings.bubble_width,
@@ -364,5 +400,14 @@ function onResizeEnd() {
 
 .bm-resize--corner:hover::after {
   border-color: rgba(255, 255, 255, 0.35);
+}
+
+/* 主题切换覆盖层 */
+.bm-theme-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 999999;
+  pointer-events: none;
+  border-radius: inherit;
 }
 </style>

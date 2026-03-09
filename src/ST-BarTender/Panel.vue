@@ -267,7 +267,7 @@ function onResizeEnd() {
 }
 
 // ============================================================
-// 主题切换: 径向扩散 + 全元素 CSS 过渡
+// 主题切换: 径向扩散动画
 // ============================================================
 const themeOverlayVisible = ref(false);
 const themeOverlayStyle = ref<Record<string, string>>({});
@@ -276,18 +276,12 @@ function toggleTheme(e: MouseEvent) {
   if (themeOverlayVisible.value) return;
 
   const nextTheme = store.settings.theme === 'dark' ? 'parchment' : 'dark';
-
-  // 不透明背景色
   const targetBg = nextTheme === 'parchment'
     ? 'rgb(246, 239, 221)'
     : 'rgb(30, 30, 38)';
 
-  // 获取面板
   const panel = (e.currentTarget as HTMLElement).closest('.pc-panel') as HTMLElement | null;
   if (!panel) { store.settings.theme = nextTheme; return; }
-
-  // 获取悬浮窗 (BubbleMenu)
-  const bubbleMenu = document.querySelector('.bm-menu') as HTMLElement | null;
 
   const panelRect = panel.getBoundingClientRect();
   const x = e.clientX - panelRect.left;
@@ -297,7 +291,7 @@ function toggleTheme(e: MouseEvent) {
     Math.max(y, panelRect.height - y)
   );
 
-  // 1. 面板覆盖层
+  // 1. 面板覆盖层 (初始状态)
   themeOverlayStyle.value = {
     background: targetBg,
     clipPath: `circle(0px at ${x}px ${y}px)`,
@@ -305,37 +299,13 @@ function toggleTheme(e: MouseEvent) {
   };
   themeOverlayVisible.value = true;
 
-  // 2. 悬浮窗覆盖层 (如果存在)
-  let bmOverlay: HTMLElement | null = null;
-  if (bubbleMenu) {
-    const bmRect = bubbleMenu.getBoundingClientRect();
-    const bmX = e.clientX - bmRect.left;
-    const bmY = e.clientY - bmRect.top;
-    const bmRadius = Math.hypot(
-      Math.max(bmX, bmRect.width - bmX),
-      Math.max(bmY, bmRect.height - bmY)
-    );
-
-    bmOverlay = document.createElement('div');
-    bmOverlay.style.cssText = `
-      position: absolute; inset: 0; z-index: 999999;
-      background: ${targetBg}; pointer-events: none;
-      border-radius: inherit;
-      clip-path: circle(0px at ${bmX}px ${bmY}px);
-    `;
-    bubbleMenu.appendChild(bmOverlay);
-
-    // 强制重排
-    void bmOverlay.offsetWidth;
-
-    bmOverlay.animate(
-      [
-        { clipPath: `circle(0px at ${bmX}px ${bmY}px)` },
-        { clipPath: `circle(${bmRadius}px at ${bmX}px ${bmY}px)` },
-      ],
-      { duration: 800, easing: 'ease-in-out', fill: 'forwards' }
-    );
-  }
+  // 2. 通知 BubbleMenu (通过共享 store)
+  store.themeTransition = {
+    active: true,
+    clientX: e.clientX,
+    clientY: e.clientY,
+    targetBg,
+  };
 
   // 3. 开始面板动画
   nextTick(() => {
@@ -346,12 +316,12 @@ function toggleTheme(e: MouseEvent) {
         transition: 'clip-path 800ms ease-in-out',
       };
 
-      // 动画结束后切换主题并移除覆盖层
+      // 动画结束后切换主题并清理
       setTimeout(() => {
         store.settings.theme = nextTheme;
         nextTick(() => {
           themeOverlayVisible.value = false;
-          bmOverlay?.remove();
+          store.themeTransition = null;
         });
       }, 820);
     });

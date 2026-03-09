@@ -483,6 +483,14 @@ export const useStore = defineStore('preset-control', () => {
   // ========== 编辑模式 ==========
   const editMode = ref(false);
 
+  // ========== 主题切换动画状态 (跨组件共享) ==========
+  const themeTransition = ref<{
+    active: boolean;
+    clientX: number;
+    clientY: number;
+    targetBg: string;
+  } | null>(null);
+
   /** 在 widgetConfig 树中递归查找区块及其父节点 */
   function findBlock(
     root: UIBlock,
@@ -566,6 +574,7 @@ export const useStore = defineStore('preset-control', () => {
     moveBlock,
     addBlock,
     findBlock,
+    themeTransition,
     getDefaultSystemPrompt: () => buildSystemPrompt(presetEntries.value, presetParams.value),
   };
 });
