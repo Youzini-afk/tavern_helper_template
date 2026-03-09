@@ -211,7 +211,6 @@ const appearanceClasses = computed(() => {
   display: flex;
   box-sizing: border-box;
   max-width: 100%;
-  overflow: hidden;
 }
 .ub-card {
   min-width: 0; /* flex 子元素不溢出 */

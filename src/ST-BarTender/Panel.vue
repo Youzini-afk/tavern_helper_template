@@ -439,7 +439,7 @@ onUnmounted(() => {
   padding: 5px 8px;
   border: 1px solid var(--ub-border);
   border-radius: 5px;
-  background: var(--ub-bg-glass);
+  background: var(--ub-input-bg);
   color: var(--ub-text-main);
   font-size: 12px;
   outline: none;

@@ -277,7 +277,7 @@ watch(
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--ub-text-muted);
   text-align: center;
   gap: 4px;
 }
@@ -459,7 +459,7 @@ watch(
   padding: 8px 10px;
   border: 1px solid var(--ub-accent-border);
   border-radius: 8px;
-  background: var(--ub-shadow);
+  background: var(--ub-input-bg);
   color: var(--ub-text-main);
   font-size: 12.5px;
   line-height: 1.5;
@@ -519,7 +519,7 @@ watch(
   padding: 8px 12px;
   border: 1px solid var(--ub-border);
   border-radius: 8px;
-  background: var(--ub-bg-glass);
+  background: var(--ub-input-bg);
   color: var(--ub-text-main);
   font-size: 13px;
   outline: none;
