@@ -267,7 +267,7 @@ function onResizeEnd() {
 }
 
 // ============================================================
-// 主题切换: 径向扩散动画 (Vue 模板覆盖层 + CSS transition)
+// 主题切换: 径向扩散 + 全元素 CSS 过渡
 // ============================================================
 const themeOverlayVisible = ref(false);
 const themeOverlayStyle = ref<Record<string, string>>({});
@@ -277,15 +277,15 @@ function toggleTheme(e: MouseEvent) {
 
   const nextTheme = store.settings.theme === 'dark' ? 'parchment' : 'dark';
 
-  // 目标主题的背景色
+  // 目标主题的半透明背景色 (让图标透过)
   const targetBg = nextTheme === 'parchment'
-    ? 'rgb(246, 239, 221)'
-    : 'rgb(30, 30, 38)';
+    ? 'rgba(246, 239, 221, 0.55)'
+    : 'rgba(30, 30, 38, 0.55)';
 
-  // 点击坐标相对于面板
-  const panelEl = e.currentTarget as HTMLElement;
-  const btn = panelEl.closest('.pc-panel') as HTMLElement;
+  // 获取面板和悬浮球
+  const btn = (e.currentTarget as HTMLElement).closest('.pc-panel') as HTMLElement | null;
   if (!btn) { store.settings.theme = nextTheme; return; }
+  const ball = document.querySelector('.fb-ball')?.closest('[class*="ub-theme"]') as HTMLElement | null;
 
   const rect = btn.getBoundingClientRect();
   const x = e.clientX - rect.left;
@@ -295,7 +295,11 @@ function toggleTheme(e: MouseEvent) {
     Math.max(y, rect.height - y)
   );
 
-  // 1. 设置覆盖层初始状态 (圆形为0，不可见)
+  // 1. 启用全元素 CSS 过渡
+  btn.classList.add('ub-theme-transitioning');
+  ball?.classList.add('ub-theme-transitioning');
+
+  // 2. 显示覆盖层 (半透明，不遮挡图标)
   themeOverlayStyle.value = {
     background: targetBg,
     clipPath: `circle(0px at ${x}px ${y}px)`,
@@ -303,22 +307,28 @@ function toggleTheme(e: MouseEvent) {
   };
   themeOverlayVisible.value = true;
 
-  // 2. 等 Vue 渲染后开始动画
+  // 3. 开始动画
   nextTick(() => {
     requestAnimationFrame(() => {
-      // 启动 clip-path 过渡
       themeOverlayStyle.value = {
         background: targetBg,
         clipPath: `circle(${endRadius}px at ${x}px ${y}px)`,
         transition: 'clip-path 800ms ease-in-out',
       };
 
-      // 动画结束后切换主题并移除覆盖层
+      // 在动画进行到 60% 时切换真正的主题 (让 CSS 过渡接管)
       setTimeout(() => {
         store.settings.theme = nextTheme;
-        nextTick(() => {
-          themeOverlayVisible.value = false;
-        });
+      }, 480);
+
+      // 动画完全结束后清理
+      setTimeout(() => {
+        themeOverlayVisible.value = false;
+        // 延迟移除过渡类 (等 CSS 过渡完成)
+        setTimeout(() => {
+          btn.classList.remove('ub-theme-transitioning');
+          ball?.classList.remove('ub-theme-transitioning');
+        }, 600);
       }, 820);
     });
   });

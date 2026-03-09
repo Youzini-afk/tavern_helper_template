@@ -67,3 +67,18 @@
   --ub-shadow: rgba(139, 90, 43, 0.08);
   --ub-input-bg: rgba(255, 255, 255, 0.85);
 }
+
+/* -----------------------------------------
+   Smooth Theme Transitions
+   仅在切换期间激活，避免页面加载时闪烁
+   ----------------------------------------- */
+.ub-theme-transitioning,
+.ub-theme-transitioning *,
+.ub-theme-transitioning *::before,
+.ub-theme-transitioning *::after {
+  transition: background 0.6s ease-out,
+              background-color 0.6s ease-out,
+              color 0.6s ease-out,
+              border-color 0.6s ease-out,
+              box-shadow 0.6s ease-out !important;
+}
