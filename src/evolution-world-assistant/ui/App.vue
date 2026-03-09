@@ -1,4 +1,17 @@
 <template>
+  <!-- Floating access button — always visible when panel is closed -->
+  <transition name="ew-fab-anim">
+    <button
+      v-if="!store.settings.ui_open"
+      class="ew-fab"
+      title="打开 Evolution World"
+      @click="store.openPanel()"
+    >
+      <span class="ew-fab__icon">📖</span>
+      <span class="ew-fab__ring" />
+    </button>
+  </transition>
+
   <EwPanelShell
     v-if="store.settings.ui_open"
     :class="{ 'theme-moon-phase': store.settings.theme_moon }"
@@ -539,6 +552,83 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* ── Floating Access Button ── */
+.ew-fab {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  z-index: 4999;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: 1px solid rgba(139, 92, 246, 0.45);
+  background: linear-gradient(135deg, rgba(20, 24, 38, 0.82), rgba(30, 18, 50, 0.78));
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  box-shadow:
+    0 4px 24px rgba(139, 92, 246, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset,
+    inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition:
+    transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.3s ease,
+    border-color 0.3s ease;
+  outline: none;
+}
+
+.ew-fab:hover {
+  transform: scale(1.12);
+  border-color: rgba(167, 139, 250, 0.7);
+  box-shadow:
+    0 6px 32px rgba(139, 92, 246, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.1) inset,
+    inset 0 1px 1px rgba(255, 255, 255, 0.15);
+}
+
+.ew-fab:active {
+  transform: scale(0.95);
+}
+
+.ew-fab__icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.5));
+}
+
+.ew-fab__ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid rgba(139, 92, 246, 0.35);
+  animation: ew-fab-pulse 2.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes ew-fab-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.08); }
+}
+
+/* Transition */
+.ew-fab-anim-enter-active {
+  transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.ew-fab-anim-leave-active {
+  transition: all 0.2s ease;
+}
+.ew-fab-anim-enter-from {
+  opacity: 0;
+  transform: scale(0.5) translateY(20px);
+}
+.ew-fab-anim-leave-to {
+  opacity: 0;
+  transform: scale(0.5);
+}
+
+/* ── Content Stack ── */
 .ew-content-stack {
   display: flex;
   flex-direction: column;
