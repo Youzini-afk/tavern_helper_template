@@ -20,7 +20,7 @@
         <button
           class="pc-panel__header-btn"
           :title="store.settings.theme === 'dark' ? '切换羊皮纸主题' : '切换暗色主题'"
-          @click="store.settings.theme = store.settings.theme === 'dark' ? 'parchment' : 'dark'"
+          @click="toggleTheme"
         >
           <i class="fa-solid fa-palette" />
         </button>
@@ -261,6 +261,49 @@ function onResizeEnd() {
     window.parent?.document?.removeEventListener('mousemove', onResizeMove);
     window.parent?.document?.removeEventListener('mouseup', onResizeEnd);
   } catch { /* 跨域静默 */ }
+}
+
+// ============================================================
+// 主题切换: View Transitions API 径向渐变
+// ============================================================
+function toggleTheme(e: MouseEvent) {
+  const nextTheme = store.settings.theme === 'dark' ? 'parchment' : 'dark';
+
+  if (!document.startViewTransition) {
+    store.settings.theme = nextTheme;
+    return;
+  }
+
+  const x = e.clientX;
+  const y = e.clientY;
+  const endRadius = Math.hypot(
+    Math.max(x, window.innerWidth - x),
+    Math.max(y, window.innerHeight - y)
+  );
+
+  const transition = document.startViewTransition(async () => {
+    store.settings.theme = nextTheme;
+    await nextTick();
+  });
+
+  transition.ready.then(() => {
+    const clipPath = [
+      `circle(0px at ${x}px ${y}px)`,
+      `circle(${endRadius}px at ${x}px ${y}px)`,
+    ];
+    document.documentElement.animate(
+      {
+        clipPath: nextTheme === 'dark' ? clipPath.slice().reverse() : clipPath,
+      },
+      {
+        duration: 500,
+        easing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+        pseudoElement: nextTheme === 'dark'
+          ? '::view-transition-old(root)'
+          : '::view-transition-new(root)',
+      }
+    );
+  });
 }
 
 // Fix #11: 合并为一个 onMounted
