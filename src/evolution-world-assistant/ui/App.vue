@@ -1,13 +1,15 @@
 <template>
-  <!-- Floating access button — always visible when panel is closed -->
+  <!-- Floating access button — draggable, visible when panel is closed -->
   <transition name="ew-fab-anim">
     <button
-      v-if="!store.settings.ui_open"
+      v-if="store.settings.show_fab && !store.settings.ui_open"
+      ref="fabRef"
       class="ew-fab"
+      :style="fabStyle"
       title="打开 Evolution World"
-      @click="store.openPanel()"
+      @pointerdown="onFabPointerDown"
     >
-      <span class="ew-fab__icon">📖</span>
+      <span class="ew-fab__icon">🌕</span>
       <span class="ew-fab__ring" />
     </button>
   </transition>
@@ -205,6 +207,12 @@
                     {{ migratingSnapshots ? '同步中…' : '同步快照' }}
                   </button>
                 </div>
+              </EwFieldRow>
+              <EwFieldRow label="悬浮球">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                  <input v-model="store.settings.show_fab" type="checkbox" />
+                  显示悬浮球入口
+                </label>
               </EwFieldRow>
             </div>
           </EwSectionCard>
@@ -418,6 +426,76 @@ const manualMessage = ref('');
 const importFileInputRef = ref<HTMLInputElement | null>(null);
 const flowImportRef = ref<HTMLInputElement | null>(null);
 const migratingSnapshots = ref(false);
+const fabRef = ref<HTMLButtonElement | null>(null);
+
+// ── FAB drag logic ──
+const FAB_SIZE = 54;
+const DRAG_THRESHOLD = 5; // px dead zone to distinguish click from drag
+
+const fabStyle = computed(() => {
+  const x = store.settings.fab_x;
+  const y = store.settings.fab_y;
+  if (x < 0 || y < 0) {
+    // Default: bottom-right
+    return { bottom: '28px', right: '28px' };
+  }
+  return { left: `${x}px`, top: `${y}px` };
+});
+
+function clampFab(x: number, y: number) {
+  const maxX = window.innerWidth - FAB_SIZE;
+  const maxY = window.innerHeight - FAB_SIZE;
+  return {
+    x: Math.max(0, Math.min(x, maxX)),
+    y: Math.max(0, Math.min(y, maxY)),
+  };
+}
+
+function onFabPointerDown(e: PointerEvent) {
+  e.preventDefault();
+  const el = fabRef.value;
+  if (!el) return;
+
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const rect = el.getBoundingClientRect();
+  const offsetX = e.clientX - rect.left;
+  const offsetY = e.clientY - rect.top;
+  let dragging = false;
+
+  el.setPointerCapture(e.pointerId);
+
+  function onMove(ev: PointerEvent) {
+    const dx = ev.clientX - startX;
+    const dy = ev.clientY - startY;
+    if (!dragging && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+    dragging = true;
+    const pos = clampFab(ev.clientX - offsetX, ev.clientY - offsetY);
+    el!.style.left = `${pos.x}px`;
+    el!.style.top = `${pos.y}px`;
+    el!.style.right = 'auto';
+    el!.style.bottom = 'auto';
+  }
+
+  function onUp(ev: PointerEvent) {
+    el!.releasePointerCapture(ev.pointerId);
+    el!.removeEventListener('pointermove', onMove);
+    el!.removeEventListener('pointerup', onUp);
+    if (dragging) {
+      // Save position
+      const finalRect = el!.getBoundingClientRect();
+      const pos = clampFab(finalRect.left, finalRect.top);
+      store.settings.fab_x = pos.x;
+      store.settings.fab_y = pos.y;
+    } else {
+      // Click — open panel
+      store.openPanel();
+    }
+  }
+
+  el.addEventListener('pointermove', onMove);
+  el.addEventListener('pointerup', onUp);
+}
 
 const enabledFlowCount = computed(() => store.settings.flows.filter(flow => flow.enabled).length);
 const formattedLastRun = computed(() => JSON.stringify(store.lastRun ?? {}, null, 2));
@@ -555,8 +633,6 @@ onUnmounted(() => {
 /* ── Floating Access Button ── */
 .ew-fab {
   position: fixed;
-  bottom: 28px;
-  right: 28px;
   z-index: 4999;
   width: 54px;
   height: 54px;
@@ -569,18 +645,18 @@ onUnmounted(() => {
     0 4px 24px rgba(139, 92, 246, 0.3),
     0 0 0 1px rgba(255, 255, 255, 0.06) inset,
     inset 0 1px 1px rgba(255, 255, 255, 0.1);
-  cursor: pointer;
+  cursor: grab;
   display: grid;
   place-items: center;
   transition:
-    transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
     box-shadow 0.3s ease,
     border-color 0.3s ease;
   outline: none;
+  touch-action: none;
+  user-select: none;
 }
 
 .ew-fab:hover {
-  transform: scale(1.12);
   border-color: rgba(167, 139, 250, 0.7);
   box-shadow:
     0 6px 32px rgba(139, 92, 246, 0.45),
@@ -589,13 +665,14 @@ onUnmounted(() => {
 }
 
 .ew-fab:active {
-  transform: scale(0.95);
+  cursor: grabbing;
 }
 
 .ew-fab__icon {
   font-size: 1.5rem;
   line-height: 1;
-  filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.5));
+  filter: drop-shadow(0 0 8px rgba(255, 215, 80, 0.5));
+  pointer-events: none;
 }
 
 .ew-fab__ring {
