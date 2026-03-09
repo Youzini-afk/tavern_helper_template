@@ -336,11 +336,14 @@ export const useStore = defineStore('preset-control', () => {
         signal,
       );
 
+      const rawResponse = streamingText.value;
       streamingText.value = '';
       chatHistory.value.push({
         id: uid(),
         role: 'assistant',
-        content: `✅ 成功生成新面板「${result.title}」`,
+        content: rawResponse
+          ? `${rawResponse}\n\n✅ 成功生成新面板「${result.title}」`
+          : `✅ 成功生成新面板「${result.title}」`,
         timestamp: Date.now(),
       });
 

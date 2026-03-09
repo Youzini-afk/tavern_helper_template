@@ -242,10 +242,17 @@ watch(
   },
 );
 
-// 流式输出时也滚动到底部
+// 流式输出时智能滚动——仅当用户已在底部附近时自动跟随
+function isNearBottom(): boolean {
+  const el = messagesRef.value;
+  if (!el) return true;
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+}
+
 watch(
   () => store.streamingText,
   async () => {
+    if (!isNearBottom()) return;
     await nextTick();
     if (messagesRef.value) {
       messagesRef.value.scrollTop = messagesRef.value.scrollHeight;
@@ -378,7 +385,6 @@ watch(
 }
 
 .chat-area__bubble-content--streaming {
-  max-height: 200px;
   overflow-y: auto;
   font-size: 11px;
   opacity: 0.7;
