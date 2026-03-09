@@ -1,6 +1,6 @@
 <template>
   <!-- 容器类型 (container) -->
-  <div v-if="block.type === 'container'" class="ub-container ub-animated" :class="[layoutClasses, appearanceClasses, { 'ub-editable': store.editMode }]">
+  <div v-if="block.type === 'container'" ref="blockEl" class="ub-container ub-animated" :class="[layoutClasses, appearanceClasses, { 'ub-editable': store.editMode, 'ub-resizable': store.editMode && !isRoot }]" :style="customStyle">
     <div v-if="store.editMode && !isRoot" class="ub-edit-bar" @mousedown.stop>
       <button class="ub-edit-btn" title="上移" @click="store.moveBlock(block.id, 'up')"><i class="fa-solid fa-arrow-up" /></button>
       <button class="ub-edit-btn" title="下移" @click="store.moveBlock(block.id, 'down')"><i class="fa-solid fa-arrow-down" /></button>
@@ -11,7 +11,7 @@
   </div>
 
   <!-- 卡片类型 (card) -->
-  <div v-else-if="block.type === 'card'" class="ub-card ub-animated" :class="[layoutClasses, appearanceClasses, { 'ub-editable': store.editMode }]">
+  <div v-else-if="block.type === 'card'" ref="blockEl" class="ub-card ub-animated" :class="[layoutClasses, appearanceClasses, { 'ub-editable': store.editMode, 'ub-resizable': store.editMode }]" :style="customStyle">
     <div v-if="store.editMode" class="ub-edit-bar" @mousedown.stop>
       <button class="ub-edit-btn" title="上移" @click="store.moveBlock(block.id, 'up')"><i class="fa-solid fa-arrow-up" /></button>
       <button class="ub-edit-btn" title="下移" @click="store.moveBlock(block.id, 'down')"><i class="fa-solid fa-arrow-down" /></button>
@@ -96,6 +96,66 @@ const boundValue = computed(() => store.getBoundValue(props.block.action));
 function execute(action?: ActionBinding, payload?: any) {
   store.executeAction(action, payload);
 }
+
+// ---------- 自定义尺寸 ----------
+const blockEl = ref<HTMLElement>();
+
+const customStyle = computed(() => {
+  const s: Record<string, string> = {};
+  if (props.block._customWidth) s.width = props.block._customWidth;
+  if (props.block._customHeight) s.height = props.block._customHeight;
+  return s;
+});
+
+// ResizeObserver: 监听用户通过 CSS resize 调整的尺寸
+let resizeObs: ResizeObserver | null = null;
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function setupResizeObserver() {
+  cleanupResizeObserver();
+  if (!blockEl.value || !store.editMode) return;
+  if (props.block.type !== 'card' && props.block.type !== 'container') return;
+
+  resizeObs = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      const el = entry.target as HTMLElement;
+      // 只在用户主动 resize 时保存（检查 inline style 是否被浏览器改过）
+      if (el.style.width || el.style.height) {
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+          const w = el.style.width || undefined;
+          const h = el.style.height || undefined;
+          store.updateBlock(props.block.id, { _customWidth: w, _customHeight: h });
+        }, 300);
+      }
+    }
+  });
+  resizeObs.observe(blockEl.value);
+}
+
+function cleanupResizeObserver() {
+  if (resizeObs) {
+    resizeObs.disconnect();
+    resizeObs = null;
+  }
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+}
+
+watch(() => store.editMode, (val) => {
+  if (val) nextTick(() => setupResizeObserver());
+  else cleanupResizeObserver();
+});
+
+onMounted(() => {
+  if (store.editMode) nextTick(() => setupResizeObserver());
+});
+
+onUnmounted(() => {
+  cleanupResizeObserver();
+});
 
 /** 切换 row ↔ column 布局 */
 function toggleLayout() {
@@ -296,6 +356,13 @@ const appearanceClasses = computed(() => {
 
 .ub-editable {
   position: relative;
+}
+
+.ub-resizable {
+  resize: both;
+  overflow: auto;
+  min-width: 80px;
+  min-height: 40px;
 }
 
 .ub-edit-bar {

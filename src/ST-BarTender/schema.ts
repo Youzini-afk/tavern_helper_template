@@ -74,6 +74,8 @@ export type UIBlock = {
   slider_meta?: SliderMeta;
   children?: UIBlock[];
   _userEdited?: boolean;
+  _customWidth?: string;
+  _customHeight?: string;
 };
 
 export const UIBlockSchema: z.ZodType<UIBlock> = z.lazy(() =>
@@ -88,6 +90,8 @@ export const UIBlockSchema: z.ZodType<UIBlock> = z.lazy(() =>
     slider_meta: SliderMetaSchema.optional(),
     children: z.array(UIBlockSchema).optional(),
     _userEdited: z.boolean().optional(),
+    _customWidth: z.string().optional(),
+    _customHeight: z.string().optional(),
   }),
 );
 
