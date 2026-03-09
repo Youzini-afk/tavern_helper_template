@@ -188,6 +188,7 @@ export async function callAI(
   presetParams: Record<string, number>,
   apiConfig: ApiConfig,
   customSystemPrompt?: string,
+  currentConfig?: WidgetConfig | null,
   onStream?: (chunk: string) => void,
   signal?: AbortSignal,
 ): Promise<WidgetConfig> {
@@ -196,10 +197,19 @@ export async function callAI(
   console.info('[预设控制] system prompt 长度:', systemPrompt.length, '字符');
   console.info('[预设控制] API 模式:', apiConfig.mode, apiConfig.mode === 'custom' ? apiConfig.custom_url : '(使用酒馆API)');
 
-  const messages = [
-    { role: 'system' as const, content: systemPrompt },
-    { role: 'user' as const, content: userMessage },
+  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+    { role: 'system', content: systemPrompt },
   ];
+
+  // 注入当前面板配置作为上下文
+  if (currentConfig) {
+    messages.push({
+      role: 'assistant',
+      content: `当前面板配置：\n\`\`\`json\n${JSON.stringify(currentConfig)}\n\`\`\``,
+    });
+  }
+
+  messages.push({ role: 'user', content: userMessage });
 
   // === 解析可用 API 源 ===
   const parentWin = (() => {

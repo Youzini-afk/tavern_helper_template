@@ -319,6 +319,7 @@ export const useStore = defineStore('preset-control', () => {
       const result = await callAI(
         userMessage, presetEntries.value, presetParams.value,
         settings.value.api, settings.value.custom_system_prompt,
+        widgetConfig.value,
         (chunk: string) => {
           streamingText.value += chunk;
         },
@@ -410,6 +411,7 @@ export const useStore = defineStore('preset-control', () => {
       const result = await callAI(
         lastUserMsg, presetEntries.value, presetParams.value,
         settings.value.api, settings.value.custom_system_prompt,
+        widgetConfig.value,
         (chunk: string) => { streamingText.value += chunk; },
         signal,
       );
