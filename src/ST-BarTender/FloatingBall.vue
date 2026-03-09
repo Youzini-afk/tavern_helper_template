@@ -129,6 +129,8 @@ function cleanupDragListeners() {
 function openMainPanel() {
   store.ballMenuOpen = false;
   store.panelOpen = true;
+  // DEBUG: 验证点击是否到达此处
+  try { (window.parent as any).toastr?.info?.(`panelOpen=${store.panelOpen}, isMobile=${store.isMobile}`, '🔧 DEBUG'); } catch {}
 }
 
 // ---------- 视口尺寸与位置约束 ----------

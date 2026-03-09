@@ -1,9 +1,8 @@
 <template>
     <div
-      v-show="store.panelOpen"
       ref="panelRef"
       class="pc-panel"
-      :class="['ub-theme-' + store.settings.theme]"
+      :class="['ub-theme-' + store.settings.theme, { 'pc-panel--hidden': !store.panelOpen }]"
       :style="panelStyle"
   >
     <!-- 标题栏（拖拽手柄） -->
@@ -429,6 +428,10 @@ onUnmounted(() => {
     0 0 0 1px var(--ub-border-light) inset;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif;
   color: var(--ub-text-main);
+}
+
+.pc-panel--hidden {
+  display: none !important;
 }
 
 .pc-panel__header {

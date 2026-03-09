@@ -212,6 +212,8 @@ function openMainPanel() {
   const store = useStore(pinia);
   store.panelOpen = true;
   store.scanPreset();
+  // DEBUG: 验证魔法棒路径
+  try { toastr.info(`[魔法棒] panelOpen=${store.panelOpen}`, '🔧 DEBUG'); } catch {}
 }
 
 // ============================================================
