@@ -192,7 +192,9 @@ function createFab(): void {
   if (doc.getElementById(FAB_ID)) return;
 
   const settings = getSettings();
-  if (!settings.show_fab) return;
+  const showFab = settings.show_fab !== false; // default true even if missing
+  console.log('[EW] createFab: show_fab =', settings.show_fab, '→', showFab);
+  if (!showFab) return;
 
   ensureFabStyle();
 
