@@ -51,12 +51,24 @@
     </div>
     <!-- 绑定编辑器 -->
     <div v-if="showLinkEditor && store.editMode" class="ub-link-editor" @mousedown.stop>
-      <div class="ub-link-editor__title">选择要绑定的条目：</div>
+      <div class="ub-link-editor__header">
+        <span class="ub-link-editor__title">绑定条目</span>
+        <button v-if="linkedCount > 0" class="ub-link-editor__clear" @click="clearAllLinks" title="全部解绑">
+          <i class="fa-solid fa-link-slash" /> 全部解绑
+        </button>
+      </div>
+      <input
+        v-model="linkSearch"
+        class="ub-link-editor__search"
+        placeholder="搜索条目..."
+        @keydown.stop
+      />
       <div class="ub-link-editor__list">
         <label
-          v-for="entry in linkableEntries"
+          v-for="entry in filteredLinkEntries"
           :key="entry.id"
           class="ub-link-editor__item"
+          :class="{ 'ub-link-editor__item--linked': isLinked(entry.id) }"
         >
           <input
             type="checkbox"
@@ -65,6 +77,9 @@
           />
           <span>{{ entry.name }}</span>
         </label>
+        <div v-if="filteredLinkEntries.length === 0" class="ub-link-editor__empty">
+          无匹配条目
+        </div>
       </div>
     </div>
   </div>
@@ -121,6 +136,7 @@ function execute(action?: ActionBinding, payload?: any) {
 
 // ---------- 条目绑定 ----------
 const showLinkEditor = ref(false);
+const linkSearch = ref('');
 
 const linkedCount = computed(() => {
   const action = props.block.action;
@@ -133,7 +149,21 @@ const linkedCount = computed(() => {
 const linkableEntries = computed(() => {
   const action = props.block.action;
   if (action?.type !== 'toggle_preset_entry') return [];
-  return store.presetEntries.filter(e => e.id !== action.entry_id);
+  return store.presetEntries.filter((e: any) => e.id !== action.entry_id);
+});
+
+const filteredLinkEntries = computed(() => {
+  const q = linkSearch.value.trim().toLowerCase();
+  const entries = linkableEntries.value;
+  if (!q) {
+    // 无搜索时：已绑定的置顶
+    return [...entries].sort((a: any, b: any) => {
+      const aLinked = isLinked(a.id) ? 0 : 1;
+      const bLinked = isLinked(b.id) ? 0 : 1;
+      return aLinked - bLinked;
+    });
+  }
+  return entries.filter((e: any) => e.name.toLowerCase().includes(q));
 });
 
 function isLinked(entryId: string): boolean {
@@ -154,7 +184,13 @@ function toggleLink(entryId: string) {
   } else {
     action.linked_entry_ids.push(entryId);
   }
-  // 持久化
+  store.persistWidgetConfig();
+}
+
+function clearAllLinks() {
+  const action = props.block.action;
+  if (action?.type !== 'toggle_preset_entry') return;
+  action.linked_entry_ids = [];
   store.persistWidgetConfig();
 }
 
@@ -540,7 +576,7 @@ const appearanceClasses = computed(() => {
   right: 0;
   z-index: 100;
   width: 280px;
-  max-height: 240px;
+  max-height: 300px;
   background: var(--ub-bg-overlay);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -548,20 +584,59 @@ const appearanceClasses = computed(() => {
   border-radius: 8px;
   padding: 8px;
   box-shadow: 0 8px 24px var(--ub-shadow);
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ub-link-editor__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .ub-link-editor__title {
   font-size: 11px;
   font-weight: 600;
   color: var(--ub-text-secondary);
-  margin-bottom: 6px;
+}
+
+.ub-link-editor__clear {
+  font-size: 10px;
+  color: var(--ub-danger-text);
+  background: var(--ub-danger-bg);
+  border: none;
+  border-radius: 4px;
+  padding: 2px 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  transition: opacity 0.15s;
+}
+.ub-link-editor__clear:hover { opacity: 0.8; }
+
+.ub-link-editor__search {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 11px;
+  border: 1px solid var(--ub-border);
+  border-radius: 6px;
+  background: var(--ub-bg-solid);
+  color: var(--ub-text-main);
+  outline: none;
+  transition: border-color 0.2s;
+}
+.ub-link-editor__search:focus {
+  border-color: var(--ub-accent-active);
 }
 
 .ub-link-editor__list {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  overflow-y: auto;
+  max-height: 200px;
 }
 
 .ub-link-editor__item {
@@ -578,6 +653,18 @@ const appearanceClasses = computed(() => {
 
 .ub-link-editor__item:hover {
   background: var(--ub-bg-hover);
+}
+
+.ub-link-editor__item--linked {
+  background: var(--ub-accent-bg);
+  border-left: 2px solid var(--ub-accent-active);
+}
+
+.ub-link-editor__empty {
+  font-size: 11px;
+  color: var(--ub-text-muted);
+  text-align: center;
+  padding: 12px 0;
 }
 
 .ub-link-editor__item input[type="checkbox"] {
