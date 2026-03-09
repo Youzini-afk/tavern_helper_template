@@ -23,6 +23,26 @@ let $ballRoot: JQuery<HTMLDivElement> | null = null;
 let destroyStyle: (() => void) | null = null;
 let menuRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** 获取挂载目标 body —— 优先使用 parent document（绕过 iframe 的触摸事件限制） */
+function resolveParentBody(): HTMLElement {
+  try {
+    if (window.parent && window.parent !== window) {
+      return window.parent.document.body;
+    }
+  } catch { /* 跨域静默 */ }
+  return document.body;
+}
+
+/** 获取挂载目标 head */
+function resolveParentHead(): JQuery {
+  try {
+    if (window.parent && window.parent !== window) {
+      return $('head', window.parent.document);
+    }
+  } catch { /* 跨域静默 */ }
+  return $('head');
+}
+
 // 共享 Pinia 实例
 const pinia = createPinia();
 
@@ -106,10 +126,11 @@ function mountFloatingBall() {
   if (ballApp) return;
 
   ballApp = createApp(FloatingBall).use(pinia);
-  $ballRoot = createScriptIdDiv().appendTo('body');
+  // 挂载到 parent document body，绕过 iframe 移动端触摸事件不可达的问题
+  $ballRoot = createScriptIdDiv().appendTo(resolveParentBody());
   ballApp.mount($ballRoot[0]);
 
-  const style = teleportStyle();
+  const style = teleportStyle(resolveParentHead());
   destroyStyle = style.destroy;
 
   // 监听 panelOpen → 自动挂载并打开面板（供悬浮球齿轮按钮触发）
@@ -155,7 +176,8 @@ function mountPanel() {
   if (panelApp) return;
 
   panelApp = createApp(Panel).use(pinia);
-  $panelRoot = createScriptIdDiv().appendTo('body');
+  // 挂载到 parent document body，绕过 iframe 移动端触摸事件不可达的问题
+  $panelRoot = createScriptIdDiv().appendTo(resolveParentBody());
   panelApp.mount($panelRoot[0]);
 
   console.info('[预设控制] 面板已挂载');
