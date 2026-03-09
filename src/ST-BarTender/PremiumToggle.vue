@@ -79,7 +79,11 @@ function toggle() {
   background: #ffffff;
   border-radius: 50%;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.2s;
+}
+
+.premium-toggle:active .pt-thumb {
+  width: 24px;
 }
 
 .pt-track--active .pt-thumb {

@@ -1,30 +1,31 @@
-<template>
-  <!-- 容器类型 (container) — Fix #1: 加上 appearanceClasses -->
-  <div v-if="block.type === 'container'" class="ub-container" :class="[layoutClasses, appearanceClasses]">
+  <!-- 容器类型 (container) -->
+  <div v-if="block.type === 'container'" class="ub-container ub-animated" :class="[layoutClasses, appearanceClasses]">
     <BlockRenderer v-for="child in block.children" :key="child.id" :block="child" />
   </div>
 
   <!-- 卡片类型 (card) -->
-  <div v-else-if="block.type === 'card'" class="ub-card" :class="[layoutClasses, appearanceClasses]">
+  <div v-else-if="block.type === 'card'" class="ub-card ub-animated" :class="[layoutClasses, appearanceClasses]">
     <BlockRenderer v-for="child in block.children" :key="child.id" :block="child" />
   </div>
 
   <!-- 文本类型 (text) -->
-  <div v-else-if="block.type === 'text'" class="ub-text" :class="appearanceClasses">
+  <div v-else-if="block.type === 'text'" class="ub-text ub-animated" :class="appearanceClasses">
     {{ block.content || block.label }}
   </div>
 
   <!-- 开关类型 (toggle) -->
   <PremiumToggle
     v-else-if="block.type === 'toggle'"
+    class="ub-animated"
     :label="block.label || block.content"
     :checked="boundValue as boolean"
     @update:checked="execute(block.action, $event)"
   />
 
-  <!-- 滑块类型 (slider) — Fix #5: 传入 slider_meta -->
+  <!-- 滑块类型 (slider) -->
   <PremiumSlider
     v-else-if="block.type === 'slider'"
+    class="ub-animated"
     :label="block.label || block.content"
     :value="boundValue as number"
     :min="block.slider_meta?.min ?? 0"
@@ -36,7 +37,7 @@
   <!-- 按钮类型 (button) -->
   <button
     v-else-if="block.type === 'button'"
-    class="ub-button"
+    class="ub-button ub-animated"
     :class="appearanceClasses"
     @click="execute(block.action)"
   >
@@ -44,7 +45,7 @@
   </button>
 
   <!-- 分割线 (divider) -->
-  <div v-else-if="block.type === 'divider'" class="ub-divider" />
+  <div v-else-if="block.type === 'divider'" class="ub-divider ub-animated" />
 </template>
 
 <script setup lang="ts">
@@ -196,8 +197,41 @@ const appearanceClasses = computed(() => {
 .ub-button:hover {
   background: rgba(100, 181, 246, 0.3);
   transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(100, 181, 246, 0.2);
 }
 .ub-button:active {
   transform: translateY(1px);
+  box-shadow: none;
 }
+
+/* =========================================
+   Entry Animations (Waterfall Stagger)
+   ========================================= */
+
+@keyframes ub-stagger-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.ub-animated {
+  animation: ub-stagger-in 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+
+/* 为子元素自动增加层叠延迟，最多支持 20 层深度（通常足够组合） */
+.ub-container > .ub-animated:nth-child(1), .ub-card > .ub-animated:nth-child(1) { animation-delay: 0.03s; }
+.ub-container > .ub-animated:nth-child(2), .ub-card > .ub-animated:nth-child(2) { animation-delay: 0.06s; }
+.ub-container > .ub-animated:nth-child(3), .ub-card > .ub-animated:nth-child(3) { animation-delay: 0.09s; }
+.ub-container > .ub-animated:nth-child(4), .ub-card > .ub-animated:nth-child(4) { animation-delay: 0.12s; }
+.ub-container > .ub-animated:nth-child(5), .ub-card > .ub-animated:nth-child(5) { animation-delay: 0.15s; }
+.ub-container > .ub-animated:nth-child(6), .ub-card > .ub-animated:nth-child(6) { animation-delay: 0.18s; }
+.ub-container > .ub-animated:nth-child(7), .ub-card > .ub-animated:nth-child(7) { animation-delay: 0.21s; }
+.ub-container > .ub-animated:nth-child(8), .ub-card > .ub-animated:nth-child(8) { animation-delay: 0.24s; }
+.ub-container > .ub-animated:nth-child(n+9), .ub-card > .ub-animated:nth-child(n+9) { animation-delay: 0.27s; }
+
 </style>

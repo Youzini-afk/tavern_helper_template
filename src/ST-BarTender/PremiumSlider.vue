@@ -160,11 +160,29 @@ onUnmounted(() => {
   transform: translateX(-50%);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
   pointer-events: none;
-  transition: box-shadow 0.2s, transform 0.1s;
+  transition: box-shadow 0.2s, transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.ps-thumb::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: rgba(100, 181, 246, 0.2);
+  transform: scale(0);
+  transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.ps-track-container:hover .ps-thumb::after {
+  transform: scale(1);
 }
 
 .ps-track-container:active .ps-thumb {
-  box-shadow: 0 0 0 6px rgba(100, 181, 246, 0.2);
-  transform: translateX(-50%) scale(1.1);
+  transform: translateX(-50%) scale(1.05);
+}
+
+.ps-track-container:active .ps-thumb::after {
+  transform: scale(1.3);
+  background: rgba(100, 181, 246, 0.3);
 }
 </style>

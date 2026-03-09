@@ -1,9 +1,10 @@
 <template>
-  <div
-    ref="panelRef"
-    v-show="store.panelOpen"
-    class="pc-panel"
-    :style="panelStyle"
+  <transition name="panel-fade">
+    <div
+      ref="panelRef"
+      v-show="store.panelOpen"
+      class="pc-panel"
+      :style="panelStyle"
   >
     <!-- 标题栏（拖拽手柄） -->
     <div
@@ -17,10 +18,10 @@
       <div class="pc-panel__header-actions">
         <button
           class="pc-panel__header-btn"
-          :title="apiConfigOpen ? '收起 API 配置' : '展开 API 配置'"
+          title="API 配置"
           @click="apiConfigOpen = !apiConfigOpen"
         >
-          <i class="fa-solid fa-gear" />
+          <i class="fa-solid fa-gear" :class="{ 'icon-rotated': apiConfigOpen }" style="transition: transform 0.3s ease" />
         </button>
         <button class="pc-panel__header-btn" title="关闭" @click="store.panelOpen = false">
           <i class="fa-solid fa-xmark" />
@@ -28,9 +29,10 @@
       </div>
     </div>
 
-    <!-- API 配置折叠面板 -->
-    <div v-show="apiConfigOpen" class="pc-panel__api-config">
-      <div class="pc-panel__api-row">
+    <!-- API 配置折叠面板 (Grid Transition) -->
+    <div class="pc-panel__api-config-wrapper" :class="{ 'pc-panel__api-config-wrapper--open': apiConfigOpen }">
+      <div class="pc-panel__api-config">
+        <div class="pc-panel__api-row">
         <label class="pc-panel__api-label">API 模式</label>
         <select v-model="store.settings.api.mode" class="pc-panel__api-select">
           <option value="tavern">使用酒馆 API</option>
@@ -119,7 +121,7 @@
         <ControlArea />
       </div>
     </div>
-  </div>
+  </transition>
 </template>
 
 <script setup lang="ts">
@@ -274,37 +276,80 @@ onUnmounted(() => {
 
 .pc-panel__header-btn {
   width: 28px;
-  height: 28px;
+  height: 20px;
   border: none;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(255, 255, 255, 0.4);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
-  transition: background 0.15s, color 0.15s;
+  font-size: 11px;
+  transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 .pc-panel__header-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+  transform: scale(1.05);
+}
+
+.pc-panel__header-btn:active {
+  transform: scale(0.95);
+}
+
+.icon-rotated {
+  transform: rotate(90deg);
+}
+
+/* --- Panel Fade Transition --- */
+.panel-fade-enter-active,
+.panel-fade-leave-active {
+  transition: opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: center center;
+}
+
+.panel-fade-enter-from,
+.panel-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.96) translateY(10px);
+}
+
+/* --- API Config Drawer (Grid transition) --- */
+.pc-panel__api-config-wrapper {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  border-bottom: 1px solid transparent;
+}
+
+.pc-panel__api-config-wrapper--open {
+  grid-template-rows: 1fr;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .pc-panel__api-config {
-  padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.02);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  padding: 0 14px;
+  background: rgba(0, 0, 0, 0.15);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+}
+
+.pc-panel__api-config-wrapper--open .pc-panel__api-config {
+  padding: 10px 14px;
 }
 
 .pc-panel__api-row {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-bottom: 6px;
+}
+.pc-panel__api-row:last-child {
+  margin-bottom: 0;
 }
 
 .pc-panel__api-label {

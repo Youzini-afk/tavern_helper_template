@@ -8,62 +8,64 @@
         <p class="chat-area__hint">例如：「把所有 COT 相关条目放一组，文风相关放一组」</p>
       </div>
 
-      <div
-        v-for="msg in store.chatHistory"
-        :key="msg.id"
-        class="chat-area__bubble"
-        :class="{ 'chat-area__bubble--user': msg.role === 'user', 'chat-area__bubble--ai': msg.role === 'assistant' }"
-        @mouseenter="hoveredMsgId = msg.id"
-        @mouseleave="hoveredMsgId = ''"
-      >
-        <div class="chat-area__bubble-role">
-          <i :class="msg.role === 'user' ? 'fa-solid fa-user' : 'fa-solid fa-robot'" />
-        </div>
+      <transition-group name="chat-bubble">
+        <div
+          v-for="msg in store.chatHistory"
+          :key="msg.id"
+          class="chat-area__bubble"
+          :class="{ 'chat-area__bubble--user': msg.role === 'user', 'chat-area__bubble--ai': msg.role === 'assistant' }"
+          @mouseenter="hoveredMsgId = msg.id"
+          @mouseleave="hoveredMsgId = ''"
+        >
+          <div class="chat-area__bubble-role">
+            <i :class="msg.role === 'user' ? 'fa-solid fa-user' : 'fa-solid fa-robot'" />
+          </div>
 
-        <div class="chat-area__bubble-body">
-          <!-- 编辑模式 -->
-          <div v-if="editingMsgId === msg.id" class="chat-area__bubble-edit-wrap">
-            <textarea
-              ref="editTextareaRef"
-              v-model="editDraft"
-              class="chat-area__bubble-edit-textarea"
-              @keydown.ctrl.enter="confirmEdit(msg.id)"
-              @keydown.escape="cancelEdit"
-            />
-            <div class="chat-area__bubble-edit-actions">
-              <button class="chat-area__bubble-action-btn chat-area__bubble-action-btn--confirm" title="确认 (Ctrl+Enter)" @click="confirmEdit(msg.id)">
-                <i class="fa-solid fa-check" />
-              </button>
-              <button class="chat-area__bubble-action-btn chat-area__bubble-action-btn--cancel" title="取消 (Esc)" @click="cancelEdit">
-                <i class="fa-solid fa-xmark" />
+          <div class="chat-area__bubble-body">
+            <!-- 编辑模式 -->
+            <div v-if="editingMsgId === msg.id" class="chat-area__bubble-edit-wrap">
+              <textarea
+                ref="editTextareaRef"
+                v-model="editDraft"
+                class="chat-area__bubble-edit-textarea"
+                @keydown.ctrl.enter="confirmEdit(msg.id)"
+                @keydown.escape="cancelEdit"
+              />
+              <div class="chat-area__bubble-edit-actions">
+                <button class="chat-area__bubble-action-btn chat-area__bubble-action-btn--confirm" title="确认 (Ctrl+Enter)" @click="confirmEdit(msg.id)">
+                  <i class="fa-solid fa-check" />
+                </button>
+                <button class="chat-area__bubble-action-btn chat-area__bubble-action-btn--cancel" title="取消 (Esc)" @click="cancelEdit">
+                  <i class="fa-solid fa-xmark" />
+                </button>
+              </div>
+            </div>
+
+            <!-- 正常显示 -->
+            <div v-else class="chat-area__bubble-content">{{ msg.content }}</div>
+
+            <!-- 操作栏（消息下方） -->
+            <div
+              v-if="hoveredMsgId === msg.id && editingMsgId !== msg.id && !store.isLoading"
+              class="chat-area__bubble-toolbar"
+            >
+              <template v-if="msg.role === 'user'">
+                <button class="chat-area__bubble-action-btn" title="编辑" @click="startEdit(msg)">
+                  <i class="fa-solid fa-pen" />
+                </button>
+              </template>
+              <template v-else>
+                <button class="chat-area__bubble-action-btn" title="重新生成" @click="store.rerollLastAI()">
+                  <i class="fa-solid fa-rotate" />
+                </button>
+              </template>
+              <button class="chat-area__bubble-action-btn chat-area__bubble-action-btn--danger" title="删除" @click="store.deleteMessage(msg.id)">
+                <i class="fa-solid fa-trash-can" />
               </button>
             </div>
           </div>
-
-          <!-- 正常显示 -->
-          <div v-else class="chat-area__bubble-content">{{ msg.content }}</div>
-
-          <!-- 操作栏（消息下方） -->
-          <div
-            v-if="hoveredMsgId === msg.id && editingMsgId !== msg.id && !store.isLoading"
-            class="chat-area__bubble-toolbar"
-          >
-            <template v-if="msg.role === 'user'">
-              <button class="chat-area__bubble-action-btn" title="编辑" @click="startEdit(msg)">
-                <i class="fa-solid fa-pen" />
-              </button>
-            </template>
-            <template v-else>
-              <button class="chat-area__bubble-action-btn" title="重新生成" @click="store.rerollLastAI()">
-                <i class="fa-solid fa-rotate" />
-              </button>
-            </template>
-            <button class="chat-area__bubble-action-btn chat-area__bubble-action-btn--danger" title="删除" @click="store.deleteMessage(msg.id)">
-              <i class="fa-solid fa-trash-can" />
-            </button>
-          </div>
         </div>
-      </div>
+      </transition-group>
 
       <!-- 流式输出气泡 -->
       <div v-if="store.isLoading" class="chat-area__bubble chat-area__bubble--ai">
@@ -300,6 +302,28 @@ watch(
   display: flex;
   gap: 8px;
   max-width: 95%;
+  transition: all 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* 列表过渡动画 */
+.chat-bubble-enter-active,
+.chat-bubble-leave-active,
+.chat-bubble-move {
+  transition: all 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.chat-bubble-leave-active {
+  position: absolute;
+}
+
+.chat-bubble-enter-from {
+  opacity: 0;
+  transform: translateY(12px) scale(0.96);
+}
+
+.chat-bubble-leave-to {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.96);
 }
 
 .chat-area__bubble--user {
