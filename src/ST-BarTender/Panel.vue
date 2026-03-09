@@ -323,7 +323,6 @@ function toggleTheme(e: MouseEvent) {
       border-radius: inherit;
       clip-path: circle(0px at ${bmX}px ${bmY}px);
     `;
-    bubbleMenu.style.position = 'relative';
     bubbleMenu.appendChild(bmOverlay);
 
     // 强制重排
