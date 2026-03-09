@@ -20,49 +20,48 @@
           <i :class="msg.role === 'user' ? 'fa-solid fa-user' : 'fa-solid fa-robot'" />
         </div>
 
-        <!-- 编辑模式 -->
-        <div v-if="editingMsgId === msg.id" class="chat-area__bubble-edit-wrap">
-          <textarea
-            ref="editTextareaRef"
-            v-model="editDraft"
-            class="chat-area__bubble-edit-textarea"
-            @keydown.ctrl.enter="confirmEdit(msg.id)"
-            @keydown.escape="cancelEdit"
-          />
-          <div class="chat-area__bubble-edit-actions">
-            <button class="chat-area__bubble-action-btn chat-area__bubble-action-btn--confirm" title="确认 (Ctrl+Enter)" @click="confirmEdit(msg.id)">
-              <i class="fa-solid fa-check" />
-            </button>
-            <button class="chat-area__bubble-action-btn chat-area__bubble-action-btn--cancel" title="取消 (Esc)" @click="cancelEdit">
-              <i class="fa-solid fa-xmark" />
+        <div class="chat-area__bubble-body">
+          <!-- 编辑模式 -->
+          <div v-if="editingMsgId === msg.id" class="chat-area__bubble-edit-wrap">
+            <textarea
+              ref="editTextareaRef"
+              v-model="editDraft"
+              class="chat-area__bubble-edit-textarea"
+              @keydown.ctrl.enter="confirmEdit(msg.id)"
+              @keydown.escape="cancelEdit"
+            />
+            <div class="chat-area__bubble-edit-actions">
+              <button class="chat-area__bubble-action-btn chat-area__bubble-action-btn--confirm" title="确认 (Ctrl+Enter)" @click="confirmEdit(msg.id)">
+                <i class="fa-solid fa-check" />
+              </button>
+              <button class="chat-area__bubble-action-btn chat-area__bubble-action-btn--cancel" title="取消 (Esc)" @click="cancelEdit">
+                <i class="fa-solid fa-xmark" />
+              </button>
+            </div>
+          </div>
+
+          <!-- 正常显示 -->
+          <div v-else class="chat-area__bubble-content">{{ msg.content }}</div>
+
+          <!-- 操作栏（消息下方） -->
+          <div
+            v-if="hoveredMsgId === msg.id && editingMsgId !== msg.id && !store.isLoading"
+            class="chat-area__bubble-toolbar"
+          >
+            <template v-if="msg.role === 'user'">
+              <button class="chat-area__bubble-action-btn" title="编辑" @click="startEdit(msg)">
+                <i class="fa-solid fa-pen" />
+              </button>
+            </template>
+            <template v-else>
+              <button class="chat-area__bubble-action-btn" title="重新生成" @click="store.rerollLastAI()">
+                <i class="fa-solid fa-rotate" />
+              </button>
+            </template>
+            <button class="chat-area__bubble-action-btn chat-area__bubble-action-btn--danger" title="删除" @click="store.deleteMessage(msg.id)">
+              <i class="fa-solid fa-trash-can" />
             </button>
           </div>
-        </div>
-
-        <!-- 正常显示 -->
-        <div v-else class="chat-area__bubble-content">{{ msg.content }}</div>
-
-        <!-- hover 操作栏 -->
-        <div
-          v-if="hoveredMsgId === msg.id && editingMsgId !== msg.id && !store.isLoading"
-          class="chat-area__bubble-toolbar"
-        >
-          <!-- 用户消息: 编辑 + 删除 -->
-          <template v-if="msg.role === 'user'">
-            <button class="chat-area__bubble-action-btn" title="编辑" @click="startEdit(msg)">
-              <i class="fa-solid fa-pen" />
-            </button>
-          </template>
-          <!-- AI 消息: 重Roll + 删除 -->
-          <template v-else>
-            <button class="chat-area__bubble-action-btn" title="重新生成" @click="store.rerollLastAI()">
-              <i class="fa-solid fa-rotate" />
-            </button>
-          </template>
-          <!-- 通用: 删除 -->
-          <button class="chat-area__bubble-action-btn chat-area__bubble-action-btn--danger" title="删除" @click="store.deleteMessage(msg.id)">
-            <i class="fa-solid fa-trash-can" />
-          </button>
         </div>
       </div>
 
@@ -301,7 +300,6 @@ watch(
   display: flex;
   gap: 8px;
   max-width: 95%;
-  position: relative;
 }
 
 .chat-area__bubble--user {
@@ -362,34 +360,28 @@ watch(
   opacity: 0.7;
 }
 
-/* --- Bubble Toolbar --- */
+/* --- Bubble Body (wraps content + toolbar) --- */
+.chat-area__bubble-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* --- Bubble Toolbar (below message) --- */
 .chat-area__bubble-toolbar {
-  position: absolute;
-  top: -4px;
   display: flex;
   gap: 2px;
-  padding: 2px;
-  border-radius: 6px;
-  background: rgba(22, 22, 30, 0.92);
-  backdrop-filter: blur(12px) saturate(160%);
-  -webkit-backdrop-filter: blur(12px) saturate(160%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-  z-index: 10;
+  padding: 2px 0;
   animation: toolbar-in 0.12s ease-out;
 }
 
 .chat-area__bubble--user .chat-area__bubble-toolbar {
-  left: 0;
-}
-
-.chat-area__bubble--ai .chat-area__bubble-toolbar {
-  right: 0;
+  justify-content: flex-end;
 }
 
 @keyframes toolbar-in {
-  from { opacity: 0; transform: translateY(4px) scale(0.92); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .chat-area__bubble-action-btn {
