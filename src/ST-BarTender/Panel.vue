@@ -453,6 +453,7 @@ onUnmounted(() => {
 
 .pc-panel__header--mobile {
   cursor: default;
+  touch-action: manipulation;
 }
 
 .pc-panel__header:active:not(.pc-panel__header--mobile) {
@@ -699,6 +700,7 @@ onUnmounted(() => {
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
+  touch-action: manipulation;
 }
 
 .pc-panel__mobile-tab-btn.active {

@@ -172,6 +172,7 @@ onUnmounted(() => {
   justify-content: center;
   cursor: grab;
   user-select: none;
+  touch-action: none;
   font-size: 18px;
   color: var(--ub-text-main);
   background: var(--ub-bg-solid);
