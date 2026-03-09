@@ -149,6 +149,24 @@ function extractJson(text: string): string {
 function sanitizeBlock(block: UIBlock, isRoot = false, depth = 0): UIBlock {
   const b = { ...block };
 
+  // 用户手动编辑过的区块，跳过强制布局修正，仅递归处理子节点
+  if (b._userEdited && !isRoot) {
+    if (b.children) {
+      const flatChildren: UIBlock[] = [];
+      for (const child of b.children) {
+        if (depth >= 2 && !child._userEdited && (child.type === 'container' || child.type === 'card')) {
+          if (child.children) {
+            flatChildren.push(...child.children.map(gc => sanitizeBlock(gc, false, depth + 1)));
+          }
+        } else {
+          flatChildren.push(sanitizeBlock(child, false, depth + 1));
+        }
+      }
+      b.children = flatChildren;
+    }
+    return b;
+  }
+
   // card 和 container 强制 width: 'full' + direction: 'column'
   if (b.type === 'card' || b.type === 'container') {
     if (!b.layout) b.layout = {};

@@ -11,6 +11,14 @@
         <div class="bm-header-actions">
           <button
             class="bm-header-btn"
+            :class="{ 'bm-header-btn--active': store.editMode }"
+            title="编辑模式"
+            @click="store.editMode = !store.editMode"
+          >
+            <i class="fa-solid fa-pen" />
+          </button>
+          <button
+            class="bm-header-btn"
             :class="{ 'bm-header-btn--active': store.settings.show_in_wand }"
             :title="store.settings.show_in_wand ? '已挂载魔法棒菜单（点击关闭）' : '未挂载魔法棒菜单（点击开启）'"
             @click="store.settings.show_in_wand = !store.settings.show_in_wand"
@@ -28,7 +36,7 @@
 
       <!-- ACT 渲染区 -->
       <div class="bm-body">
-        <BlockRenderer :block="store.widgetConfig.root" />
+        <BlockRenderer :block="store.widgetConfig.root" :is-root="true" />
       </div>
 
       <!-- 拖拽缩放手柄 -->

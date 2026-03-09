@@ -8,6 +8,7 @@ import {
   PresetEntrySnapshotSchema,
   uid,
   type WidgetConfig,
+  type UIBlock,
   type ChatMessage,
   type PresetEntrySnapshot,
   type Settings,
@@ -446,6 +447,61 @@ export const useStore = defineStore('preset-control', () => {
     chatHistory.value = [];
   }
 
+  // ========== 编辑模式 ==========
+  const editMode = ref(false);
+
+  /** 在 widgetConfig 树中递归查找区块及其父节点 */
+  function findBlock(
+    root: UIBlock,
+    id: string,
+    parent: UIBlock | null = null,
+  ): { block: UIBlock; parent: UIBlock | null; index: number } | null {
+    if (root.id === id) return { block: root, parent, index: -1 };
+    if (root.children) {
+      for (let i = 0; i < root.children.length; i++) {
+        if (root.children[i].id === id) {
+          return { block: root.children[i], parent: root, index: i };
+        }
+        const found = findBlock(root.children[i], id, root.children[i]);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  /** 按 ID 修改区块属性 */
+  function updateBlock(blockId: string, patch: Partial<UIBlock>) {
+    const found = findBlock(widgetConfig.value.root, blockId);
+    if (!found) return;
+    Object.assign(found.block, patch, { _userEdited: true });
+  }
+
+  /** 按 ID 删除区块 */
+  function removeBlock(blockId: string) {
+    const found = findBlock(widgetConfig.value.root, blockId);
+    if (!found || !found.parent || found.index < 0) return;
+    found.parent.children!.splice(found.index, 1);
+  }
+
+  /** 按 ID 上移/下移区块 */
+  function moveBlock(blockId: string, direction: 'up' | 'down') {
+    const found = findBlock(widgetConfig.value.root, blockId);
+    if (!found || !found.parent || found.index < 0) return;
+    const arr = found.parent.children!;
+    const newIdx = direction === 'up' ? found.index - 1 : found.index + 1;
+    if (newIdx < 0 || newIdx >= arr.length) return;
+    [arr[found.index], arr[newIdx]] = [arr[newIdx], arr[found.index]];
+  }
+
+  /** 在指定父区块中插入新区块 */
+  function addBlock(parentId: string, newBlock: UIBlock, index?: number) {
+    const found = findBlock(widgetConfig.value.root, parentId);
+    if (!found) return;
+    if (!found.block.children) found.block.children = [];
+    const idx = index ?? found.block.children.length;
+    found.block.children.splice(idx, 0, newBlock);
+  }
+
   return {
     settings,
     widgetConfig,
@@ -458,6 +514,7 @@ export const useStore = defineStore('preset-control', () => {
     isLoadingModels,
     panelOpen,
     ballMenuOpen,
+    editMode,
     scanPreset,
     sendChat,
     loadModels,
@@ -471,6 +528,11 @@ export const useStore = defineStore('preset-control', () => {
     deleteMessage,
     editMessage,
     rerollLastAI,
+    updateBlock,
+    removeBlock,
+    moveBlock,
+    addBlock,
+    findBlock,
     getDefaultSystemPrompt: () => buildSystemPrompt(presetEntries.value, presetParams.value),
   };
 });

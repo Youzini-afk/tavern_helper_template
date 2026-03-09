@@ -73,6 +73,7 @@ export type UIBlock = {
   action?: ActionBinding;
   slider_meta?: SliderMeta;
   children?: UIBlock[];
+  _userEdited?: boolean;
 };
 
 export const UIBlockSchema: z.ZodType<UIBlock> = z.lazy(() =>
@@ -86,6 +87,7 @@ export const UIBlockSchema: z.ZodType<UIBlock> = z.lazy(() =>
     action: ActionBindingSchema.optional(),
     slider_meta: SliderMetaSchema.optional(),
     children: z.array(UIBlockSchema).optional(),
+    _userEdited: z.boolean().optional(),
   }),
 );
 

@@ -1,39 +1,67 @@
 <template>
   <!-- 容器类型 (container) -->
-  <div v-if="block.type === 'container'" class="ub-container ub-animated" :class="[layoutClasses, appearanceClasses]">
+  <div v-if="block.type === 'container'" class="ub-container ub-animated" :class="[layoutClasses, appearanceClasses, { 'ub-editable': store.editMode }]">
+    <div v-if="store.editMode && !isRoot" class="ub-edit-bar" @mousedown.stop>
+      <button class="ub-edit-btn" title="上移" @click="store.moveBlock(block.id, 'up')"><i class="fa-solid fa-arrow-up" /></button>
+      <button class="ub-edit-btn" title="下移" @click="store.moveBlock(block.id, 'down')"><i class="fa-solid fa-arrow-down" /></button>
+      <button class="ub-edit-btn" title="切换布局" @click="toggleLayout"><i :class="block.layout?.direction === 'row' ? 'fa-solid fa-arrows-left-right' : 'fa-solid fa-arrows-up-down'" /></button>
+      <button class="ub-edit-btn ub-edit-btn--danger" title="删除" @click="store.removeBlock(block.id)"><i class="fa-solid fa-trash-can" /></button>
+    </div>
     <BlockRenderer v-for="child in block.children" :key="child.id" :block="child" />
   </div>
 
   <!-- 卡片类型 (card) -->
-  <div v-else-if="block.type === 'card'" class="ub-card ub-animated" :class="[layoutClasses, appearanceClasses]">
+  <div v-else-if="block.type === 'card'" class="ub-card ub-animated" :class="[layoutClasses, appearanceClasses, { 'ub-editable': store.editMode }]">
+    <div v-if="store.editMode" class="ub-edit-bar" @mousedown.stop>
+      <button class="ub-edit-btn" title="上移" @click="store.moveBlock(block.id, 'up')"><i class="fa-solid fa-arrow-up" /></button>
+      <button class="ub-edit-btn" title="下移" @click="store.moveBlock(block.id, 'down')"><i class="fa-solid fa-arrow-down" /></button>
+      <button class="ub-edit-btn" title="切换布局" @click="toggleLayout"><i :class="block.layout?.direction === 'row' ? 'fa-solid fa-arrows-left-right' : 'fa-solid fa-arrows-up-down'" /></button>
+      <button class="ub-edit-btn ub-edit-btn--danger" title="删除" @click="store.removeBlock(block.id)"><i class="fa-solid fa-trash-can" /></button>
+    </div>
     <BlockRenderer v-for="child in block.children" :key="child.id" :block="child" />
   </div>
 
   <!-- 文本类型 (text) -->
-  <div v-else-if="block.type === 'text'" class="ub-text ub-animated" :class="appearanceClasses">
-    {{ block.content || block.label }}
-  </div>
+  <div
+    v-else-if="block.type === 'text'"
+    class="ub-text ub-animated"
+    :class="[appearanceClasses, { 'ub-text--editable': store.editMode }]"
+    :contenteditable="store.editMode"
+    :title="store.editMode ? '双击编辑' : ''"
+    @blur="onTextBlur"
+    @keydown.enter.prevent="($event.target as HTMLElement).blur()"
+  >{{ block.content || block.label }}</div>
 
   <!-- 开关类型 (toggle) -->
-  <PremiumToggle
-    v-else-if="block.type === 'toggle'"
-    class="ub-animated"
-    :label="block.label || block.content"
-    :checked="boundValue as boolean"
-    @update:checked="execute(block.action, $event)"
-  />
+  <div v-else-if="block.type === 'toggle'" class="ub-toggle-wrap" :class="{ 'ub-editable-leaf': store.editMode }">
+    <PremiumToggle
+      class="ub-animated"
+      :label="block.label || block.content"
+      :checked="boundValue as boolean"
+      @update:checked="execute(block.action, $event)"
+    />
+    <div v-if="store.editMode" class="ub-leaf-actions" @mousedown.stop>
+      <button class="ub-edit-btn" title="上移" @click="store.moveBlock(block.id, 'up')"><i class="fa-solid fa-arrow-up" /></button>
+      <button class="ub-edit-btn" title="下移" @click="store.moveBlock(block.id, 'down')"><i class="fa-solid fa-arrow-down" /></button>
+      <button class="ub-edit-btn ub-edit-btn--danger" title="删除" @click="store.removeBlock(block.id)"><i class="fa-solid fa-trash-can" /></button>
+    </div>
+  </div>
 
   <!-- 滑块类型 (slider) -->
-  <PremiumSlider
-    v-else-if="block.type === 'slider'"
-    class="ub-animated"
-    :label="block.label || block.content"
-    :value="boundValue as number"
-    :min="block.slider_meta?.min ?? 0"
-    :max="block.slider_meta?.max ?? 2"
-    :step="block.slider_meta?.step ?? 0.05"
-    @update:value="execute(block.action, $event)"
-  />
+  <div v-else-if="block.type === 'slider'" class="ub-slider-wrap" :class="{ 'ub-editable-leaf': store.editMode }">
+    <PremiumSlider
+      class="ub-animated"
+      :label="block.label || block.content"
+      :value="boundValue as number"
+      :min="block.slider_meta?.min ?? 0"
+      :max="block.slider_meta?.max ?? 2"
+      :step="block.slider_meta?.step ?? 0.05"
+      @update:value="execute(block.action, $event)"
+    />
+    <div v-if="store.editMode" class="ub-leaf-actions" @mousedown.stop>
+      <button class="ub-edit-btn ub-edit-btn--danger" title="删除" @click="store.removeBlock(block.id)"><i class="fa-solid fa-trash-can" /></button>
+    </div>
+  </div>
 
   <!-- 按钮类型 (button) -->
   <button
@@ -58,6 +86,7 @@ import PremiumSlider from './PremiumSlider.vue';
 
 const props = defineProps<{
   block: UIBlock;
+  isRoot?: boolean;
 }>();
 
 const store = useStore();
@@ -66,6 +95,23 @@ const boundValue = computed(() => store.getBoundValue(props.block.action));
 
 function execute(action?: ActionBinding, payload?: any) {
   store.executeAction(action, payload);
+}
+
+/** 切换 row ↔ column 布局 */
+function toggleLayout() {
+  const current = props.block.layout?.direction ?? 'column';
+  store.updateBlock(props.block.id, {
+    layout: { ...props.block.layout, direction: current === 'column' ? 'row' : 'column' },
+  });
+}
+
+/** text 区块编辑完成 */
+function onTextBlur(e: FocusEvent) {
+  if (!store.editMode) return;
+  const newText = (e.target as HTMLElement).textContent?.trim() ?? '';
+  if (newText && newText !== (props.block.content || props.block.label)) {
+    store.updateBlock(props.block.id, { content: newText });
+  }
 }
 
 const layoutClasses = computed(() => {
@@ -243,5 +289,94 @@ const appearanceClasses = computed(() => {
 .ub-container > .ub-animated:nth-child(7), .ub-card > .ub-animated:nth-child(7) { animation-delay: 0.21s; }
 .ub-container > .ub-animated:nth-child(8), .ub-card > .ub-animated:nth-child(8) { animation-delay: 0.24s; }
 .ub-container > .ub-animated:nth-child(n+9), .ub-card > .ub-animated:nth-child(n+9) { animation-delay: 0.27s; }
+
+/* =========================================
+   Edit Mode Overlays
+   ========================================= */
+
+.ub-editable {
+  position: relative;
+}
+
+.ub-edit-bar {
+  display: none;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 20;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.ub-editable:hover > .ub-edit-bar {
+  display: flex;
+}
+
+.ub-edit-btn {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.ub-edit-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.ub-edit-btn--danger:hover {
+  background: rgba(239, 83, 80, 0.25);
+  color: rgba(239, 83, 80, 0.9);
+}
+
+/* text 编辑态 */
+.ub-text--editable {
+  cursor: text;
+  border-bottom: 1px dashed rgba(100, 181, 246, 0.3);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.ub-text--editable:focus {
+  border-bottom-color: rgba(100, 181, 246, 0.7);
+}
+
+/* toggle/slider 叶子节点编辑按钮 */
+.ub-toggle-wrap,
+.ub-slider-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.ub-leaf-actions {
+  display: none;
+  position: absolute;
+  top: 50%;
+  right: -4px;
+  transform: translateY(-50%);
+  z-index: 20;
+  gap: 1px;
+  padding: 2px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.ub-editable-leaf:hover > .ub-leaf-actions {
+  display: flex;
+}
 
 </style>

@@ -8,6 +8,14 @@
       <button class="control-area__tool-btn" @click="store.autoGenerateFromPreset()" title="重置基础模式">
         <i class="fa-solid fa-window-restore" />
       </button>
+      <button
+        class="control-area__tool-btn"
+        :class="{ 'control-area__tool-btn--active': store.editMode }"
+        title="编辑模式"
+        @click="store.editMode = !store.editMode"
+      >
+        <i class="fa-solid fa-pen" />
+      </button>
       <div class="control-area__title">
         {{ store.widgetConfig.title }}
       </div>
@@ -15,7 +23,7 @@
 
     <!-- 动态高级 UI 渲染容器 -->
     <div class="control-area__dynamic-root">
-      <BlockRenderer :block="store.widgetConfig.root" />
+      <BlockRenderer :block="store.widgetConfig.root" :is-root="true" />
     </div>
   </div>
 </template>
@@ -63,6 +71,11 @@ const store = useStore();
 .control-area__tool-btn:hover {
   background: rgba(255, 255, 255, 0.12);
   color: rgba(255, 255, 255, 0.85);
+}
+
+.control-area__tool-btn--active {
+  background: rgba(100, 181, 246, 0.2) !important;
+  color: rgba(100, 181, 246, 0.9) !important;
 }
 
 .control-area__title {
