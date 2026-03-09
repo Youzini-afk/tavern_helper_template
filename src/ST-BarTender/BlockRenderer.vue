@@ -102,7 +102,10 @@ const blockEl = ref<HTMLElement>();
 
 const customStyle = computed(() => {
   const s: Record<string, string> = {};
-  if (props.block._customWidth) s.width = props.block._customWidth;
+  if (props.block._customWidth) {
+    s.width = props.block._customWidth;
+    s.maxWidth = '100%'; // 不超出父容器
+  }
   if (props.block._customHeight) s.height = props.block._customHeight;
   return s;
 });
@@ -207,9 +210,11 @@ const appearanceClasses = computed(() => {
 .ub-container, .ub-card {
   display: flex;
   box-sizing: border-box;
+  max-width: 100%;
+  overflow: hidden;
 }
 .ub-card {
-  min-width: 180px; /* 防止卡片被极端压缩 */
+  min-width: 0; /* flex 子元素不溢出 */
 }
 
 .lo-dir-row { flex-direction: row; }
