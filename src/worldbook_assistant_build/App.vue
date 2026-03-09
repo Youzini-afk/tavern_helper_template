@@ -12315,14 +12315,10 @@ watch(hasUnsavedChanges, (val) => {
   gap: 12px;
   background: var(--wb-bg-root);
   color: var(--wb-text-main);
-  font-family:
-    system-ui,
-    -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   font-size: 13px;
   line-height: 1.5;
   border-radius: 12px;
   overflow: hidden;
-  container-type: inline-size;
 }
 
 /* Glassmorphism Styles */
