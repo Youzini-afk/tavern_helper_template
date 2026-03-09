@@ -72,7 +72,7 @@
         <div class="chat-area__bubble-role">
           <i class="fa-solid fa-robot" />
         </div>
-        <div class="chat-area__bubble-content chat-area__bubble-content--streaming">
+        <div ref="streamingRef" class="chat-area__bubble-content chat-area__bubble-content--streaming">
           <template v-if="store.streamingText">{{ store.streamingText }}</template>
           <template v-else><i class="fa-solid fa-spinner fa-spin" /> AI 正在生成...</template>
         </div>
@@ -242,20 +242,32 @@ watch(
   },
 );
 
-// 流式输出时智能滚动——仅当用户已在底部附近时自动跟随
+// 流式输出时智能滚动——同时处理外层消息列表和内层流式气泡
 function isNearBottom(): boolean {
   const el = messagesRef.value;
   if (!el) return true;
   return el.scrollHeight - el.scrollTop - el.clientHeight < 80;
 }
 
+const streamingRef = ref<HTMLElement>();
+
+function isStreamingNearBottom(): boolean {
+  const el = streamingRef.value;
+  if (!el) return true;
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+}
+
 watch(
   () => store.streamingText,
   async () => {
-    if (!isNearBottom()) return;
+    const scrollOuter = isNearBottom();
+    const scrollInner = isStreamingNearBottom();
     await nextTick();
-    if (messagesRef.value) {
+    if (scrollOuter && messagesRef.value) {
       messagesRef.value.scrollTop = messagesRef.value.scrollHeight;
+    }
+    if (scrollInner && streamingRef.value) {
+      streamingRef.value.scrollTop = streamingRef.value.scrollHeight;
     }
   },
 );
