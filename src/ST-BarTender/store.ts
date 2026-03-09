@@ -554,7 +554,7 @@ export const useStore = defineStore('preset-control', () => {
   // ========== 历史快照操作 ==========
   const MAX_HISTORY = 20;
 
-  /** 将当前配置推入历史 */
+  /** 将当前配置推入历史，并自动持久化到文件 */
   function pushSnapshot() {
     configHistory.value.unshift({
       id: uid(),
@@ -565,6 +565,16 @@ export const useStore = defineStore('preset-control', () => {
     // 限制历史数量
     if (configHistory.value.length > MAX_HISTORY) {
       configHistory.value = configHistory.value.slice(0, MAX_HISTORY);
+    }
+    // 自动持久化到文件
+    if (configStorageReady && currentPresetName.value) {
+      savePresetConfig(
+        currentPresetName.value,
+        presetMapping.value,
+        widgetConfig.value,
+        chatHistory.value,
+        configHistory.value,
+      ).catch(err => console.warn('[BarTender] 快照持久化失败:', err));
     }
   }
 
