@@ -26,6 +26,20 @@
         </button>
         <button
           class="pc-panel__header-btn"
+          title="导出面板"
+          @click="store.exportConfig()"
+        >
+          <i class="fa-solid fa-download" />
+        </button>
+        <button
+          class="pc-panel__header-btn"
+          title="导入面板"
+          @click="store.importConfig()"
+        >
+          <i class="fa-solid fa-upload" />
+        </button>
+        <button
+          class="pc-panel__header-btn"
           :title="store.settings.theme === 'dark' ? '切换羊皮纸主题' : '切换暗色主题'"
           @click="toggleTheme"
         >

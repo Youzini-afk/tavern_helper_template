@@ -689,6 +689,52 @@ export const useStore = defineStore('preset-control', () => {
     found.block.children.splice(idx, 0, newBlock);
   }
 
+  // ========== 导入导出 ==========
+
+  /** 导出当前面板配置为 JSON 文件（不包含 API 配置、对话历史等敏感信息） */
+  function exportConfig() {
+    const exportData = {
+      _format: 'bartender_ui_config',
+      _version: 1,
+      widget_config: klona(widgetConfig.value),
+    };
+    const json = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${widgetConfig.value.title || 'bartender_ui'}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toastr.success('已导出面板配置');
+  }
+
+  /** 从 JSON 文件导入面板配置 */
+  function importConfig() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+
+        // 支持两种格式：包装格式 { _format, widget_config } 或裸 WidgetConfig
+        const raw = data._format === 'bartender_ui_config' ? data.widget_config : data;
+        const config = WidgetConfigSchema.parse(raw);
+
+        pushSnapshot(); // 先快照当前配置
+        widgetConfig.value = config;
+        toastr.success(`已导入面板「${config.title}」`);
+      } catch (err) {
+        toastr.error(`导入失败: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    };
+    input.click();
+  }
+
   return {
     settings,
     widgetConfig,
@@ -729,6 +775,8 @@ export const useStore = defineStore('preset-control', () => {
     pushSnapshot,
     rollbackTo,
     deleteSnapshot,
+    exportConfig,
+    importConfig,
     getDefaultSystemPrompt: () => buildSystemPrompt(presetEntries.value, presetParams.value),
   };
 });
