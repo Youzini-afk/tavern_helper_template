@@ -195,6 +195,7 @@ export async function callAI(
   apiConfig: ApiConfig,
   customSystemPrompt?: string,
   onStream?: (chunk: string) => void,
+  signal?: AbortSignal,
 ): Promise<WidgetConfig> {
   const systemPrompt = customSystemPrompt?.trim() || buildSystemPrompt(presetEntries, presetParams);
 
@@ -257,6 +258,7 @@ export async function callAI(
         method: 'POST',
         headers: streamHeaders,
         body: JSON.stringify(streamBody),
+        signal,
       });
 
       if (!response.ok) {
@@ -271,6 +273,7 @@ export async function callAI(
       let buffer = '';
 
       while (true) {
+        if (signal?.aborted) { reader.cancel(); break; }
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -328,6 +331,7 @@ export async function callAI(
         method: 'POST',
         headers: { ...stApi.getRequestHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
+        signal,
       });
 
       if (!response.ok) {

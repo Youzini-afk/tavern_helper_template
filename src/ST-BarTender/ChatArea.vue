@@ -13,11 +13,57 @@
         :key="msg.id"
         class="chat-area__bubble"
         :class="{ 'chat-area__bubble--user': msg.role === 'user', 'chat-area__bubble--ai': msg.role === 'assistant' }"
+        @mouseenter="hoveredMsgId = msg.id"
+        @mouseleave="hoveredMsgId = ''"
       >
         <div class="chat-area__bubble-role">
           <i :class="msg.role === 'user' ? 'fa-solid fa-user' : 'fa-solid fa-robot'" />
         </div>
-        <div class="chat-area__bubble-content">{{ msg.content }}</div>
+
+        <!-- 编辑模式 -->
+        <div v-if="editingMsgId === msg.id" class="chat-area__bubble-edit-wrap">
+          <textarea
+            ref="editTextareaRef"
+            v-model="editDraft"
+            class="chat-area__bubble-edit-textarea"
+            @keydown.ctrl.enter="confirmEdit(msg.id)"
+            @keydown.escape="cancelEdit"
+          />
+          <div class="chat-area__bubble-edit-actions">
+            <button class="chat-area__bubble-action-btn chat-area__bubble-action-btn--confirm" title="确认 (Ctrl+Enter)" @click="confirmEdit(msg.id)">
+              <i class="fa-solid fa-check" />
+            </button>
+            <button class="chat-area__bubble-action-btn chat-area__bubble-action-btn--cancel" title="取消 (Esc)" @click="cancelEdit">
+              <i class="fa-solid fa-xmark" />
+            </button>
+          </div>
+        </div>
+
+        <!-- 正常显示 -->
+        <div v-else class="chat-area__bubble-content">{{ msg.content }}</div>
+
+        <!-- hover 操作栏 -->
+        <div
+          v-if="hoveredMsgId === msg.id && editingMsgId !== msg.id && !store.isLoading"
+          class="chat-area__bubble-toolbar"
+        >
+          <!-- 用户消息: 编辑 + 删除 -->
+          <template v-if="msg.role === 'user'">
+            <button class="chat-area__bubble-action-btn" title="编辑" @click="startEdit(msg)">
+              <i class="fa-solid fa-pen" />
+            </button>
+          </template>
+          <!-- AI 消息: 重Roll + 删除 -->
+          <template v-else>
+            <button class="chat-area__bubble-action-btn" title="重新生成" @click="store.rerollLastAI()">
+              <i class="fa-solid fa-rotate" />
+            </button>
+          </template>
+          <!-- 通用: 删除 -->
+          <button class="chat-area__bubble-action-btn chat-area__bubble-action-btn--danger" title="删除" @click="store.deleteMessage(msg.id)">
+            <i class="fa-solid fa-trash-can" />
+          </button>
+        </div>
       </div>
 
       <!-- 流式输出气泡 -->
@@ -84,9 +130,19 @@
         :disabled="store.isLoading"
         @keydown.enter.prevent="handleSend"
       />
+      <!-- 发送 / 停止 按钮 -->
       <button
+        v-if="store.isLoading"
+        class="chat-area__send-btn chat-area__send-btn--stop"
+        title="停止生成"
+        @click="store.abortGeneration()"
+      >
+        <i class="fa-solid fa-stop" />
+      </button>
+      <button
+        v-else
         class="chat-area__send-btn"
-        :disabled="!inputText.trim() || store.isLoading"
+        :disabled="!inputText.trim()"
         @click="handleSend"
       >
         <i class="fa-solid fa-paper-plane" />
@@ -97,12 +153,46 @@
 
 <script setup lang="ts">
 import { useStore } from './store';
+import type { ChatMessage } from './schema';
 
 const store = useStore();
 const inputText = ref('');
 const promptDialogOpen = ref(false);
 
-// 可写计算属性：显示自定义或默认，只有用户实际编辑时才写入 custom_system_prompt
+// ========== 消息 hover & 编辑状态 ==========
+const hoveredMsgId = ref('');
+const editingMsgId = ref('');
+const editDraft = ref('');
+const editTextareaRef = ref<HTMLTextAreaElement[]>();
+
+function startEdit(msg: ChatMessage) {
+  editingMsgId.value = msg.id;
+  editDraft.value = msg.content;
+  nextTick(() => {
+    const el = editTextareaRef.value?.[0];
+    if (el) {
+      el.focus();
+      el.style.height = 'auto';
+      el.style.height = el.scrollHeight + 'px';
+    }
+  });
+}
+
+function confirmEdit(msgId: string) {
+  const trimmed = editDraft.value.trim();
+  if (trimmed) {
+    store.editMessage(msgId, trimmed);
+  }
+  editingMsgId.value = '';
+  editDraft.value = '';
+}
+
+function cancelEdit() {
+  editingMsgId.value = '';
+  editDraft.value = '';
+}
+
+// ========== 系统提示词 ==========
 const effectivePrompt = computed({
   get: () => {
     if (store.settings.custom_system_prompt) {
@@ -123,6 +213,8 @@ function openPromptDialog() {
 function resetPrompt() {
   store.settings.custom_system_prompt = '';
 }
+
+// ========== 发送 ==========
 const messagesRef = ref<HTMLElement>();
 
 async function handleSend() {
@@ -132,7 +224,6 @@ async function handleSend() {
   inputText.value = '';
   await store.sendChat(text);
 
-  // 滚动到底部
   await nextTick();
   if (messagesRef.value) {
     messagesRef.value.scrollTop = messagesRef.value.scrollHeight;
@@ -210,6 +301,7 @@ watch(
   display: flex;
   gap: 8px;
   max-width: 95%;
+  position: relative;
 }
 
 .chat-area__bubble--user {
@@ -263,20 +355,112 @@ watch(
   border-bottom-left-radius: 4px;
 }
 
-.chat-area__loading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  color: rgba(255, 255, 255, 0.4);
-  font-size: 12px;
-}
-
 .chat-area__bubble-content--streaming {
   max-height: 200px;
   overflow-y: auto;
   font-size: 11px;
   opacity: 0.7;
+}
+
+/* --- Bubble Toolbar --- */
+.chat-area__bubble-toolbar {
+  position: absolute;
+  top: -4px;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 6px;
+  background: rgba(22, 22, 30, 0.92);
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  z-index: 10;
+  animation: toolbar-in 0.12s ease-out;
+}
+
+.chat-area__bubble--user .chat-area__bubble-toolbar {
+  left: 0;
+}
+
+.chat-area__bubble--ai .chat-area__bubble-toolbar {
+  right: 0;
+}
+
+@keyframes toolbar-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.92); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.chat-area__bubble-action-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  transition: background 0.12s, color 0.12s;
+}
+
+.chat-area__bubble-action-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.chat-area__bubble-action-btn--danger:hover {
+  background: rgba(244, 67, 54, 0.15);
+  color: #ef5350;
+}
+
+.chat-area__bubble-action-btn--confirm:hover {
+  background: rgba(76, 175, 80, 0.15);
+  color: #66bb6a;
+}
+
+.chat-area__bubble-action-btn--cancel:hover {
+  background: rgba(244, 67, 54, 0.15);
+  color: #ef5350;
+}
+
+/* --- Bubble Edit --- */
+.chat-area__bubble-edit-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.chat-area__bubble-edit-textarea {
+  width: 100%;
+  min-height: 40px;
+  max-height: 200px;
+  padding: 8px 10px;
+  border: 1px solid rgba(100, 181, 246, 0.35);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.chat-area__bubble-edit-textarea:focus {
+  border-color: rgba(100, 181, 246, 0.6);
+}
+
+.chat-area__bubble-edit-actions {
+  display: flex;
+  gap: 4px;
+  align-self: flex-end;
 }
 
 /* --- Shortcuts --- */
@@ -356,6 +540,17 @@ watch(
 .chat-area__send-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+/* 停止按钮样式 */
+.chat-area__send-btn--stop {
+  background: rgba(244, 67, 54, 0.2);
+  color: #ef5350;
+}
+
+.chat-area__send-btn--stop:hover {
+  background: rgba(244, 67, 54, 0.35);
+  transform: scale(1.05);
 }
 
 /* 系统提示词按钮高亮 */

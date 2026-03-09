@@ -111,6 +111,7 @@ export const useStore = defineStore('preset-control', () => {
   // ========== AI 加载状态 ==========
   const isLoading = ref(false);
   const streamingText = ref(''); // 流式输出的实时文本
+  let currentAbortController: AbortController | null = null;
 
   // ========== 模型列表 ==========
   const modelCandidates = ref<string[]>([]);
@@ -221,6 +222,8 @@ export const useStore = defineStore('preset-control', () => {
 
     isLoading.value = true;
     streamingText.value = '';
+    currentAbortController = new AbortController();
+    const signal = currentAbortController.signal;
     try {
       scanPreset();
 
@@ -230,6 +233,7 @@ export const useStore = defineStore('preset-control', () => {
         (chunk: string) => {
           streamingText.value += chunk;
         },
+        signal,
       );
 
       streamingText.value = '';
@@ -244,6 +248,8 @@ export const useStore = defineStore('preset-control', () => {
       toastr.success('面板已更新');
     } catch (err) {
       streamingText.value = '';
+      // 用户主动中断不弹错误
+      if (signal.aborted) return;
       const errorMsg = err instanceof Error ? err.message : String(err);
       chatHistory.value.push({
         id: uid(),
@@ -254,6 +260,93 @@ export const useStore = defineStore('preset-control', () => {
       toastr.error(`AI 生成失败: ${errorMsg}`);
     } finally {
       isLoading.value = false;
+      currentAbortController = null;
+    }
+  }
+
+  /** 中断当前 AI 生成 */
+  function abortGeneration() {
+    if (currentAbortController) {
+      currentAbortController.abort();
+      currentAbortController = null;
+    }
+    streamingText.value = '';
+    isLoading.value = false;
+    chatHistory.value.push({
+      id: uid(),
+      role: 'assistant',
+      content: '⏹ 已中断生成',
+      timestamp: Date.now(),
+    });
+  }
+
+  /** 删除指定消息 */
+  function deleteMessage(msgId: string) {
+    const idx = chatHistory.value.findIndex(m => m.id === msgId);
+    if (idx !== -1) chatHistory.value.splice(idx, 1);
+  }
+
+  /** 编辑指定消息内容 */
+  function editMessage(msgId: string, newContent: string) {
+    const msg = chatHistory.value.find(m => m.id === msgId);
+    if (msg) msg.content = newContent;
+  }
+
+  /** 重新生成最后一条 AI 回复 */
+  async function rerollLastAI() {
+    if (isLoading.value) return;
+    // 找到最后一条 assistant 消息
+    const lastAiIdx = chatHistory.value.findLastIndex(m => m.role === 'assistant');
+    if (lastAiIdx === -1) return;
+    // 找到它之前最近的 user 消息
+    let lastUserMsg = '';
+    for (let i = lastAiIdx - 1; i >= 0; i--) {
+      if (chatHistory.value[i].role === 'user') {
+        lastUserMsg = chatHistory.value[i].content;
+        break;
+      }
+    }
+    if (!lastUserMsg) return;
+    // 删掉这条 AI 消息
+    chatHistory.value.splice(lastAiIdx, 1);
+    // 重新发送（sendChat 会自动 push 一条 user 消息，所以我们也删掉对应的 user 消息避免重复）
+    // 但不用删 user 消息，因为 sendChat 会追加新的 user 消息——这里我们直接内部调用 AI
+    // 实际上我们不希望重复 user 消息，所以直接复用内部逻辑
+    isLoading.value = true;
+    streamingText.value = '';
+    currentAbortController = new AbortController();
+    const signal = currentAbortController.signal;
+    try {
+      scanPreset();
+      const result = await callAI(
+        lastUserMsg, presetEntries.value, presetParams.value,
+        settings.value.api, settings.value.custom_system_prompt,
+        (chunk: string) => { streamingText.value += chunk; },
+        signal,
+      );
+      streamingText.value = '';
+      chatHistory.value.push({
+        id: uid(),
+        role: 'assistant',
+        content: `✅ 成功生成新面板「${result.title}」`,
+        timestamp: Date.now(),
+      });
+      widgetConfig.value = result;
+      toastr.success('面板已更新');
+    } catch (err) {
+      streamingText.value = '';
+      if (signal.aborted) return;
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      chatHistory.value.push({
+        id: uid(),
+        role: 'assistant',
+        content: `⚠️ 生成失败: ${errorMsg}`,
+        timestamp: Date.now(),
+      });
+      toastr.error(`AI 生成失败: ${errorMsg}`);
+    } finally {
+      isLoading.value = false;
+      currentAbortController = null;
     }
   }
 
@@ -374,6 +467,10 @@ export const useStore = defineStore('preset-control', () => {
     autoGenerateFromPreset,
     refreshFromPreset,
     clearChat,
+    abortGeneration,
+    deleteMessage,
+    editMessage,
+    rerollLastAI,
     getDefaultSystemPrompt: () => buildSystemPrompt(presetEntries.value, presetParams.value),
   };
 });
