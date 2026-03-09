@@ -53,6 +53,14 @@ const hasMoved = ref(false);
 const startPos = { x: 0, y: 0 };
 const dragOffset = { x: 0, y: 0 };
 
+/** UI 挂载在 parent document 中，事件监听也需要在 parent document 上 */
+function getParentDoc(): Document {
+  try {
+    if (window.parent && window.parent !== window) return window.parent.document;
+  } catch {}
+  return document;
+}
+
 /** 从 MouseEvent 或 TouchEvent 中提取坐标 */
 function getPointerXY(e: MouseEvent | TouchEvent): { x: number; y: number } {
   if ('touches' in e) {
@@ -71,15 +79,12 @@ function onPointerDown(e: MouseEvent | TouchEvent) {
   dragOffset.x = x - ballPos.value.x;
   dragOffset.y = y - ballPos.value.y;
 
-  document.addEventListener('mousemove', onPointerMove);
-  document.addEventListener('mouseup', onPointerUp);
-  document.addEventListener('touchmove', onPointerMove, { passive: false });
-  document.addEventListener('touchend', onPointerUp);
-  document.addEventListener('touchcancel', onPointerUp);
-  try {
-    window.parent?.document?.addEventListener('mousemove', onPointerMove);
-    window.parent?.document?.addEventListener('mouseup', onPointerUp);
-  } catch { /* 跨域静默 */ }
+  const parentDoc = getParentDoc();
+  parentDoc.addEventListener('mousemove', onPointerMove);
+  parentDoc.addEventListener('mouseup', onPointerUp);
+  parentDoc.addEventListener('touchmove', onPointerMove, { passive: false });
+  parentDoc.addEventListener('touchend', onPointerUp);
+  parentDoc.addEventListener('touchcancel', onPointerUp);
 }
 
 function onPointerMove(e: MouseEvent | TouchEvent) {
@@ -112,15 +117,12 @@ function onPointerUp() {
 }
 
 function cleanupDragListeners() {
-  document.removeEventListener('mousemove', onPointerMove);
-  document.removeEventListener('mouseup', onPointerUp);
-  document.removeEventListener('touchmove', onPointerMove);
-  document.removeEventListener('touchend', onPointerUp);
-  document.removeEventListener('touchcancel', onPointerUp);
-  try {
-    window.parent?.document?.removeEventListener('mousemove', onPointerMove);
-    window.parent?.document?.removeEventListener('mouseup', onPointerUp);
-  } catch { /* 跨域静默 */ }
+  const parentDoc = getParentDoc();
+  parentDoc.removeEventListener('mousemove', onPointerMove);
+  parentDoc.removeEventListener('mouseup', onPointerUp);
+  parentDoc.removeEventListener('touchmove', onPointerMove);
+  parentDoc.removeEventListener('touchend', onPointerUp);
+  parentDoc.removeEventListener('touchcancel', onPointerUp);
 }
 
 // ---------- 打开主面板 ----------

@@ -212,6 +212,14 @@ const mobileTab = ref<'chat' | 'control'>('control');
 // ---------- 拖拽 ----------
 const isDragging = ref(false);
 const dragOffset = { x: 0, y: 0 };
+
+/** UI 挂载在 parent document 中，事件监听也需要在 parent document 上 */
+function getParentDoc(): Document {
+  try {
+    if (window.parent && window.parent !== window) return window.parent.document;
+  } catch {}
+  return document;
+}
 const panelPos = ref({
   x: store.settings.panel_x >= 0 ? store.settings.panel_x : -1,
   y: store.settings.panel_y >= 0 ? store.settings.panel_y : -1,
@@ -245,15 +253,10 @@ function onMouseDown(e: MouseEvent) {
   dragOffset.x = e.clientX - panelPos.value.x;
   dragOffset.y = e.clientY - panelPos.value.y;
 
-  // Fix #3: 同时在 iframe document 和 parent document 上添加事件监听
-  document.addEventListener('mousemove', onMouseMove);
-  document.addEventListener('mouseup', onMouseUp);
-  try {
-    window.parent?.document?.addEventListener('mousemove', onMouseMove);
-    window.parent?.document?.addEventListener('mouseup', onMouseUp);
-  } catch {
-    // 跨域时静默忽略
-  }
+  // 在 parent document 上添加事件监听（UI 挂载在 parent document 中）
+  const parentDoc = getParentDoc();
+  parentDoc.addEventListener('mousemove', onMouseMove);
+  parentDoc.addEventListener('mouseup', onMouseUp);
 }
 
 function onMouseMove(e: MouseEvent) {
@@ -270,14 +273,9 @@ function onMouseUp() {
 }
 
 function cleanupDragListeners() {
-  document.removeEventListener('mousemove', onMouseMove);
-  document.removeEventListener('mouseup', onMouseUp);
-  try {
-    window.parent?.document?.removeEventListener('mousemove', onMouseMove);
-    window.parent?.document?.removeEventListener('mouseup', onMouseUp);
-  } catch {
-    // 跨域时静默忽略
-  }
+  const parentDoc = getParentDoc();
+  parentDoc.removeEventListener('mousemove', onMouseMove);
+  parentDoc.removeEventListener('mouseup', onMouseUp);
 }
 
 // ---------- 拖拽缩放 ----------
@@ -300,12 +298,9 @@ function onResizeStart(e: MouseEvent, dir: 'right' | 'bottom' | 'corner') {
     w: store.settings.panel_width,
     h: store.settings.panel_height,
   };
-  document.addEventListener('mousemove', onResizeMove);
-  document.addEventListener('mouseup', onResizeEnd);
-  try {
-    window.parent?.document?.addEventListener('mousemove', onResizeMove);
-    window.parent?.document?.addEventListener('mouseup', onResizeEnd);
-  } catch { /* 跨域静默 */ }
+  const parentDoc = getParentDoc();
+  parentDoc.addEventListener('mousemove', onResizeMove);
+  parentDoc.addEventListener('mouseup', onResizeEnd);
 }
 
 function onResizeMove(e: MouseEvent) {
@@ -322,12 +317,9 @@ function onResizeMove(e: MouseEvent) {
 
 function onResizeEnd() {
   isResizing.value = false;
-  document.removeEventListener('mousemove', onResizeMove);
-  document.removeEventListener('mouseup', onResizeEnd);
-  try {
-    window.parent?.document?.removeEventListener('mousemove', onResizeMove);
-    window.parent?.document?.removeEventListener('mouseup', onResizeEnd);
-  } catch { /* 跨域静默 */ }
+  const parentDoc = getParentDoc();
+  parentDoc.removeEventListener('mousemove', onResizeMove);
+  parentDoc.removeEventListener('mouseup', onResizeEnd);
 }
 
 // ============================================================

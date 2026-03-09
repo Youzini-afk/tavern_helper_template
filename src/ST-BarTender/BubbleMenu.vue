@@ -179,16 +179,21 @@ const isResizing = ref(false);
 let resizeDir = '' as string;
 let resizeOrigin = { x: 0, y: 0, w: 0, h: 0 };
 
+/** UI 挂载在 parent document 中，事件监听也需要在 parent document 上 */
+function getParentDoc(): Document {
+  try {
+    if (window.parent && window.parent !== window) return window.parent.document;
+  } catch {}
+  return document;
+}
+
 function onResizeStart(e: MouseEvent, dir: string) {
   isResizing.value = true;
   resizeDir = dir;
   resizeOrigin = { x: e.clientX, y: e.clientY, w: menuWidth.value, h: menuHeight.value };
-  document.addEventListener('mousemove', onResizeMove);
-  document.addEventListener('mouseup', onResizeEnd);
-  try {
-    window.parent?.document?.addEventListener('mousemove', onResizeMove);
-    window.parent?.document?.addEventListener('mouseup', onResizeEnd);
-  } catch {}
+  const parentDoc = getParentDoc();
+  parentDoc.addEventListener('mousemove', onResizeMove);
+  parentDoc.addEventListener('mouseup', onResizeEnd);
 }
 
 function onResizeMove(e: MouseEvent) {
@@ -210,12 +215,9 @@ function onResizeMove(e: MouseEvent) {
 
 function onResizeEnd() {
   isResizing.value = false;
-  document.removeEventListener('mousemove', onResizeMove);
-  document.removeEventListener('mouseup', onResizeEnd);
-  try {
-    window.parent?.document?.removeEventListener('mousemove', onResizeMove);
-    window.parent?.document?.removeEventListener('mouseup', onResizeEnd);
-  } catch {}
+  const parentDoc = getParentDoc();
+  parentDoc.removeEventListener('mousemove', onResizeMove);
+  parentDoc.removeEventListener('mouseup', onResizeEnd);
 }
 </script>
 
