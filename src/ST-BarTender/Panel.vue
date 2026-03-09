@@ -122,6 +122,7 @@
         <ControlArea />
       </div>
     </div>
+    </div>
   </transition>
 </template>
 
