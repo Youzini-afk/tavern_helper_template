@@ -1,20 +1,4 @@
 <template>
-  <!-- Floating access button — draggable, visible when panel is closed -->
-  <transition name="ew-fab-anim">
-    <button
-      v-if="store.settings.show_fab && !store.settings.ui_open"
-      ref="fabRef"
-      class="ew-fab"
-      :style="fabStyle"
-      title="打开 Evolution World"
-      @mousedown="onFabDragStart"
-      @touchstart="onFabDragStart"
-    >
-      <span class="ew-fab__icon">🌕</span>
-      <span class="ew-fab__ring" />
-    </button>
-  </transition>
-
   <EwPanelShell
     v-if="store.settings.ui_open"
     :class="{ 'theme-moon-phase': store.settings.theme_moon }"
@@ -211,7 +195,7 @@
               </EwFieldRow>
               <EwFieldRow label="悬浮球">
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                  <input v-model="store.settings.show_fab" type="checkbox" />
+                  <input v-model="store.settings.show_fab" type="checkbox" @change="emitFabChanged" />
                   显示悬浮球入口
                 </label>
               </EwFieldRow>
@@ -427,93 +411,9 @@ const manualMessage = ref('');
 const importFileInputRef = ref<HTMLInputElement | null>(null);
 const flowImportRef = ref<HTMLInputElement | null>(null);
 const migratingSnapshots = ref(false);
-const fabRef = ref<HTMLButtonElement | null>(null);
 
-// ── FAB drag logic ──
-const FAB_SIZE = 54;
-const DRAG_THRESHOLD = 5; // px dead zone to distinguish click from drag
-
-const fabStyle = computed(() => {
-  const x = store.settings.fab_x;
-  const y = store.settings.fab_y;
-  if (x < 0 || y < 0) {
-    // Default: bottom-right
-    return { bottom: '28px', right: '28px' };
-  }
-  return { left: `${x}px`, top: `${y}px` };
-});
-
-function clampFab(x: number, y: number) {
-  const maxX = window.innerWidth - FAB_SIZE;
-  const maxY = window.innerHeight - FAB_SIZE;
-  return {
-    x: Math.max(0, Math.min(x, maxX)),
-    y: Math.max(0, Math.min(y, maxY)),
-  };
-}
-
-function getEventXY(e: MouseEvent | TouchEvent): { x: number; y: number } {
-  if ('touches' in e && e.touches.length > 0) {
-    return { x: e.touches[0].clientX, y: e.touches[0].clientY };
-  }
-  if ('changedTouches' in e && e.changedTouches.length > 0) {
-    return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
-  }
-  return { x: (e as MouseEvent).clientX, y: (e as MouseEvent).clientY };
-}
-
-function onFabDragStart(e: MouseEvent | TouchEvent) {
-  // Ignore right click
-  if ('button' in e && e.button !== 0) return;
-  e.preventDefault();
-  e.stopPropagation();
-
-  const el = fabRef.value;
-  if (!el) return;
-
-  const start = getEventXY(e);
-  const rect = el.getBoundingClientRect();
-  const offsetX = start.x - rect.left;
-  const offsetY = start.y - rect.top;
-  let dragging = false;
-
-  const doc = document;
-
-  function onMove(ev: MouseEvent | TouchEvent) {
-    const cur = getEventXY(ev);
-    const dx = cur.x - start.x;
-    const dy = cur.y - start.y;
-    if (!dragging && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
-    dragging = true;
-    ev.preventDefault();
-    const pos = clampFab(cur.x - offsetX, cur.y - offsetY);
-    el!.style.left = `${pos.x}px`;
-    el!.style.top = `${pos.y}px`;
-    el!.style.right = 'auto';
-    el!.style.bottom = 'auto';
-  }
-
-  function onUp() {
-    doc.removeEventListener('mousemove', onMove, true);
-    doc.removeEventListener('mouseup', onUp, true);
-    doc.removeEventListener('touchmove', onMove, true as any);
-    doc.removeEventListener('touchend', onUp, true);
-    doc.removeEventListener('touchcancel', onUp, true);
-    if (dragging) {
-      const finalRect = el!.getBoundingClientRect();
-      const pos = clampFab(finalRect.left, finalRect.top);
-      store.settings.fab_x = pos.x;
-      store.settings.fab_y = pos.y;
-    } else {
-      store.openPanel();
-    }
-  }
-
-  doc.addEventListener('mousemove', onMove, true);
-  doc.addEventListener('mouseup', onUp, true);
-  doc.addEventListener('touchmove', onMove, { capture: true, passive: false } as any);
-  doc.addEventListener('touchend', onUp, true);
-  doc.addEventListener('touchcancel', onUp, true);
+function emitFabChanged() {
+  window.dispatchEvent(new Event('ew:fab-visibility-changed'));
 }
 
 const enabledFlowCount = computed(() => store.settings.flows.filter(flow => flow.enabled).length);
@@ -649,81 +549,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* ── Floating Access Button ── */
-.ew-fab {
-  position: fixed;
-  z-index: 4999;
-  width: 54px;
-  height: 54px;
-  border-radius: 50%;
-  border: 1px solid rgba(139, 92, 246, 0.45);
-  background: linear-gradient(135deg, rgba(20, 24, 38, 0.82), rgba(30, 18, 50, 0.78));
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
-  box-shadow:
-    0 4px 24px rgba(139, 92, 246, 0.3),
-    0 0 0 1px rgba(255, 255, 255, 0.06) inset,
-    inset 0 1px 1px rgba(255, 255, 255, 0.1);
-  cursor: grab;
-  display: grid;
-  place-items: center;
-  transition:
-    box-shadow 0.3s ease,
-    border-color 0.3s ease;
-  outline: none;
-  touch-action: none;
-  user-select: none;
-}
-
-.ew-fab:hover {
-  border-color: rgba(167, 139, 250, 0.7);
-  box-shadow:
-    0 6px 32px rgba(139, 92, 246, 0.45),
-    0 0 0 1px rgba(255, 255, 255, 0.1) inset,
-    inset 0 1px 1px rgba(255, 255, 255, 0.15);
-}
-
-.ew-fab:active {
-  cursor: grabbing;
-}
-
-.ew-fab__icon {
-  font-size: 1.5rem;
-  line-height: 1;
-  filter: drop-shadow(0 0 8px rgba(255, 215, 80, 0.5));
-  pointer-events: none;
-}
-
-.ew-fab__ring {
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  border: 2px solid rgba(139, 92, 246, 0.35);
-  animation: ew-fab-pulse 2.5s ease-in-out infinite;
-  pointer-events: none;
-}
-
-@keyframes ew-fab-pulse {
-  0%, 100% { opacity: 0.4; transform: scale(1); }
-  50% { opacity: 0.8; transform: scale(1.08); }
-}
-
-/* Transition */
-.ew-fab-anim-enter-active {
-  transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.ew-fab-anim-leave-active {
-  transition: all 0.2s ease;
-}
-.ew-fab-anim-enter-from {
-  opacity: 0;
-  transform: scale(0.5) translateY(20px);
-}
-.ew-fab-anim-leave-to {
-  opacity: 0;
-  transform: scale(0.5);
-}
-
 /* ── Content Stack ── */
 .ew-content-stack {
   display: flex;

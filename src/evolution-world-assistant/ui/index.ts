@@ -1,6 +1,6 @@
 import { createScriptIdDiv, teleportStyle } from '@util/script';
 import App from './App.vue';
-import { patchSettings } from '../runtime/settings';
+import { patchSettings, getSettings } from '../runtime/settings';
 
 let app: ReturnType<typeof createApp> | null = null;
 let destroyStyle: (() => void) | null = null;
@@ -13,6 +13,11 @@ const MENU_ITEM_ID = 'evolution-world-assistant-menu-item';
 const MENU_EVENT_NS = '.evolution_world_assistant';
 const MENU_RETRY_MS = 1500;
 
+const FAB_ID = 'ew-assistant-fab';
+const FAB_STYLE_ID = 'ew-assistant-fab-style';
+const FAB_POS_KEY = '__EW_FAB_POS__';
+const FAB_SIZE = 48;
+
 function resolveParentDocument(): Document {
   const runtime = globalThis as Record<string, any>;
   const chatDocument = runtime.SillyTavern?.Chat?.document;
@@ -24,6 +29,14 @@ function resolveParentDocument(): Document {
     return (window.parent && window.parent !== window ? window.parent : window).document;
   } catch {
     return document;
+  }
+}
+
+function getHostWindow(): Window {
+  try {
+    return window.parent && window.parent !== window ? window.parent : window;
+  } catch {
+    return window;
   }
 }
 
@@ -97,6 +110,175 @@ function uninstallMagicWandMenuItem() {
   $menuContainer.remove();
 }
 
+// ═══════════════════════════════════════════════════════════════
+// ── FAB (Floating Access Button) — raw DOM, not Vue ──
+// ═══════════════════════════════════════════════════════════════
+
+function ensureFabStyle(): void {
+  const doc = resolveParentDocument();
+  if (doc.getElementById(FAB_STYLE_ID)) return;
+  const style = doc.createElement('style');
+  style.id = FAB_STYLE_ID;
+  style.textContent = `
+#${FAB_ID} {
+  position: fixed;
+  z-index: 4999;
+  width: ${FAB_SIZE}px;
+  height: ${FAB_SIZE}px;
+  border-radius: 50%;
+  border: 1px solid rgba(139, 92, 246, 0.45);
+  background: linear-gradient(135deg, rgba(20, 24, 38, 0.85), rgba(30, 18, 50, 0.82));
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  box-shadow:
+    0 4px 24px rgba(139, 92, 246, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset,
+    inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  cursor: grab;
+  display: grid;
+  place-items: center;
+  font-size: 1.4rem;
+  line-height: 1;
+  touch-action: none;
+  user-select: none;
+  outline: none;
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+#${FAB_ID}:hover {
+  border-color: rgba(167, 139, 250, 0.7);
+  box-shadow:
+    0 6px 32px rgba(139, 92, 246, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.1) inset,
+    inset 0 1px 1px rgba(255, 255, 255, 0.15);
+}
+#${FAB_ID}.dragging {
+  cursor: grabbing;
+  transition: none;
+}
+`;
+  doc.head.appendChild(style);
+}
+
+function createFab(): void {
+  const doc = resolveParentDocument();
+  if (doc.getElementById(FAB_ID)) return;
+
+  const settings = getSettings();
+  if (!settings.show_fab) return;
+
+  ensureFabStyle();
+
+  const hostWin = getHostWindow();
+  const fab = doc.createElement('div');
+  fab.id = FAB_ID;
+  fab.textContent = '🌕';
+  fab.title = 'Evolution World';
+  fab.setAttribute('tabindex', '-1');
+  fab.setAttribute('inputmode', 'none');
+
+  // Restore saved position or default to bottom-right
+  let vpX: number | null = null;
+  let vpY: number | null = null;
+
+  try {
+    const raw = localStorage.getItem(FAB_POS_KEY);
+    if (raw) {
+      const saved = JSON.parse(raw);
+      vpX = Math.min(saved.x, hostWin.innerWidth - FAB_SIZE);
+      vpY = Math.min(saved.y, hostWin.innerHeight - FAB_SIZE);
+    }
+  } catch { /* ignore */ }
+
+  if (vpX !== null && vpY !== null) {
+    fab.style.left = vpX + 'px';
+    fab.style.top = vpY + 'px';
+  } else {
+    fab.style.right = '16px';
+    fab.style.bottom = '80px';
+  }
+
+  // ── Drag support (matching ST-Manager-STscript pattern) ──
+  let dragging = false;
+  let dragMoved = false;
+  let startX = 0;
+  let startY = 0;
+  let fabStartX = 0;
+  let fabStartY = 0;
+
+  fab.addEventListener('pointerdown', (e: PointerEvent) => {
+    if (e.button !== 0) return;
+    dragging = true;
+    dragMoved = false;
+    startX = e.clientX;
+    startY = e.clientY;
+    const rect = fab.getBoundingClientRect();
+    fabStartX = rect.left;
+    fabStartY = rect.top;
+    fab.classList.add('dragging');
+    fab.setPointerCapture(e.pointerId);
+    e.stopPropagation();
+    e.preventDefault();
+  });
+
+  fab.addEventListener('pointermove', (e: PointerEvent) => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMoved = true;
+    const maxX = hostWin.innerWidth - FAB_SIZE;
+    const maxY = hostWin.innerHeight - FAB_SIZE;
+    const nx = Math.max(0, Math.min(maxX, fabStartX + dx));
+    const ny = Math.max(0, Math.min(maxY, fabStartY + dy));
+    vpX = nx;
+    vpY = ny;
+    fab.style.left = nx + 'px';
+    fab.style.top = ny + 'px';
+    fab.style.right = 'auto';
+    fab.style.bottom = 'auto';
+  });
+
+  fab.addEventListener('pointerup', () => {
+    if (!dragging) return;
+    dragging = false;
+    fab.classList.remove('dragging');
+    try {
+      if (vpX !== null && vpY !== null) {
+        localStorage.setItem(FAB_POS_KEY, JSON.stringify({ x: vpX, y: vpY }));
+      }
+    } catch { /* ignore */ }
+  });
+
+  fab.addEventListener('click', (event: MouseEvent) => {
+    event.stopPropagation();
+    event.preventDefault();
+    if (dragMoved) { dragMoved = false; return; }
+    patchSettings({ ui_open: true });
+  });
+
+  // Append to <html> to sit above all transformed containers
+  doc.documentElement.appendChild(fab);
+}
+
+function removeFab(): void {
+  const doc = resolveParentDocument();
+  doc.getElementById(FAB_ID)?.remove();
+  doc.getElementById(FAB_STYLE_ID)?.remove();
+}
+
+function syncFabVisibility(): void {
+  const settings = getSettings();
+  const doc = resolveParentDocument();
+  const fab = doc.getElementById(FAB_ID);
+  if (settings.show_fab) {
+    if (!fab) createFab();
+  } else {
+    fab?.remove();
+  }
+}
+
+let fabVisibilityListener: (() => void) | null = null;
+
 export function mountUi() {
   if (app) {
     return;
@@ -115,10 +297,25 @@ export function mountUi() {
     console.error('[Evolution World] magic-wand menu setup failed:', error);
     toastr.error(`魔法棒菜单挂载失败: ${error instanceof Error ? error.message : String(error)}`, 'Evolution World');
   }
+
+  try {
+    createFab();
+  } catch (error) {
+    console.error('[Evolution World] FAB setup failed:', error);
+  }
+
+  fabVisibilityListener = () => syncFabVisibility();
+  window.addEventListener('ew:fab-visibility-changed', fabVisibilityListener);
 }
 
 export function unmountUi() {
   uninstallMagicWandMenuItem();
+  removeFab();
+
+  if (fabVisibilityListener) {
+    window.removeEventListener('ew:fab-visibility-changed', fabVisibilityListener);
+    fabVisibilityListener = null;
+  }
 
   app?.unmount();
   app = null;
