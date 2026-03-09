@@ -300,15 +300,15 @@ onUnmounted(() => {
   flex-direction: column;
   border-radius: 12px;
   overflow: hidden;
-  background: rgba(22, 22, 30, 0.92);
+  background: var(--ub-bg-solid);
   backdrop-filter: blur(18px) saturate(180%);
   -webkit-backdrop-filter: blur(18px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--ub-border);
   box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.45),
-    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+    0 8px 32px var(--ub-shadow),
+    0 0 0 1px var(--ub-border-light) inset;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--ub-text-main);
 }
 
 .pc-panel__header {
@@ -316,8 +316,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.03);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--ub-bg-glass);
+  border-bottom: 1px solid var(--ub-border);
   cursor: grab;
   user-select: none;
 }
@@ -334,7 +334,7 @@ onUnmounted(() => {
 
 .pc-panel__icon {
   font-size: 14px;
-  color: rgba(100, 181, 246, 0.7);
+  color: var(--ub-accent-text);
 }
 
 .pc-panel__title {
@@ -354,7 +354,7 @@ onUnmounted(() => {
   border: none;
   border-radius: 4px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--ub-text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -364,8 +364,8 @@ onUnmounted(() => {
 }
 
 .pc-panel__header-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.9);
+  background: var(--ub-bg-hover);
+  color: var(--ub-text-main);
   transform: scale(1.05);
 }
 
@@ -401,13 +401,13 @@ onUnmounted(() => {
 
 .pc-panel__api-config-wrapper--open {
   grid-template-rows: 1fr;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--ub-border);
 }
 
 .pc-panel__api-config {
   overflow: hidden;
   padding: 0 14px;
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--ub-shadow);
   display: flex;
   flex-direction: column;
 }
@@ -428,7 +428,7 @@ onUnmounted(() => {
 
 .pc-panel__api-label {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--ub-text-muted);
   width: 40px;
   flex-shrink: 0;
   text-align: right;
@@ -437,26 +437,26 @@ onUnmounted(() => {
 .pc-panel__api-input {
   flex: 1;
   padding: 5px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--ub-border);
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.85);
+  background: var(--ub-bg-glass);
+  color: var(--ub-text-main);
   font-size: 12px;
   outline: none;
   transition: border-color 0.2s;
 }
 
 .pc-panel__api-input:focus {
-  border-color: rgba(100, 181, 246, 0.4);
+  border-color: var(--ub-accent-border);
 }
 
 .pc-panel__api-select {
   flex: 1;
   padding: 5px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--ub-border);
   border-radius: 5px;
-  background: rgba(30, 30, 40, 0.9);
-  color: rgba(255, 255, 255, 0.85);
+  background: var(--ub-bg-solid);
+  color: var(--ub-text-main);
   font-size: 12px;
   outline: none;
 }
@@ -471,10 +471,10 @@ onUnmounted(() => {
   justify-content: center;
   width: 28px;
   height: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--ub-border);
   border-radius: 5px;
-  background: rgba(100, 181, 246, 0.1);
-  color: rgba(100, 181, 246, 0.8);
+  background: var(--ub-accent-bg);
+  color: var(--ub-accent-text);
   cursor: pointer;
   flex-shrink: 0;
   font-size: 12px;
@@ -482,9 +482,9 @@ onUnmounted(() => {
 }
 
 .pc-panel__api-fetch-btn:hover:not(:disabled) {
-  background: rgba(100, 181, 246, 0.2);
-  color: rgba(100, 181, 246, 1);
-  border-color: rgba(100, 181, 246, 0.3);
+  background: var(--ub-accent-border);
+  color: var(--ub-accent-active);
+  border-color: var(--ub-accent-border);
 }
 
 .pc-panel__api-fetch-btn:disabled {
@@ -494,11 +494,11 @@ onUnmounted(() => {
 
 .pc-panel__api-sep {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--ub-text-muted);
   text-transform: uppercase;
   letter-spacing: 1px;
   padding-top: 6px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--ub-border);
 }
 
 .pc-panel__api-toggle {
@@ -514,12 +514,12 @@ onUnmounted(() => {
   width: 36px;
   height: 20px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--ub-border);
   transition: background 0.2s;
 }
 
 .pc-panel__api-toggle-track.active {
-  background: linear-gradient(135deg, #66bb6a, #43a047);
+  background: var(--ub-accent-active);
 }
 
 .pc-panel__api-toggle-thumb {
@@ -539,7 +539,7 @@ onUnmounted(() => {
 
 .pc-panel__api-toggle-text {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--ub-text-muted);
 }
 
 .pc-panel__body {
@@ -555,7 +555,7 @@ onUnmounted(() => {
 
 .pc-panel__divider {
   width: 1px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--ub-border);
 }
 
 .pc-panel__control-col {
@@ -572,12 +572,12 @@ onUnmounted(() => {
 }
 
 :deep(::-webkit-scrollbar-thumb) {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--ub-border);
   border-radius: 2px;
 }
 
 :deep(::-webkit-scrollbar-thumb:hover) {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--ub-bg-hover);
 }
 
 /* --- Resize Handles --- */
@@ -617,12 +617,12 @@ onUnmounted(() => {
   right: 3px;
   width: 8px;
   height: 8px;
-  border-right: 2px solid rgba(255, 255, 255, 0.15);
-  border-bottom: 2px solid rgba(255, 255, 255, 0.15);
+  border-right: 2px solid var(--ub-border);
+  border-bottom: 2px solid var(--ub-border);
   transition: border-color 0.2s;
 }
 
 .pc-panel__resize--corner:hover::after {
-  border-color: rgba(255, 255, 255, 0.35);
+  border-color: var(--ub-text-muted);
 }
 </style>

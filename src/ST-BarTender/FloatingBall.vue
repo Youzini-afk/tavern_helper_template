@@ -157,23 +157,23 @@ onUnmounted(() => {
   cursor: grab;
   user-select: none;
   font-size: 18px;
-  color: rgba(255, 255, 255, 0.85);
-  background: rgba(30, 30, 42, 0.88);
+  color: var(--ub-text-main);
+  background: var(--ub-bg-solid);
   backdrop-filter: blur(16px) saturate(180%);
   -webkit-backdrop-filter: blur(16px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--ub-border);
   box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.4),
-    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+    0 4px 20px var(--ub-shadow),
+    0 0 0 1px var(--ub-border-light) inset;
   transition: box-shadow 0.25s, transform 0.2s, background 0.25s;
 }
 
 .fb-ball:hover {
-  background: rgba(38, 38, 52, 0.92);
+  background: var(--ub-bg-hover);
   box-shadow:
-    0 6px 28px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
-    0 0 16px rgba(100, 181, 246, 0.15);
+    0 6px 28px var(--ub-shadow),
+    0 0 0 1px var(--ub-border) inset,
+    0 0 16px var(--ub-accent-bg);
   transform: scale(1.08);
 }
 
@@ -183,11 +183,11 @@ onUnmounted(() => {
 }
 
 .fb-ball--active {
-  background: rgba(100, 181, 246, 0.2);
-  border-color: rgba(100, 181, 246, 0.35);
+  background: var(--ub-accent-bg);
+  border-color: var(--ub-accent-border);
   box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.4),
-    0 0 20px rgba(100, 181, 246, 0.2);
-  color: #64b5f6;
+    0 4px 20px var(--ub-shadow),
+    0 0 20px var(--ub-accent-bg);
+  color: var(--ub-accent-text);
 }
 </style>

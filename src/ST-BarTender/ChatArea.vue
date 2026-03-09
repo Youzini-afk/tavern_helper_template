@@ -294,7 +294,7 @@ watch(
 
 .chat-area__hint {
   font-size: 11px !important;
-  color: rgba(255, 255, 255, 0.2) !important;
+  color: var(--ub-text-muted) !important;
 }
 
 /* --- Bubbles --- */
@@ -347,13 +347,13 @@ watch(
 }
 
 .chat-area__bubble--user .chat-area__bubble-role {
-  background: rgba(100, 181, 246, 0.2);
-  color: #64b5f6;
+  background: var(--ub-accent-bg);
+  color: var(--ub-accent-text);
 }
 
 .chat-area__bubble--ai .chat-area__bubble-role {
-  background: rgba(129, 199, 132, 0.2);
-  color: #81c784;
+  background: var(--ub-success-bg);
+  color: var(--ub-success-text);
 }
 
 .chat-area__bubble-content {
@@ -366,14 +366,14 @@ watch(
 }
 
 .chat-area__bubble--user .chat-area__bubble-content {
-  background: rgba(100, 181, 246, 0.12);
-  color: rgba(255, 255, 255, 0.9);
+  background: var(--ub-accent-bg);
+  color: var(--ub-text-main);
   border-bottom-right-radius: 4px;
 }
 
 .chat-area__bubble--ai .chat-area__bubble-content {
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.8);
+  background: var(--ub-bg-glass);
+  color: var(--ub-text-secondary);
   border-bottom-left-radius: 4px;
 }
 
@@ -414,7 +414,7 @@ watch(
   border: none;
   border-radius: 4px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--ub-text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -424,23 +424,23 @@ watch(
 }
 
 .chat-area__bubble-action-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.9);
+  background: var(--ub-bg-hover);
+  color: var(--ub-text-main);
 }
 
 .chat-area__bubble-action-btn--danger:hover {
-  background: rgba(244, 67, 54, 0.15);
-  color: #ef5350;
+  background: var(--ub-danger-bg);
+  color: var(--ub-danger-text);
 }
 
 .chat-area__bubble-action-btn--confirm:hover {
-  background: rgba(76, 175, 80, 0.15);
-  color: #66bb6a;
+  background: var(--ub-success-bg);
+  color: var(--ub-success-text);
 }
 
 .chat-area__bubble-action-btn--cancel:hover {
-  background: rgba(244, 67, 54, 0.15);
-  color: #ef5350;
+  background: var(--ub-danger-bg);
+  color: var(--ub-danger-text);
 }
 
 /* --- Bubble Edit --- */
@@ -457,10 +457,10 @@ watch(
   min-height: 40px;
   max-height: 200px;
   padding: 8px 10px;
-  border: 1px solid rgba(100, 181, 246, 0.35);
+  border: 1px solid var(--ub-accent-border);
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.3);
-  color: rgba(255, 255, 255, 0.9);
+  background: var(--ub-shadow);
+  color: var(--ub-text-main);
   font-size: 12.5px;
   line-height: 1.5;
   resize: vertical;
@@ -470,7 +470,7 @@ watch(
 }
 
 .chat-area__bubble-edit-textarea:focus {
-  border-color: rgba(100, 181, 246, 0.6);
+  border-color: var(--ub-accent-active);
 }
 
 .chat-area__bubble-edit-actions {
@@ -484,7 +484,7 @@ watch(
   display: flex;
   gap: 4px;
   padding: 4px 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--ub-border);
 }
 
 .chat-area__shortcut-btn {
@@ -493,8 +493,8 @@ watch(
   gap: 4px;
   padding: 4px 8px;
   border: none;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.55);
+  background: var(--ub-border);
+  color: var(--ub-text-muted);
   border-radius: 4px;
   font-size: 11px;
   cursor: pointer;
@@ -502,8 +502,8 @@ watch(
 }
 
 .chat-area__shortcut-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
+  background: var(--ub-bg-hover);
+  color: var(--ub-text-main);
 }
 
 /* --- Input --- */
@@ -511,27 +511,27 @@ watch(
   display: flex;
   gap: 6px;
   padding: 8px 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--ub-border);
 }
 
 .chat-area__input {
   flex: 1;
   padding: 8px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--ub-border);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.9);
+  background: var(--ub-bg-glass);
+  color: var(--ub-text-main);
   font-size: 13px;
   outline: none;
   transition: border-color 0.2s;
 }
 
 .chat-area__input:focus {
-  border-color: rgba(100, 181, 246, 0.4);
+  border-color: var(--ub-accent-border);
 }
 
 .chat-area__input::placeholder {
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--ub-text-muted);
 }
 
 .chat-area__send-btn {
@@ -539,8 +539,8 @@ watch(
   height: 36px;
   border: none;
   border-radius: 8px;
-  background: rgba(100, 181, 246, 0.2);
-  color: #64b5f6;
+  background: var(--ub-accent-bg);
+  color: var(--ub-accent-text);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -549,7 +549,7 @@ watch(
 }
 
 .chat-area__send-btn:hover:not(:disabled) {
-  background: rgba(100, 181, 246, 0.35);
+  background: var(--ub-accent-border);
   transform: scale(1.05);
 }
 
@@ -560,19 +560,19 @@ watch(
 
 /* 停止按钮样式 */
 .chat-area__send-btn--stop {
-  background: rgba(244, 67, 54, 0.2);
-  color: #ef5350;
+  background: var(--ub-danger-bg);
+  color: var(--ub-danger-text);
 }
 
 .chat-area__send-btn--stop:hover {
-  background: rgba(244, 67, 54, 0.35);
+  background: var(--ub-danger-text);
   transform: scale(1.05);
 }
 
 /* 系统提示词按钮高亮 */
 .chat-area__shortcut-btn--active {
-  color: #64b5f6 !important;
-  border-color: rgba(100, 181, 246, 0.25) !important;
+  color: var(--ub-accent-text) !important;
+  border-color: var(--ub-accent-bg) !important;
 }
 
 /* 系统提示词弹窗 */
@@ -580,7 +580,7 @@ watch(
   position: fixed;
   inset: 0;
   z-index: 100000;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--ub-bg-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -599,11 +599,11 @@ watch(
   flex-direction: column;
   border-radius: 14px;
   overflow: hidden;
-  background: rgba(22, 22, 30, 0.96);
+  background: var(--ub-bg-solid);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+  border: 1px solid var(--ub-border);
+  box-shadow: 0 16px 48px var(--ub-shadow);
   animation: prompt-dialog-in 0.2s ease-out;
 }
 
@@ -617,13 +617,13 @@ watch(
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--ub-border);
 }
 
 .prompt-dialog__title {
   font-size: 14px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--ub-text-main);
 }
 
 .prompt-dialog__close {
@@ -632,7 +632,7 @@ watch(
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--ub-text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -642,8 +642,8 @@ watch(
 }
 
 .prompt-dialog__close:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.8);
+  background: var(--ub-bg-hover);
+  color: var(--ub-text-main);
 }
 
 .prompt-dialog__body {
@@ -657,10 +657,10 @@ watch(
   height: 320px;
   resize: vertical;
   padding: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--ub-border);
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.25);
-  color: rgba(255, 255, 255, 0.85);
+  background: var(--ub-shadow);
+  color: var(--ub-text-main);
   font-size: 12px;
   font-family: 'Consolas', 'Monaco', monospace;
   line-height: 1.6;
@@ -672,11 +672,11 @@ watch(
 }
 
 .prompt-dialog__textarea:focus {
-  border-color: rgba(100, 181, 246, 0.35);
+  border-color: var(--ub-accent-border);
 }
 
 .prompt-dialog__textarea::placeholder {
-  color: rgba(255, 255, 255, 0.15);
+  color: var(--ub-text-muted);
 }
 
 .prompt-dialog__footer {
@@ -684,27 +684,27 @@ watch(
   align-items: center;
   gap: 10px;
   padding: 10px 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--ub-border);
 }
 
 .prompt-dialog__reset {
   border: none;
   border-radius: 6px;
   padding: 5px 10px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.5);
+  background: var(--ub-border);
+  color: var(--ub-text-muted);
   font-size: 12px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 
 .prompt-dialog__reset:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.8);
+  background: var(--ub-bg-hover);
+  color: var(--ub-text-main);
 }
 
 .prompt-dialog__hint {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--ub-text-muted);
 }
 </style>
