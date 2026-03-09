@@ -277,29 +277,27 @@ function toggleTheme(e: MouseEvent) {
 
   const nextTheme = store.settings.theme === 'dark' ? 'parchment' : 'dark';
 
-  // 目标主题的半透明背景色 (让图标透过)
+  // 不透明背景色
   const targetBg = nextTheme === 'parchment'
-    ? 'rgba(246, 239, 221, 0.55)'
-    : 'rgba(30, 30, 38, 0.55)';
+    ? 'rgb(246, 239, 221)'
+    : 'rgb(30, 30, 38)';
 
-  // 获取面板和悬浮球
-  const btn = (e.currentTarget as HTMLElement).closest('.pc-panel') as HTMLElement | null;
-  if (!btn) { store.settings.theme = nextTheme; return; }
-  const ball = document.querySelector('.fb-ball')?.closest('[class*="ub-theme"]') as HTMLElement | null;
+  // 获取面板
+  const panel = (e.currentTarget as HTMLElement).closest('.pc-panel') as HTMLElement | null;
+  if (!panel) { store.settings.theme = nextTheme; return; }
 
-  const rect = btn.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
+  // 获取悬浮窗 (BubbleMenu)
+  const bubbleMenu = document.querySelector('.bm-menu') as HTMLElement | null;
+
+  const panelRect = panel.getBoundingClientRect();
+  const x = e.clientX - panelRect.left;
+  const y = e.clientY - panelRect.top;
   const endRadius = Math.hypot(
-    Math.max(x, rect.width - x),
-    Math.max(y, rect.height - y)
+    Math.max(x, panelRect.width - x),
+    Math.max(y, panelRect.height - y)
   );
 
-  // 1. 启用全元素 CSS 过渡
-  btn.classList.add('ub-theme-transitioning');
-  ball?.classList.add('ub-theme-transitioning');
-
-  // 2. 显示覆盖层 (半透明，不遮挡图标)
+  // 1. 面板覆盖层
   themeOverlayStyle.value = {
     background: targetBg,
     clipPath: `circle(0px at ${x}px ${y}px)`,
@@ -307,7 +305,40 @@ function toggleTheme(e: MouseEvent) {
   };
   themeOverlayVisible.value = true;
 
-  // 3. 开始动画
+  // 2. 悬浮窗覆盖层 (如果存在)
+  let bmOverlay: HTMLElement | null = null;
+  if (bubbleMenu) {
+    const bmRect = bubbleMenu.getBoundingClientRect();
+    const bmX = e.clientX - bmRect.left;
+    const bmY = e.clientY - bmRect.top;
+    const bmRadius = Math.hypot(
+      Math.max(bmX, bmRect.width - bmX),
+      Math.max(bmY, bmRect.height - bmY)
+    );
+
+    bmOverlay = document.createElement('div');
+    bmOverlay.style.cssText = `
+      position: absolute; inset: 0; z-index: 999999;
+      background: ${targetBg}; pointer-events: none;
+      border-radius: inherit;
+      clip-path: circle(0px at ${bmX}px ${bmY}px);
+    `;
+    bubbleMenu.style.position = 'relative';
+    bubbleMenu.appendChild(bmOverlay);
+
+    // 强制重排
+    void bmOverlay.offsetWidth;
+
+    bmOverlay.animate(
+      [
+        { clipPath: `circle(0px at ${bmX}px ${bmY}px)` },
+        { clipPath: `circle(${bmRadius}px at ${bmX}px ${bmY}px)` },
+      ],
+      { duration: 800, easing: 'ease-in-out', fill: 'forwards' }
+    );
+  }
+
+  // 3. 开始面板动画
   nextTick(() => {
     requestAnimationFrame(() => {
       themeOverlayStyle.value = {
@@ -316,19 +347,13 @@ function toggleTheme(e: MouseEvent) {
         transition: 'clip-path 800ms ease-in-out',
       };
 
-      // 在动画进行到 60% 时切换真正的主题 (让 CSS 过渡接管)
+      // 动画结束后切换主题并移除覆盖层
       setTimeout(() => {
         store.settings.theme = nextTheme;
-      }, 480);
-
-      // 动画完全结束后清理
-      setTimeout(() => {
-        themeOverlayVisible.value = false;
-        // 延迟移除过渡类 (等 CSS 过渡完成)
-        setTimeout(() => {
-          btn.classList.remove('ub-theme-transitioning');
-          ball?.classList.remove('ub-theme-transitioning');
-        }, 600);
+        nextTick(() => {
+          themeOverlayVisible.value = false;
+          bmOverlay?.remove();
+        });
       }, 820);
     });
   });
