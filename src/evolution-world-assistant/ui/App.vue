@@ -327,6 +327,7 @@
             >
               <template #actions>
                 <button type="button" class="ew-btn" @click="store.addCharFlow">新增工作流</button>
+                <button type="button" class="ew-btn" @click="store.saveCharFlows">💾 保存到世界书</button>
                 <button type="button" class="ew-btn" @click="store.loadCharFlows">刷新</button>
               </template>
 

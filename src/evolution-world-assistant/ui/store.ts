@@ -450,25 +450,12 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   async function saveCharFlows() {
     try {
       await writeCharFlows(settings.value, charFlows.value);
+      showEwNotice({ title: 'Evolution World', message: '角色卡工作流已保存到世界书', level: 'success' });
     } catch (e) {
       console.error('[Evolution World] saveCharFlows failed:', e);
       showEwNotice({ title: 'Evolution World', message: '角色卡工作流保存失败: ' + (e as Error).message, level: 'error' });
     }
   }
-
-  const persistCharFlowsDebounced = _.debounce(() => {
-    saveCharFlows();
-  }, 500);
-
-  watch(
-    charFlows,
-    () => {
-      if (flowScope.value === 'character') {
-        persistCharFlowsDebounced();
-      }
-    },
-    { deep: true },
-  );
 
   function addCharFlow() {
     const apiPresets = settings.value.api_presets;
