@@ -1,11 +1,11 @@
 <template>
   <div class="premium-slider">
-    <div class="ps-header" v-if="label">
+    <div v-if="label" class="ps-header">
       <span class="ps-label">{{ label }}</span>
       <span class="ps-value">{{ displayValue }}</span>
     </div>
 
-    <div class="ps-track-container" @mousedown="onMouseDown" ref="trackRef">
+    <div ref="trackRef" class="ps-track-container" @mousedown="onMouseDown">
       <div class="ps-track-bg" />
       <div class="ps-track-fill" :style="{ width: percent + '%' }" />
       <div class="ps-thumb" :style="{ left: percent + '%' }" />
@@ -28,6 +28,7 @@ const props = withDefaults(
     min: 0,
     max: 2,
     step: 0.05,
+    label: undefined,
   },
 );
 
@@ -111,14 +112,14 @@ onUnmounted(() => {
 .ps-label {
   font-size: 13px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--ub-text-main);
 }
 
 .ps-value {
   font-size: 12px;
   font-family: monospace;
-  color: rgba(100, 181, 246, 0.9);
-  background: rgba(100, 181, 246, 0.1);
+  color: var(--ub-text-main);
+  background: var(--ub-accent-bg);
   padding: 2px 6px;
   border-radius: 4px;
 }
@@ -136,19 +137,19 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   height: 6px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--ub-border);
   border-radius: 3px;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+  box-shadow: inset 0 1px 2px var(--ub-shadow);
 }
 
 .ps-track-fill {
   position: absolute;
   left: 0;
   height: 6px;
-  background: linear-gradient(90deg, #64b5f6, #2196f3);
+  background: var(--ub-accent-active);
   border-radius: 3px;
   pointer-events: none;
-  box-shadow: 0 0 8px rgba(33, 150, 243, 0.4);
+  box-shadow: 0 0 8px var(--ub-accent-bg);
 }
 
 .ps-thumb {
@@ -168,7 +169,7 @@ onUnmounted(() => {
   position: absolute;
   inset: -6px;
   border-radius: 50%;
-  background: rgba(100, 181, 246, 0.2);
+  background: var(--ub-accent-bg);
   transform: scale(0);
   transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
@@ -183,6 +184,6 @@ onUnmounted(() => {
 
 .ps-track-container:active .ps-thumb::after {
   transform: scale(1.3);
-  background: rgba(100, 181, 246, 0.3);
+  background: var(--ub-accent-border);
 }
 </style>

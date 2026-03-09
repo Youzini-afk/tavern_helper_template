@@ -1,0 +1,61 @@
+/* =========================================
+   ACT Theming System
+   ========================================= */
+
+/* -----------------------------------------
+   Dark Theme (Default)
+   ----------------------------------------- */
+.ub-theme-dark {
+  --ub-bg-glass: rgba(255, 255, 255, 0.03);
+  --ub-bg-solid: rgba(30, 30, 38, 0.95);
+  --ub-bg-hover: rgba(255, 255, 255, 0.12);
+  --ub-bg-overlay: rgba(0, 0, 0, 0.65);
+  --ub-border: rgba(255, 255, 255, 0.08);
+  --ub-border-light: rgba(255, 255, 255, 0.05);
+
+  --ub-text-main: rgba(255, 255, 255, 0.9);
+  --ub-text-secondary: rgba(255, 255, 255, 0.75);
+  --ub-text-muted: rgba(255, 255, 255, 0.4);
+
+  --ub-accent-bg: rgba(100, 181, 246, 0.2);
+  --ub-accent-border: rgba(100, 181, 246, 0.3);
+  --ub-accent-text: rgba(100, 181, 246, 0.9);
+  --ub-accent-active: rgba(100, 181, 246, 0.7);
+
+  --ub-danger-bg: rgba(239, 83, 80, 0.25);
+  --ub-danger-text: rgba(239, 83, 80, 0.9);
+
+  --ub-shadow: rgba(0, 0, 0, 0.1);
+}
+
+/* -----------------------------------------
+   Parchment Theme (Light)
+   ----------------------------------------- */
+.ub-theme-parchment {
+  /* Warm paper background */
+  --ub-bg-glass: rgba(244, 236, 216, 0.6);
+  --ub-bg-solid: rgba(246, 239, 221, 0.98);
+  --ub-bg-hover: rgba(139, 90, 43, 0.12);
+  --ub-bg-overlay: rgba(246, 239, 221, 0.85);
+
+  /* Deep warm brown border */
+  --ub-border: rgba(139, 90, 43, 0.15);
+  --ub-border-light: rgba(139, 90, 43, 0.08);
+
+  /* Dark brown / dark gray text */
+  --ub-text-main: rgba(74, 64, 54, 0.95);
+  --ub-text-secondary: rgba(74, 64, 54, 0.75);
+  --ub-text-muted: rgba(74, 64, 54, 0.5);
+
+  /* Warm accent (burnt orange / brown) */
+  --ub-accent-bg: rgba(198, 92, 40, 0.12);
+  --ub-accent-border: rgba(198, 92, 40, 0.3);
+  --ub-accent-text: rgba(198, 92, 40, 0.9);
+  --ub-accent-active: rgba(198, 92, 40, 0.8);
+
+  /* Danger red */
+  --ub-danger-bg: rgba(198, 40, 40, 0.15);
+  --ub-danger-text: rgba(198, 40, 40, 0.9);
+
+  --ub-shadow: rgba(139, 90, 43, 0.08);
+}

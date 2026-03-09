@@ -1,6 +1,6 @@
 <template>
   <div class="premium-toggle" @click="toggle">
-    <span class="pt-label" v-if="label">{{ label }}</span>
+    <span v-if="label" class="pt-label">{{ label }}</span>
     <div class="pt-track" :class="{ 'pt-track--active': checked }">
       <div class="pt-thumb" />
     </div>
@@ -29,8 +29,8 @@ function toggle() {
   justify-content: space-between;
   padding: 8px 12px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: var(--ub-bg-glass);
+  border: 1px solid var(--ub-border);
   cursor: pointer;
   transition: background 0.2s, border-color 0.2s;
   user-select: none;
@@ -39,14 +39,14 @@ function toggle() {
 }
 
 .premium-toggle:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: var(--ub-bg-hover);
+  border-color: var(--ub-border-light);
 }
 
 .pt-label {
   font-size: 13px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--ub-text-main);
   flex: 1;
   white-space: nowrap;
   overflow: hidden;
@@ -59,15 +59,15 @@ function toggle() {
   width: 44px;
   height: 24px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+  background: var(--ub-border);
+  box-shadow: inset 0 1px 3px var(--ub-shadow);
   transition: background 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   flex-shrink: 0;
 }
 
 .pt-track--active {
-  background: linear-gradient(135deg, #66bb6a, #43a047);
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1), 0 0 12px rgba(76, 175, 80, 0.2);
+  background: var(--ub-accent-active);
+  box-shadow: inset 0 1px 3px var(--ub-shadow), 0 0 12px var(--ub-accent-bg);
 }
 
 .pt-thumb {

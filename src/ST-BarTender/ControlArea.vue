@@ -41,7 +41,7 @@ const store = useStore();
   flex-direction: column;
   height: 100%;
   min-width: 0;
-  background: rgba(0, 0, 0, 0.1); /* 稍微深一点的背景区分工作区 */
+  background: var(--ub-shadow); /* 稍微深一点的背景区分工作区 */
 }
 
 .control-area__toolbar {
@@ -49,8 +49,8 @@ const store = useStore();
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.02);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--ub-bg-glass);
+  border-bottom: 1px solid var(--ub-border);
 }
 
 .control-area__tool-btn {
@@ -60,8 +60,8 @@ const store = useStore();
   width: 30px;
   height: 30px;
   border: none;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.55);
+  background: var(--ub-border);
+  color: var(--ub-text-muted);
   border-radius: 6px;
   font-size: 13px;
   cursor: pointer;
@@ -69,20 +69,20 @@ const store = useStore();
 }
 
 .control-area__tool-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.85);
+  background: var(--ub-bg-hover);
+  color: var(--ub-text-main);
 }
 
 .control-area__tool-btn--active {
-  background: rgba(100, 181, 246, 0.2) !important;
-  color: rgba(100, 181, 246, 0.9) !important;
+  background: var(--ub-accent-bg) !important;
+  color: var(--ub-accent-text) !important;
 }
 
 .control-area__title {
   margin-left: auto;
   font-size: 13px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--ub-text-secondary);
   letter-spacing: 0.5px;
 }
 

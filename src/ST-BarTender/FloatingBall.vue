@@ -4,7 +4,7 @@
     <div
       ref="ballRef"
       class="fb-ball"
-      :class="{ 'fb-ball--active': store.ballMenuOpen }"
+      :class="[{ 'fb-ball--active': store.ballMenuOpen }, 'ub-theme-' + store.settings.theme]"
       :style="ballStyle"
       @mousedown.prevent="onMouseDown"
     >

@@ -4,7 +4,7 @@
     <div class="bm-backdrop" @mousedown="emit('close')" />
 
     <!-- 气泡菜单 -->
-    <div ref="menuRef" class="bm-menu" :style="menuStyle" @mousedown.stop>
+    <div ref="menuRef" class="bm-menu" :class="['ub-theme-' + store.settings.theme]" :style="menuStyle" @mousedown.stop>
       <!-- 标题栏 -->
       <div class="bm-header">
         <span class="bm-title">{{ store.widgetConfig.title }}</span>
@@ -199,15 +199,15 @@ function onResizeEnd() {
   flex-direction: column;
   border-radius: 14px;
   overflow: hidden;
-  background: rgba(22, 22, 30, 0.94);
+  background: var(--ub-bg-solid);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--ub-border);
   box-shadow:
-    0 12px 40px rgba(0, 0, 0, 0.55),
-    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+    0 12px 40px var(--ub-shadow),
+    0 0 0 1px var(--ub-border-light) inset;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--ub-text-main);
   animation: bm-fade-in 0.18s ease-out;
 }
 
@@ -227,15 +227,15 @@ function onResizeEnd() {
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.03);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--ub-bg-glass);
+  border-bottom: 1px solid var(--ub-border);
   flex-shrink: 0;
 }
 
 .bm-title {
   font-size: 13px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--ub-text-main);
   letter-spacing: 0.3px;
 }
 
@@ -250,7 +250,7 @@ function onResizeEnd() {
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--ub-text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -260,12 +260,12 @@ function onResizeEnd() {
 }
 
 .bm-header-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.8);
+  background: var(--ub-bg-hover);
+  color: var(--ub-text-main);
 }
 
 .bm-header-btn--active {
-  color: rgba(100, 181, 246, 0.9);
+  color: var(--ub-accent-text);
 }
 
 .bm-body {
@@ -287,12 +287,12 @@ function onResizeEnd() {
 }
 
 .bm-body::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--ub-border);
   border-radius: 2px;
 }
 
 .bm-body::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--ub-bg-hover);
 }
 
 /* --- Resize Handles --- */

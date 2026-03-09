@@ -4,6 +4,7 @@
       v-show="store.panelOpen"
       ref="panelRef"
       class="pc-panel"
+      :class="['ub-theme-' + store.settings.theme]"
       :style="panelStyle"
   >
     <!-- 标题栏（拖拽手柄） -->
@@ -117,6 +118,13 @@
             </div>
             <span class="pc-panel__api-toggle-text">{{ store.settings.preserve_user_edits ? '开启' : '关闭' }}</span>
           </div>
+        </div>
+        <div class="pc-panel__api-row">
+          <label class="pc-panel__api-label">界面主题</label>
+          <select v-model="store.settings.theme" class="pc-panel__api-select">
+            <option value="dark">暗色 (Dark)</option>
+            <option value="parchment">羊皮纸 (Parchment)</option>
+          </select>
         </div>
       </div>
     </div>

@@ -3,6 +3,7 @@
 // ============================================================
 
 import { createScriptIdDiv, teleportStyle } from '@util/script';
+import './theme.css';
 import Panel from './Panel.vue';
 import FloatingBall from './FloatingBall.vue';
 import { useStore } from './store';

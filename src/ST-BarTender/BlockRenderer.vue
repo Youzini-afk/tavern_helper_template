@@ -260,16 +260,16 @@ const appearanceClasses = computed(() => {
    ========================================= */
 
 .ap-thm-glass {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--ub-bg-glass);
   backdrop-filter: blur(12px) saturate(140%);
   -webkit-backdrop-filter: blur(12px) saturate(140%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--ub-border);
+  box-shadow: 0 4px 24px var(--ub-shadow);
 }
 
 .ap-thm-solid {
-  background: rgba(30, 30, 38, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--ub-bg-solid);
+  border: 1px solid var(--ub-border-light);
 }
 
 .ap-thm-transparent {
@@ -277,11 +277,11 @@ const appearanceClasses = computed(() => {
   border: none;
 }
 
-.ub-text { color: rgba(255, 255, 255, 0.9); }
+.ub-text { color: var(--ub-text-main); }
 .ap-typo-h1 { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 8px; }
-.ap-typo-h2 { font-size: 16px; font-weight: 600; color: rgba(255, 255, 255, 0.85); margin-bottom: 6px; }
-.ap-typo-body { font-size: 14px; font-weight: 400; line-height: 1.5; color: rgba(255, 255, 255, 0.75); }
-.ap-typo-caption { font-size: 12px; font-weight: 400; color: rgba(255, 255, 255, 0.4); }
+.ap-typo-h2 { font-size: 16px; font-weight: 600; color: var(--ub-text-main); margin-bottom: 6px; }
+.ap-typo-body { font-size: 14px; font-weight: 400; line-height: 1.5; color: var(--ub-text-secondary); }
+.ap-typo-caption { font-size: 12px; font-weight: 400; color: var(--ub-text-muted); }
 
 .ap-elv-0 { box-shadow: none; }
 .ap-elv-1 { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); }
@@ -299,7 +299,7 @@ const appearanceClasses = computed(() => {
 .ub-divider {
   height: 1px;
   width: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1) 20%, rgba(255, 255, 255, 0.1) 80%, transparent);
+  background: linear-gradient(90deg, transparent, var(--ub-border) 20%, var(--ub-border) 80%, transparent);
   margin: 12px 0;
 }
 
@@ -308,17 +308,17 @@ const appearanceClasses = computed(() => {
   padding: 8px 16px;
   font-size: 13px;
   font-weight: 500;
-  color: white;
+  color: var(--ub-text-main);
   transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  background: rgba(100, 181, 246, 0.2);
-  border: 1px solid rgba(100, 181, 246, 0.3);
+  background: var(--ub-accent-bg);
+  border: 1px solid var(--ub-accent-border);
   border-radius: 8px;
 }
 
 .ub-button:hover {
-  background: rgba(100, 181, 246, 0.3);
+  background: var(--ub-accent-border);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(100, 181, 246, 0.2);
+  box-shadow: 0 4px 12px var(--ub-accent-bg);
 }
 .ub-button:active {
   transform: translateY(1px);
@@ -379,7 +379,7 @@ const appearanceClasses = computed(() => {
   gap: 2px;
   padding: 2px;
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.65);
+  background: var(--ub-bg-overlay);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
@@ -394,7 +394,7 @@ const appearanceClasses = computed(() => {
   border: none;
   border-radius: 4px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--ub-text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -404,25 +404,25 @@ const appearanceClasses = computed(() => {
 }
 
 .ub-edit-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.9);
+  background: var(--ub-bg-hover);
+  color: var(--ub-text-main);
 }
 
 .ub-edit-btn--danger:hover {
-  background: rgba(239, 83, 80, 0.25);
-  color: rgba(239, 83, 80, 0.9);
+  background: var(--ub-danger-bg);
+  color: var(--ub-danger-text);
 }
 
 /* text 编辑态 */
 .ub-text--editable {
   cursor: text;
-  border-bottom: 1px dashed rgba(100, 181, 246, 0.3);
+  border-bottom: 1px dashed var(--ub-accent-border);
   outline: none;
   transition: border-color 0.2s;
 }
 
 .ub-text--editable:focus {
-  border-bottom-color: rgba(100, 181, 246, 0.7);
+  border-bottom-color: var(--ub-accent-active);
 }
 
 /* toggle/slider 叶子节点编辑按钮 */
@@ -442,7 +442,7 @@ const appearanceClasses = computed(() => {
   gap: 1px;
   padding: 2px;
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.65);
+  background: var(--ub-bg-overlay);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
