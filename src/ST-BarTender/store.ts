@@ -15,6 +15,13 @@ import {
   type ActionBinding,
 } from './schema';
 import { callAI, buildSystemPrompt } from './ai';
+import {
+  loadMapping,
+  savePresetConfig,
+  loadPresetConfig,
+  detectAndFixRenames,
+  type PresetMapping,
+} from './config-storage';
 
 export const useStore = defineStore('preset-control', () => {
   // ========== 持久化设置（存入酒馆脚本变量）==========
@@ -62,14 +69,60 @@ export const useStore = defineStore('preset-control', () => {
     { deep: true },
   );
 
+  // ========== 预设持久化状态 ==========
+  const currentPresetName = ref<string>('');
+  const presetMapping = ref<PresetMapping>({});
+  let configStorageReady = false;
+
+  /** 初始化文件存储，读取映射表，迁移旧数据 */
+  async function initConfigStorage() {
+    try {
+      presetMapping.value = await loadMapping();
+
+      // 检测改名
+      const { mapping: fixed } = await detectAndFixRenames(presetMapping.value);
+      presetMapping.value = fixed;
+
+      // 记录当前预设名
+      try {
+        currentPresetName.value = getLoadedPresetName();
+      } catch { /* 静默 */ }
+
+      // 迁移: 如果 settings 中有旧的 widget_config 且映射表中没有当前预设，则将其写入文件
+      if (currentPresetName.value && settings.value.widget_config && !presetMapping.value[currentPresetName.value]) {
+        console.info('[BarTender] 迁移旧版 widget_config 到文件存储');
+        presetMapping.value = await savePresetConfig(
+          currentPresetName.value,
+          presetMapping.value,
+          widgetConfig.value,
+          chatHistory.value,
+        );
+      }
+
+      // 尝试从文件加载当前预设的配置
+      if (currentPresetName.value) {
+        const saved = await loadPresetConfig(currentPresetName.value, presetMapping.value);
+        if (saved) {
+          widgetConfig.value = WidgetConfigSchema.parse(saved.widget_config);
+          chatHistory.value = saved.chat_history ?? [];
+        }
+      }
+
+      configStorageReady = true;
+    } catch (err) {
+      console.error('[BarTender] 配置存储初始化失败:', err);
+      configStorageReady = true; // 失败也继续运行
+    }
+  }
+
   // ========== 预设条目快照 ==========
   const presetEntries = ref<PresetEntrySnapshot[]>([]);
 
   // Fix #2: 预设参数的响应式缓存
   const presetParams = ref<Record<string, number>>({});
 
-  /** 扫描当前预设，提取所有条目信息和运行参数 */
-  function scanPreset() {
+  /** 扫描当前预设，提取所有条目信息和运行参数。如果预设已切换，自动保存旧配置并加载新配置 */
+  async function scanPreset() {
     try {
       const preset = getPreset('in_use');
       presetEntries.value = preset.prompts.map(p =>
@@ -81,8 +134,43 @@ export const useStore = defineStore('preset-control', () => {
           position_type: p.position?.type ?? 'relative',
         }),
       );
-      // 同步参数缓存
       refreshParamsCache(preset);
+
+      // 预设切换检测
+      if (configStorageReady) {
+        let newPresetName = '';
+        try { newPresetName = getLoadedPresetName(); } catch { /* */ }
+
+        if (newPresetName && newPresetName !== currentPresetName.value) {
+          // 保存旧预设配置
+          if (currentPresetName.value) {
+            presetMapping.value = await savePresetConfig(
+              currentPresetName.value,
+              presetMapping.value,
+              widgetConfig.value,
+              chatHistory.value,
+            );
+          }
+
+          // 加载新预设配置
+          const saved = await loadPresetConfig(newPresetName, presetMapping.value);
+          if (saved) {
+            widgetConfig.value = WidgetConfigSchema.parse(saved.widget_config);
+            chatHistory.value = saved.chat_history ?? [];
+            console.info(`[BarTender] 已恢复预设 "${newPresetName}" 的 UI 配置`);
+          } else {
+            // 新预设没有保存的配置，重置为默认
+            widgetConfig.value = WidgetConfigSchema.parse({
+              title: '控制中心',
+              root: { id: uid(), type: 'container', layout: { direction: 'column', gap: 'medium', padding: 'medium' } }
+            });
+            chatHistory.value = [];
+            console.info(`[BarTender] 预设 "${newPresetName}" 无保存配置，已重置`);
+          }
+
+          currentPresetName.value = newPresetName;
+        }
+      }
     } catch (err) {
       console.error('[预设控制] 扫描预设失败:', err);
       toastr.error('扫描预设失败，请检查是否有正在使用的预设');
@@ -575,6 +663,9 @@ export const useStore = defineStore('preset-control', () => {
     addBlock,
     findBlock,
     themeTransition,
+    currentPresetName,
+    presetMapping,
+    initConfigStorage,
     getDefaultSystemPrompt: () => buildSystemPrompt(presetEntries.value, presetParams.value),
   };
 });

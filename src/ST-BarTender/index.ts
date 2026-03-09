@@ -115,6 +115,10 @@ function mountFloatingBall() {
   // 监听 panelOpen → 自动挂载并打开面板（供悬浮球齿轮按钮触发）
   // immediate: true → 如果上次 panel_open=true 被持久化，刷新后自动恢复面板
   const store = useStore(pinia);
+
+  // 初始化文件持久化 (异步，不阻塞 UI)
+  store.initConfigStorage();
+
   watch(() => store.panelOpen, (open) => {
     if (open) {
       openMainPanel();
