@@ -30,6 +30,24 @@
       <div class="bm-body">
         <BlockRenderer :block="store.widgetConfig.root" />
       </div>
+
+      <!-- 拖拽缩放手柄 -->
+      <div class="bm-resize bm-resize--bottom" @mousedown.prevent="onResizeStart($event, 'bottom')" />
+      <div
+        v-if="expandsLeft"
+        class="bm-resize bm-resize--left"
+        @mousedown.prevent="onResizeStart($event, 'left')"
+      />
+      <div
+        v-else
+        class="bm-resize bm-resize--right"
+        @mousedown.prevent="onResizeStart($event, 'right')"
+      />
+      <div
+        class="bm-resize bm-resize--corner"
+        :class="expandsLeft ? 'bm-resize--corner-left' : 'bm-resize--corner-right'"
+        @mousedown.prevent="onResizeStart($event, expandsLeft ? 'corner-left' : 'corner-right')"
+      />
     </div>
   </div>
 </template>
@@ -52,9 +70,21 @@ const emit = defineEmits<{
 const store = useStore();
 const menuRef = ref<HTMLElement>();
 
-const MENU_WIDTH = 320;
-const MENU_MAX_HEIGHT = 480;
+const menuWidth = ref(320);
+const menuHeight = ref(480);
+const MIN_W = 240;
+const MAX_W = 500;
+const MIN_H = 300;
+const MAX_H = 700;
 const MARGIN = 12;
+
+// 计算展开方向
+const expandsLeft = computed(() => {
+  let vw = window.innerWidth;
+  try { if (window.parent && window.parent !== window) vw = window.parent.innerWidth; } catch {}
+  const ballCenterX = props.ballX + props.ballSize / 2;
+  return ballCenterX > vw / 2;
+});
 
 const menuStyle = computed(() => {
   // 获取可视区域
@@ -67,34 +97,76 @@ const menuStyle = computed(() => {
     }
   } catch { /* 跨域静默 */ }
 
-  const ballCenterX = props.ballX + props.ballSize / 2;
+  const w = menuWidth.value;
 
-  // 水平位置：优先在球的左边，空间不够则放右边
+  // 水平位置
   let left: number;
-  if (ballCenterX > vw / 2) {
-    // 球在右半边 → 菜单在球左边
-    left = props.ballX - MENU_WIDTH - MARGIN;
+  if (expandsLeft.value) {
+    left = props.ballX - w - MARGIN;
   } else {
-    // 球在左半边 → 菜单在球右边
     left = props.ballX + props.ballSize + MARGIN;
   }
 
-  // 垂直位置：顶部与悬浮球顶部平齐
+  // 垂直位置
   let top = props.ballY;
 
   // 边界约束
   if (left < MARGIN) left = MARGIN;
-  if (left + MENU_WIDTH > vw - MARGIN) left = vw - MENU_WIDTH - MARGIN;
+  if (left + w > vw - MARGIN) left = vw - w - MARGIN;
   if (top < MARGIN) top = MARGIN;
-  if (top + MENU_MAX_HEIGHT > vh - MARGIN) top = vh - MENU_MAX_HEIGHT - MARGIN;
+  if (top + menuHeight.value > vh - MARGIN) top = vh - menuHeight.value - MARGIN;
 
   return {
     left: `${left}px`,
     top: `${top}px`,
-    width: `${MENU_WIDTH}px`,
-    maxHeight: `${MENU_MAX_HEIGHT}px`,
+    width: `${w}px`,
+    maxHeight: `${menuHeight.value}px`,
   };
 });
+
+// ---------- 拖拽缩放 ----------
+const isResizing = ref(false);
+let resizeDir = '' as string;
+let resizeOrigin = { x: 0, y: 0, w: 0, h: 0 };
+
+function onResizeStart(e: MouseEvent, dir: string) {
+  isResizing.value = true;
+  resizeDir = dir;
+  resizeOrigin = { x: e.clientX, y: e.clientY, w: menuWidth.value, h: menuHeight.value };
+  document.addEventListener('mousemove', onResizeMove);
+  document.addEventListener('mouseup', onResizeEnd);
+  try {
+    window.parent?.document?.addEventListener('mousemove', onResizeMove);
+    window.parent?.document?.addEventListener('mouseup', onResizeEnd);
+  } catch {}
+}
+
+function onResizeMove(e: MouseEvent) {
+  if (!isResizing.value) return;
+  const dx = e.clientX - resizeOrigin.x;
+  const dy = e.clientY - resizeOrigin.y;
+
+  if (resizeDir === 'right' || resizeDir === 'corner-right') {
+    menuWidth.value = Math.max(MIN_W, Math.min(MAX_W, resizeOrigin.w + dx));
+  }
+  if (resizeDir === 'left' || resizeDir === 'corner-left') {
+    // 向左拖拽时，dx 为负值表示拓宽
+    menuWidth.value = Math.max(MIN_W, Math.min(MAX_W, resizeOrigin.w - dx));
+  }
+  if (resizeDir === 'bottom' || resizeDir.startsWith('corner')) {
+    menuHeight.value = Math.max(MIN_H, Math.min(MAX_H, resizeOrigin.h + dy));
+  }
+}
+
+function onResizeEnd() {
+  isResizing.value = false;
+  document.removeEventListener('mousemove', onResizeMove);
+  document.removeEventListener('mouseup', onResizeEnd);
+  try {
+    window.parent?.document?.removeEventListener('mousemove', onResizeMove);
+    window.parent?.document?.removeEventListener('mouseup', onResizeEnd);
+  } catch {}
+}
 </script>
 
 <style scoped>
@@ -206,5 +278,76 @@ const menuStyle = computed(() => {
 
 .bm-body::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+/* --- Resize Handles --- */
+.bm-resize {
+  position: absolute;
+  z-index: 10;
+}
+
+.bm-resize--right {
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: ew-resize;
+}
+
+.bm-resize--left {
+  top: 0;
+  left: 0;
+  width: 6px;
+  height: 100%;
+  cursor: ew-resize;
+}
+
+.bm-resize--bottom {
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.bm-resize--corner {
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+}
+
+.bm-resize--corner-right {
+  right: 0;
+  cursor: nwse-resize;
+}
+
+.bm-resize--corner-left {
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.bm-resize--corner::after {
+  content: '';
+  position: absolute;
+  bottom: 3px;
+  width: 8px;
+  height: 8px;
+  transition: border-color 0.2s;
+}
+
+.bm-resize--corner-right::after {
+  right: 3px;
+  border-right: 2px solid rgba(255, 255, 255, 0.15);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.15);
+}
+
+.bm-resize--corner-left::after {
+  left: 3px;
+  border-left: 2px solid rgba(255, 255, 255, 0.15);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.15);
+}
+
+.bm-resize--corner:hover::after {
+  border-color: rgba(255, 255, 255, 0.35);
 }
 </style>
