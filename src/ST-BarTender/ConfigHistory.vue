@@ -82,7 +82,6 @@ function rollback(id: string) {
   display: flex;
   flex-direction: column;
   border-radius: 16px;
-  overflow: hidden;
   background: var(--ub-bg-solid);
   border: 1px solid var(--ub-border);
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.3);
@@ -135,6 +134,8 @@ function rollback(id: string) {
 }
 
 .ch-list {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px;
   display: flex;
@@ -158,7 +159,7 @@ function rollback(id: string) {
 
 .ch-preview-wrap {
   width: 100%;
-  height: 160px;
+  height: 120px;
   flex-shrink: 0;
   border-radius: 8px;
   overflow: hidden;
@@ -170,9 +171,9 @@ function rollback(id: string) {
   position: absolute;
   top: 0;
   left: 0;
-  width: 200%;
-  height: 320px;
-  transform: scale(0.5);
+  width: 300%;
+  height: 360px;
+  transform: scale(0.333);
   transform-origin: top left;
   pointer-events: none;
   overflow: hidden;
