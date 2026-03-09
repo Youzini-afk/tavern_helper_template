@@ -264,7 +264,7 @@ function onResizeEnd() {
 }
 
 // ============================================================
-// 主题切换: 径向扩散动画 (克隆旧状态 → 收缩露出新主题)
+// 主题切换: 径向扩散动画
 // ============================================================
 let themeAnimating = false;
 
@@ -281,7 +281,7 @@ function toggleTheme(e: MouseEvent) {
 
   themeAnimating = true;
 
-  // 1. 计算点击在面板内的坐标
+  // 获取点击坐标 (相对面板)
   const panelRect = panelEl.getBoundingClientRect();
   const x = e.clientX - panelRect.left;
   const y = e.clientY - panelRect.top;
@@ -290,48 +290,48 @@ function toggleTheme(e: MouseEvent) {
     Math.max(y, panelRect.height - y)
   );
 
-  // 2. 克隆面板当前视觉状态 (旧主题)
-  const clone = panelEl.cloneNode(true) as HTMLElement;
+  // 目标主题的背景色 (硬编码，确保不依赖 CSS 变量解析)
+  const targetBg = nextTheme === 'parchment'
+    ? 'rgb(246, 239, 221)'   // 羊皮纸
+    : 'rgb(30, 30, 38)';     // 暗色
 
-  // 让克隆体成为纯展示层
-  clone.style.cssText = `
-    position: fixed;
-    left: ${panelRect.left}px;
-    top: ${panelRect.top}px;
-    width: ${panelRect.width}px;
-    height: ${panelRect.height}px;
-    z-index: 1000000;
-    pointer-events: none;
-    clip-path: circle(${endRadius}px at ${x}px ${y}px);
-    border-radius: ${getComputedStyle(panelEl).borderRadius};
-    overflow: hidden;
-  `;
+  // 创建扩散覆盖层
+  const overlay = document.createElement('div');
+  overlay.style.cssText = [
+    'position: absolute',
+    'inset: 0',
+    'z-index: 999999',
+    `background: ${targetBg}`,
+    `clip-path: circle(0px at ${x}px ${y}px)`,
+    'pointer-events: none',
+  ].join(';');
 
-  // 插入到面板的父级，确保在面板之上
-  panelEl.parentElement!.appendChild(clone);
+  panelEl.style.position = 'relative'; // 确保 absolute 子元素定位正确
+  panelEl.appendChild(overlay);
 
-  // 3. 立刻切换真正的主题 (面板本体变为新主题)
-  store.settings.theme = nextTheme;
+  // 强制重排后启动动画
+  void overlay.offsetWidth;
 
-  // 4. 下一帧开始动画: 将克隆体 (旧主题) 的 clip-path 从全覆盖缩小到 0
-  requestAnimationFrame(() => {
-    const anim = clone.animate(
-      [
-        { clipPath: `circle(${endRadius}px at ${x}px ${y}px)` },
-        { clipPath: `circle(0px at ${x}px ${y}px)` },
-      ],
-      {
-        duration: 500,
-        easing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-        fill: 'forwards',
-      }
-    );
+  const anim = overlay.animate(
+    [
+      { clipPath: `circle(0px at ${x}px ${y}px)` },
+      { clipPath: `circle(${endRadius}px at ${x}px ${y}px)` },
+    ],
+    {
+      duration: 800,
+      easing: 'ease-in-out',
+      fill: 'forwards',
+    }
+  );
 
-    anim.onfinish = () => {
-      clone.remove();
+  anim.onfinish = () => {
+    // 覆盖层完全展开后，切换真正的主题
+    store.settings.theme = nextTheme;
+    nextTick(() => {
+      overlay.remove();
       themeAnimating = false;
-    };
-  });
+    });
+  };
 }
 
 // Fix #11: 合并为一个 onMounted
