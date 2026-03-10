@@ -315,9 +315,13 @@ function syncFabVisibility(): void {
   if (settings.show_fab) {
     if (!fab) createFab();
   } else if (fab) {
+    // Clear any inline animation from pop-in, then apply leave animation
+    fab.style.animation = 'none';
+    void fab.offsetHeight; // force reflow
     fab.classList.add('leaving');
+    fab.style.animation = '';  // let CSS .leaving rule take effect
     fab.addEventListener('animationend', () => fab.remove(), { once: true });
-    setTimeout(() => fab.remove(), 300);
+    setTimeout(() => fab.remove(), 400);
   }
 }
 
