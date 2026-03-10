@@ -169,19 +169,24 @@ const menuStyle = computed(() => {
 
   const w = store.isMobile ? Math.min(menuWidth.value, vw - MARGIN * 2) : menuWidth.value;
   const h = store.isMobile ? Math.min(menuHeight.value, vh - MARGIN * 2) : menuHeight.value;
+  const ballCenterX = props.ballX + props.ballSize / 2;
+  const ballCenterY = props.ballY + props.ballSize / 2;
 
   // 水平位置
   let left: number;
-  if (store.isMobile) {
-    left = (vw - w) / 2;
-  } else if (expandsLeft.value) {
+  if (expandsLeft.value) {
     left = props.ballX - w - MARGIN;
   } else {
     left = props.ballX + props.ballSize + MARGIN;
   }
 
   // 垂直位置
-  let top = store.isMobile ? vh - h - MARGIN : props.ballY;
+  let top = store.isMobile ? ballCenterY - h / 2 : props.ballY;
+
+  // 移动端优先让菜单和悬浮球保持邻近，而不是固定到底部
+  if (store.isMobile && top < MARGIN) {
+    top = Math.min(vh - h - MARGIN, props.ballY + props.ballSize + MARGIN);
+  }
 
   // 边界约束
   if (left < MARGIN) left = MARGIN;
