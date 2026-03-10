@@ -290,7 +290,6 @@ async function executeFlow(
     user_input: userInput,
     request_id: requestId,
     serial_results: serialResults,
-    prompt_components: promptComponents,
   });
 
   try {

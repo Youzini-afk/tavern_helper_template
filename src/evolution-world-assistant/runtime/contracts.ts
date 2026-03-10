@@ -7,13 +7,6 @@ export const TextSliceRuleSchema = z
   })
   .prefault({});
 
-export const FlowRequestMessageSchema = z
-  .object({
-    role: z.enum(['system', 'assistant', 'user']),
-    content: z.string().default(''),
-    message_id: z.number(),
-  })
-  .prefault({ role: 'user', content: '', message_id: 0 });
 
 export const FlowRequestSchema = z.object({
   version: z.literal('ew-flow/v1'),
@@ -51,25 +44,8 @@ export const FlowRequestSchema = z.object({
         verbosity: z.enum(['auto', 'low', 'medium', 'high']).default('auto'),
       })
       .default({}),
-    prompt_items: z
-      .array(
-        z.object({
-          id: z.string().min(1),
-          name: z.string().default('提示词'),
-          enabled: z.boolean().default(true),
-          role: z.enum(['system', 'user', 'assistant']).default('system'),
-          position: z.enum(['relative', 'in_chat']).default('relative'),
-          trigger_types: z
-            .array(z.enum(['all', 'send', 'continue', 'regenerate', 'quiet', 'manual']))
-            .min(1)
-            .default(['all']),
-          content: z.string().default(''),
-        }),
-      )
-      .default([]),
   }),
   context: z.object({
-    messages: z.array(FlowRequestMessageSchema).default([]),
     turns: z.number().int().min(1).default(8),
     extract_rules: z.array(TextSliceRuleSchema).default([]),
     exclude_rules: z.array(TextSliceRuleSchema).default([]),
@@ -89,13 +65,6 @@ export const FlowRequestSchema = z.object({
   character_context: z
     .object({
       name: z.string().default(''),
-      description: z.string().default(''),
-      personality: z.string().default(''),
-      scenario: z.string().default(''),
-      persona_description: z.string().default(''),
-      system_prompt: z.string().default(''),
-      jailbreak_prompt: z.string().default(''),
-      dialogue_examples: z.string().default(''),
       worldbook_entries: z
         .array(
           z.object({
@@ -106,13 +75,8 @@ export const FlowRequestSchema = z.object({
         )
         .default([]),
     })
-    .default({ name: '', description: '', personality: '', scenario: '', persona_description: '', system_prompt: '', jailbreak_prompt: '', dialogue_examples: '', worldbook_entries: [] }),
-  world_info: z
-    .object({
-      before: z.string().default(''),
-      after: z.string().default(''),
-    })
-    .default({ before: '', after: '' }),
+    .default({ name: '', worldbook_entries: [] }),
+
   prompt_ordering: z
     .array(
       z.object({
@@ -124,36 +88,6 @@ export const FlowRequestSchema = z.object({
       }),
     )
     .default([]),
-  global_worldbooks: z
-    .array(
-      z.object({
-        worldbook_name: z.string().default(''),
-        entries: z
-          .array(
-            z.object({
-              name: z.string().default(''),
-              enabled: z.boolean().default(true),
-              content: z.string().default(''),
-            }),
-          )
-          .default([]),
-      }),
-    )
-    .default([]),
-  preset_info: z
-    .object({
-      name: z.string().default(''),
-      enabled_prompts: z
-        .array(
-          z.object({
-            id: z.string().default(''),
-            name: z.string().default(''),
-            role: z.enum(['system', 'user', 'assistant']).default('system'),
-          }),
-        )
-        .default([]),
-    })
-    .default({ name: '', enabled_prompts: [] }),
   mvu: z.object({
     message_id: z.number().default(-1),
     stat_data: z.record(z.string(), z.any()).default({}),
