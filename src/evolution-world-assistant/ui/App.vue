@@ -356,8 +356,12 @@
           </template>
         </template>
 
-        <template v-else>
+        <template v-else-if="store.activeTab === 'debug'">
           <EwDebugPanel />
+        </template>
+
+        <template v-else>
+          <EwHistoryPanel />
         </template>
       </div>
     </transition>
@@ -374,6 +378,7 @@ import EwFlowCard from './components/EwFlowCard.vue';
 import EwPanelShell from './components/EwPanelShell.vue';
 import EwSectionCard from './components/EwSectionCard.vue';
 import EwDebugPanel from './components/EwDebugPanel.vue';
+import EwHistoryPanel from './components/EwHistoryPanel.vue';
 import { getFieldHelp, PANEL_TABS } from './help-meta';
 import { showEwNotice } from './notice';
 import { useEwStore } from './store';

@@ -1,4 +1,4 @@
-export type TabKey = 'overview' | 'api' | 'global' | 'flows' | 'debug';
+export type TabKey = 'overview' | 'api' | 'global' | 'flows' | 'debug' | 'history';
 
 export type TabMeta = {
   key: TabKey;
@@ -20,6 +20,7 @@ export const PANEL_TABS: TabMeta[] = [
   { key: 'global', label: '全局配置' },
   { key: 'flows', label: '工作流配置' },
   { key: 'debug', label: '调试' },
+  { key: 'history', label: '历史' },
 ];
 
 const FIELD_HELP_LIST: FieldHelpMeta[] = [

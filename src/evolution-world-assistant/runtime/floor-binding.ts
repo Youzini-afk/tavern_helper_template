@@ -329,6 +329,171 @@ export async function migrateSnapshots(
   return { migrated };
 }
 
+// ── History: Per-Floor Snapshot Collection ───────────────────
+
+export type FloorSnapshot = {
+  messageId: number;
+  snapshot: SnapshotData | null;
+};
+
+export type SnapshotDiff = {
+  created: string[];
+  modified: string[];
+  deleted: string[];
+  toggled: string[];
+  controllerChanged: boolean;
+};
+
+/**
+ * Collect every message's individual snapshot (not merged).
+ * Returns an array ordered by messageId ascending, where each entry
+ * contains the snapshot data stored at that specific floor.
+ * Messages without snapshots are included with `snapshot: null`.
+ */
+export async function collectAllFloorSnapshots(): Promise<FloorSnapshot[]> {
+  const lastId = getLastMessageId();
+  if (lastId < 0) return [];
+
+  const allMessages = getChatMessages(`0-${lastId}`);
+  const result: FloorSnapshot[] = [];
+
+  for (const msg of allMessages) {
+    const snapshotFile: string | undefined = _.get(msg.data, EW_SNAPSHOT_FILE_KEY);
+    let snapshot: SnapshotData | null = null;
+
+    if (snapshotFile) {
+      snapshot = await readSnapshot(snapshotFile);
+    }
+
+    if (!snapshot) {
+      const snapshots: DynSnapshot[] | undefined = _.get(msg.data, EW_DYN_SNAPSHOTS_KEY);
+      const ctrlSnap: string | undefined = _.get(msg.data, EW_CONTROLLER_DATA_KEY);
+      if ((Array.isArray(snapshots) && snapshots.length > 0) || (typeof ctrlSnap === 'string' && ctrlSnap.length > 0)) {
+        snapshot = {
+          controller: ctrlSnap ?? '',
+          dyn_entries: Array.isArray(snapshots) ? snapshots : [],
+        };
+      }
+    }
+
+    result.push({ messageId: msg.message_id, snapshot });
+  }
+
+  return result;
+}
+
+/**
+ * Compute the diff between two snapshots (prev → curr).
+ * If prev is null, all entries in curr are "created".
+ */
+export function diffSnapshots(
+  prev: SnapshotData | null,
+  curr: SnapshotData | null,
+): SnapshotDiff {
+  const diff: SnapshotDiff = { created: [], modified: [], deleted: [], toggled: [], controllerChanged: false };
+  if (!curr) return diff;
+
+  const prevMap = new Map<string, { content: string; enabled: boolean }>();
+  if (prev) {
+    for (const e of prev.dyn_entries) {
+      prevMap.set(e.name, { content: e.content, enabled: e.enabled });
+    }
+  }
+
+  const currMap = new Map<string, { content: string; enabled: boolean }>();
+  for (const e of curr.dyn_entries) {
+    currMap.set(e.name, { content: e.content, enabled: e.enabled });
+  }
+
+  // Find created, modified, toggled
+  for (const [name, currEntry] of currMap) {
+    const prevEntry = prevMap.get(name);
+    if (!prevEntry) {
+      diff.created.push(name);
+    } else if (prevEntry.content !== currEntry.content) {
+      diff.modified.push(name);
+    } else if (prevEntry.enabled !== currEntry.enabled) {
+      diff.toggled.push(name);
+    }
+  }
+
+  // Find deleted
+  for (const name of prevMap.keys()) {
+    if (!currMap.has(name)) {
+      diff.deleted.push(name);
+    }
+  }
+
+  // Controller change
+  diff.controllerChanged = (prev?.controller ?? '') !== (curr.controller ?? '');
+
+  return diff;
+}
+
+/**
+ * Rollback worldbook to the cumulative snapshot state at a given floor.
+ * This means: merge all snapshots from floor 0 up to and including
+ * the target messageId, then apply that state to the worldbook.
+ */
+export async function rollbackToFloor(
+  settings: EwSettings,
+  targetMessageId: number,
+): Promise<void> {
+  const allFloors = await collectAllFloorSnapshots();
+  const dynMerged = new Map<string, DynSnapshot>();
+  let controller: string | null = null;
+
+  // Merge snapshots up to targetMessageId (inclusive)
+  for (const floor of allFloors) {
+    if (floor.messageId > targetMessageId) break;
+    if (!floor.snapshot) continue;
+
+    if (floor.snapshot.controller) {
+      controller = floor.snapshot.controller;
+    }
+    for (const snap of floor.snapshot.dyn_entries) {
+      if (snap.name && typeof snap.content === 'string') {
+        dynMerged.set(snap.name, snap);
+      }
+    }
+  }
+
+  // Apply to worldbook (same pattern as purgeAndRestoreForChat)
+  const target = await resolveTargetWorldbook(settings);
+  const nextEntries = target.entries.filter(
+    entry => !entry.name.startsWith(settings.dynamic_entry_prefix),
+  );
+  const ctrlEntry = nextEntries.find(e => e.name === settings.controller_entry_name);
+  if (ctrlEntry) {
+    ctrlEntry.content = '';
+    ctrlEntry.enabled = false;
+  }
+
+  for (const snap of dynMerged.values()) {
+    const existing = nextEntries.find(e => e.name === snap.name);
+    if (existing) {
+      existing.content = snap.content;
+      existing.enabled = snap.enabled;
+    } else {
+      nextEntries.push(
+        ensureDefaultEntry(snap.name, snap.content, snap.enabled, nextEntries),
+      );
+    }
+  }
+
+  if (controller && ctrlEntry) {
+    ctrlEntry.content = controller;
+    ctrlEntry.enabled = true;
+  } else if (controller) {
+    nextEntries.push(
+      ensureDefaultEntry(settings.controller_entry_name, controller, true, nextEntries, true),
+    );
+  }
+
+  await replaceWorldbook(target.worldbook_name, nextEntries, { render: 'debounced' });
+  console.info(`[Evolution World] Rolled back to floor #${targetMessageId}: ${dynMerged.size} Dyn + ${controller ? 1 : 0} Controller`);
+}
+
 // ── Event Handlers ──────────────────────────────────────────
 
 async function onChatChanged(settings: EwSettings): Promise<void> {

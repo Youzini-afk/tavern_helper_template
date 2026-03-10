@@ -23,7 +23,13 @@ import {
 import { runWorkflow } from '../runtime/pipeline';
 import { showEwNotice } from './notice';
 import { previewPrompt, type AssembledMessage } from '../runtime/prompt-assembler';
-import { collectLatestSnapshots, type DynSnapshot } from '../runtime/floor-binding';
+import {
+  collectLatestSnapshots,
+  collectAllFloorSnapshots,
+  rollbackToFloor,
+  type DynSnapshot,
+  type FloorSnapshot,
+} from '../runtime/floor-binding';
 
 
 
@@ -48,6 +54,11 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   const promptPreview = ref<AssembledMessage[] | null>(null);
   const snapshotPreview = ref<{ controller: string | null; dyn: Map<string, DynSnapshot> } | null>(null);
   const previewFlowId = ref<string>('');
+
+  // ── 历史记录 ──
+  const floorSnapshots = ref<FloorSnapshot[]>([]);
+  const selectedFloorId = ref<number | null>(null);
+  const compareFloorId = ref<number | null>(null);
 
   const syncFromRuntime = subscribeSettings(next => {
     if (!_.isEqual(settings.value, next)) {
@@ -532,6 +543,34 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     }
   }
 
+  // ── 历史记录 ──────────────────────────────────────────────
+
+  async function loadFloorSnapshots() {
+    busy.value = true;
+    try {
+      floorSnapshots.value = await collectAllFloorSnapshots();
+      showEwNotice({ title: '历史', message: `已加载 ${floorSnapshots.value.length} 个楼层`, level: 'success' });
+    } catch (e) {
+      console.error('[Evolution World] loadFloorSnapshots failed:', e);
+      showEwNotice({ title: '历史', message: '楼层快照加载失败: ' + (e as Error).message, level: 'error' });
+    } finally {
+      busy.value = false;
+    }
+  }
+
+  async function doRollbackToFloor(messageId: number) {
+    busy.value = true;
+    try {
+      await rollbackToFloor(settings.value, messageId);
+      showEwNotice({ title: '历史', message: `已回滚到楼层 #${messageId}`, level: 'success' });
+    } catch (e) {
+      console.error('[Evolution World] doRollbackToFloor failed:', e);
+      showEwNotice({ title: '历史', message: '回滚失败: ' + (e as Error).message, level: 'error' });
+    } finally {
+      busy.value = false;
+    }
+  }
+
   return {
     settings,
     lastRun,
@@ -580,5 +619,11 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     previewFlowId,
     loadPromptPreview,
     loadSnapshotPreview,
+    // history
+    floorSnapshots,
+    selectedFloorId,
+    compareFloorId,
+    loadFloorSnapshots,
+    doRollbackToFloor,
   };
 });
