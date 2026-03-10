@@ -1,18 +1,20 @@
-import { dispatchFlows, DispatchFlowsError } from './dispatcher';
-import { renderControllerTemplate } from './controller-renderer';
-import { mergeFlowResults } from './merger';
-import { commitMergedPlan } from './transaction';
-import { injectReplyInstructionOnce } from './injection';
-import { getSettings, setLastIo, setLastRun } from './settings';
 import { getEffectiveFlows } from './char-flows';
-import { DispatchFlowAttempt, RunSummarySchema } from './types';
+import { renderControllerTemplate } from './controller-renderer';
+import { dispatchFlows, DispatchFlowsError } from './dispatcher';
 import { uuidv4 } from './helpers';
+import { injectReplyInstructionOnce } from './injection';
+import { mergeFlowResults } from './merger';
+import { getSettings, setLastIo, setLastRun } from './settings';
+import { commitMergedPlan } from './transaction';
+import { DispatchFlowAttempt, RunSummarySchema } from './types';
 
 type RunWorkflowInput = {
   message_id: number;
   user_input: string;
   mode: 'auto' | 'manual';
   inject_reply?: boolean;
+  abortSignal?: AbortSignal;
+  isCancelled?: () => boolean;
 };
 
 export type RunWorkflowOutput = {
@@ -34,12 +36,7 @@ function toPreview(value: unknown, maxLen = 3000): string {
   }
 }
 
-function saveIoSummary(
-  requestId: string,
-  chatId: string,
-  mode: 'auto' | 'manual',
-  attempts: DispatchFlowAttempt[],
-) {
+function saveIoSummary(requestId: string, chatId: string, mode: 'auto' | 'manual', attempts: DispatchFlowAttempt[]) {
   setLastIo({
     at: Date.now(),
     request_id: requestId,
@@ -77,21 +74,35 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
   }
 }
 
+function isWorkflowCancelled(input: Pick<RunWorkflowInput, 'abortSignal' | 'isCancelled'>): boolean {
+  return Boolean(input.abortSignal?.aborted || input.isCancelled?.());
+}
+
+function throwIfWorkflowCancelled(input: Pick<RunWorkflowInput, 'abortSignal' | 'isCancelled'>): void {
+  if (isWorkflowCancelled(input)) {
+    throw new Error('workflow cancelled by user');
+  }
+}
+
 export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowOutput> {
   const startedAt = Date.now();
   const settings = getSettings();
   const requestId = uuidv4();
   const currentChatId = String(
-    (typeof SillyTavern !== 'undefined' ? SillyTavern?.getCurrentChatId?.() ?? (SillyTavern as any).chatId : null) ?? 'unknown',
+    (typeof SillyTavern !== 'undefined' ? (SillyTavern?.getCurrentChatId?.() ?? (SillyTavern as any).chatId) : null) ??
+      'unknown',
   );
   let attempts: DispatchFlowAttempt[] = [];
 
   try {
+    throwIfWorkflowCancelled(input);
     // Merge global flows + per-character flows (from EW/Flows worldbook entry).
     const enabledFlows = await getEffectiveFlows(settings);
     if (enabledFlows.length === 0) {
       throw new Error('no enabled flows');
     }
+
+    throwIfWorkflowCancelled(input);
 
     const dispatchOutput = await withTimeout(
       dispatchFlows({
@@ -99,18 +110,25 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
         flows: enabledFlows,
         message_id: input.message_id,
         request_id: requestId,
+        abortSignal: input.abortSignal,
+        isCancelled: input.isCancelled,
       }),
       settings.total_timeout_ms,
     );
     attempts = dispatchOutput.attempts;
     saveIoSummary(requestId, currentChatId, input.mode, attempts);
 
+    throwIfWorkflowCancelled(input);
+
     const results = dispatchOutput.results;
 
     const mergedPlan = mergeFlowResults(results);
+    throwIfWorkflowCancelled(input);
     const controllerTemplate = await renderControllerTemplate(mergedPlan.controller_model);
+    throwIfWorkflowCancelled(input);
 
     const commitResult = await commitMergedPlan(settings, mergedPlan, controllerTemplate, requestId, input.message_id);
+    throwIfWorkflowCancelled(input);
 
     if (input.inject_reply !== false) {
       injectReplyInstructionOnce(mergedPlan.reply_instruction);

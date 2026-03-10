@@ -1,6 +1,11 @@
 import { buildFlowRequest } from './context-builder';
 import { FlowResponseSchema } from './contracts';
-import { collectPromptComponents, assembleOrderedPrompts, injectEntryNames, PromptComponents } from './prompt-assembler';
+import {
+  assembleOrderedPrompts,
+  collectPromptComponents,
+  injectEntryNames,
+  PromptComponents,
+} from './prompt-assembler';
 import { DispatchFlowAttempt, DispatchFlowResult, EwApiPreset, EwFlowConfig, EwSettings } from './types';
 
 type DispatchInput = {
@@ -8,6 +13,8 @@ type DispatchInput = {
   flows: EwFlowConfig[];
   message_id: number;
   request_id: string;
+  abortSignal?: AbortSignal;
+  isCancelled?: () => boolean;
 };
 
 export type DispatchFlowsOutput = {
@@ -32,6 +39,16 @@ const LLM_WORKFLOW_SYSTEM_PROMPT = [
   'status 必须为 ok，operations.worldbook 字段必须存在（允许为空数组）。',
   'flow_id 必须与请求.flow.id 一致，priority 必须与请求.flow.priority 一致。',
 ].join('\n');
+
+function isDispatchAborted(signal?: AbortSignal, isCancelled?: () => boolean): boolean {
+  return Boolean(signal?.aborted || isCancelled?.());
+}
+
+function throwIfDispatchAborted(signal?: AbortSignal, isCancelled?: () => boolean): void {
+  if (isDispatchAborted(signal, isCancelled)) {
+    throw new Error('workflow cancelled by user');
+  }
+}
 
 function applyTemplate(base: Record<string, any>, templateText: string): Record<string, any> {
   if (!templateText.trim()) {
@@ -75,7 +92,9 @@ function parseJsonFromText(rawText: string, flowId: string): Record<string, any>
     if (direct && typeof direct === 'object' && !Array.isArray(direct)) {
       return direct;
     }
-  } catch { /* fall through to regex extraction */ }
+  } catch {
+    /* fall through to regex extraction */
+  }
   const trimmed = rawText.trim();
   const withoutFence = trimmed
     .replace(/^```(?:json)?\s*/i, '')
@@ -130,7 +149,9 @@ function resolveApiPreset(settings: EwSettings, flow: EwFlowConfig): EwApiPreset
   }
 
   if (settings.api_presets.length > 0) {
-    console.warn(`[EW] Flow "${flow.id}": api_preset_id "${flow.api_preset_id}" not found, falling back to first preset "${settings.api_presets[0].name}"`);
+    console.warn(
+      `[EW] Flow "${flow.id}": api_preset_id "${flow.api_preset_id}" not found, falling back to first preset "${settings.api_presets[0].name}"`,
+    );
     return settings.api_presets[0];
   }
 
@@ -145,7 +166,10 @@ async function executeFlowViaLlmConnector(
   body: Record<string, any>,
   components: PromptComponents,
   controllerEntryName: string,
+  abortSignal?: AbortSignal,
+  isCancelled?: () => boolean,
 ): Promise<NonNullable<DispatchFlowAttempt['response']>> {
+  throwIfDispatchAborted(abortSignal, isCancelled);
   if (typeof generateRaw !== 'function') {
     throw new Error(`[${flow.id}] generateRaw is unavailable`);
   }
@@ -160,6 +184,8 @@ async function executeFlowViaLlmConnector(
     should_silence: true,
     ordered_prompts: orderedPrompts,
   });
+
+  throwIfDispatchAborted(abortSignal, isCancelled);
 
   const parsedJson = parseJsonFromText(rawText, flow.id);
   const parsed = FlowResponseSchema.safeParse(parsedJson);
@@ -184,7 +210,10 @@ async function executeFlowViaStBackend(
   body: Record<string, any>,
   components: PromptComponents,
   controllerEntryName: string,
+  abortSignal?: AbortSignal,
+  isCancelled?: () => boolean,
 ): Promise<NonNullable<DispatchFlowAttempt['response']>> {
+  throwIfDispatchAborted(abortSignal, isCancelled);
   if (!apiPreset.api_url.trim()) {
     throw new Error(`[${flow.id}] custom api_url is empty`);
   }
@@ -210,9 +239,7 @@ async function executeFlowViaStBackend(
     chat_completion_source: 'custom',
     reverse_proxy: apiPreset.api_url.trim(),
     custom_url: apiPreset.api_url.trim(),
-    custom_include_headers: apiPreset.api_key.trim()
-      ? `Authorization: Bearer ${apiPreset.api_key.trim()}`
-      : '',
+    custom_include_headers: apiPreset.api_key.trim() ? `Authorization: Bearer ${apiPreset.api_key.trim()}` : '',
     custom_prompt_post_processing: 'strict',
   };
 
@@ -224,6 +251,15 @@ async function executeFlowViaStBackend(
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), flow.timeout_ms);
+  const abortFromOuter = () => controller.abort();
+
+  if (abortSignal) {
+    if (abortSignal.aborted) {
+      controller.abort();
+    } else {
+      abortSignal.addEventListener('abort', abortFromOuter, { once: true });
+    }
+  }
 
   try {
     const response = await fetch('/api/backends/chat-completions/generate', {
@@ -238,13 +274,12 @@ async function executeFlowViaStBackend(
       throw new Error(`[${flow.id}] ST backend error: ${response.status} ${errTxt}`);
     }
 
+    throwIfDispatchAborted(abortSignal, isCancelled);
+
     const data = await response.json();
 
     // 提取 AI 回复文本 — 兼容 OpenAI 格式和简化格式
-    const rawText =
-      data?.choices?.[0]?.message?.content?.trim() ??
-      data?.content?.trim() ??
-      '';
+    const rawText = data?.choices?.[0]?.message?.content?.trim() ?? data?.content?.trim() ?? '';
 
     if (!rawText) {
       throw new Error(`[${flow.id}] API returned empty response: ${JSON.stringify(data).slice(0, 200)}`);
@@ -262,11 +297,17 @@ async function executeFlowViaStBackend(
     return parsed.data;
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
+      if (isDispatchAborted(abortSignal, isCancelled)) {
+        throw new Error('workflow cancelled by user');
+      }
       throw new Error(`[${flow.id}] timeout (${flow.timeout_ms}ms)`);
     }
     throw error;
   } finally {
     clearTimeout(timeout);
+    if (abortSignal) {
+      abortSignal.removeEventListener('abort', abortFromOuter);
+    }
   }
 }
 
@@ -277,8 +318,11 @@ async function executeFlow(
   messageId: number,
   requestId: string,
   serialResults: Record<string, any>[],
+  abortSignal?: AbortSignal,
+  isCancelled?: () => boolean,
 ): Promise<DispatchFlowAttempt> {
   const startedAt = Date.now();
+  throwIfDispatchAborted(abortSignal, isCancelled);
   const apiPreset = resolveApiPreset(settings, flow);
   const usesTavernMain = apiPreset.mode === 'llm_connector';
   const attemptApiUrl = usesTavernMain ? 'tavern://main_api' : apiPreset.api_url;
@@ -295,17 +339,35 @@ async function executeFlow(
   });
 
   try {
+    throwIfDispatchAborted(abortSignal, isCancelled);
     const body = applyTemplate(request as unknown as Record<string, any>, flow.request_template);
 
     let response: NonNullable<DispatchFlowAttempt['response']>;
 
     if (usesTavernMain) {
       // 主 API：通过 TavernHelper.generateRaw，使用酒馆当前配置
-      response = await executeFlowViaLlmConnector(flow, body, promptComponents, settings.controller_entry_name);
+      response = await executeFlowViaLlmConnector(
+        flow,
+        body,
+        promptComponents,
+        settings.controller_entry_name,
+        abortSignal,
+        isCancelled,
+      );
     } else {
       // 自定义 API：通过 ST 后端代理，完全控制参数
-      response = await executeFlowViaStBackend(flow, apiPreset, body, promptComponents, settings.controller_entry_name);
+      response = await executeFlowViaStBackend(
+        flow,
+        apiPreset,
+        body,
+        promptComponents,
+        settings.controller_entry_name,
+        abortSignal,
+        isCancelled,
+      );
     }
+
+    throwIfDispatchAborted(abortSignal, isCancelled);
 
     return {
       flow,
@@ -345,6 +407,7 @@ export async function dispatchFlows(input: DispatchInput): Promise<DispatchFlows
     const outputs: DispatchFlowResult[] = [];
 
     for (const [index, flow] of flows.entries()) {
+      throwIfDispatchAborted(input.abortSignal, input.isCancelled);
       const attempt = await executeFlow(
         input.settings,
         flow,
@@ -352,6 +415,8 @@ export async function dispatchFlows(input: DispatchInput): Promise<DispatchFlows
         input.message_id,
         input.request_id,
         serialResults,
+        input.abortSignal,
+        input.isCancelled,
       );
       attempts.push(attempt);
 
@@ -379,9 +444,20 @@ export async function dispatchFlows(input: DispatchInput): Promise<DispatchFlows
 
   const attempts = await Promise.all(
     flows.map((flow, index) =>
-      executeFlow(input.settings, flow, index, input.message_id, input.request_id, []),
+      executeFlow(
+        input.settings,
+        flow,
+        index,
+        input.message_id,
+        input.request_id,
+        [],
+        input.abortSignal,
+        input.isCancelled,
+      ),
     ),
   );
+
+  throwIfDispatchAborted(input.abortSignal, input.isCancelled);
 
   const succeeded = attempts.filter(
     (attempt): attempt is DispatchFlowAttempt & { response: NonNullable<DispatchFlowAttempt['response']> } =>
@@ -393,10 +469,7 @@ export async function dispatchFlows(input: DispatchInput): Promise<DispatchFlows
     // CR-3: allow_partial_success — use whatever succeeded, only throw if nothing worked
     if (input.settings.failure_policy === 'allow_partial_success') {
       if (succeeded.length === 0) {
-        throw new DispatchFlowsError(
-          failed.map(f => f.error ?? `[${f.flow.id}] failed`).join('; '),
-          attempts,
-        );
+        throw new DispatchFlowsError(failed.map(f => f.error ?? `[${f.flow.id}] failed`).join('; '), attempts);
       }
       console.warn(
         `[EW] allow_partial_success: ${failed.length} flow(s) failed, ${succeeded.length} succeeded — using partial results`,

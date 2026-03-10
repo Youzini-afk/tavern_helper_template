@@ -5,6 +5,18 @@ export type EwNoticeInput = {
   message: string;
   level?: EwNoticeLevel;
   duration_ms?: number;
+  persist?: boolean;
+  busy?: boolean;
+  action?: {
+    label: string;
+    onClick: () => void;
+    kind?: 'neutral' | 'danger';
+  };
+};
+
+export type EwNoticeHandle = {
+  update: (nextInput: EwNoticeInput) => void;
+  dismiss: () => void;
 };
 
 const STYLE_ID = 'ew-floating-notice-style';
@@ -101,6 +113,10 @@ function ensureStyle(doc: Document) {
       flex: 0 0 auto;
     }
 
+    .ew-floating-notice[data-busy='true'] .ew-floating-notice__icon {
+      animation: ewNoticeBusy 900ms linear infinite;
+    }
+
     .ew-floating-notice__content {
       min-width: 0;
     }
@@ -121,6 +137,45 @@ function ensureStyle(doc: Document) {
       color: color-mix(in srgb, #f0f6ff 86%, #91a6bc);
       white-space: pre-wrap;
       word-break: break-word;
+    }
+
+    .ew-floating-notice__actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .ew-floating-notice__action {
+      min-height: 30px;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: rgba(255, 255, 255, 0.08);
+      color: #eef4ff;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+    }
+
+    .ew-floating-notice__action:hover,
+    .ew-floating-notice__action:focus-visible {
+      background: rgba(255, 255, 255, 0.16);
+      border-color: rgba(255, 255, 255, 0.24);
+      transform: translateY(-1px);
+      outline: none;
+    }
+
+    .ew-floating-notice__action[data-kind='danger'] {
+      background: rgba(245, 123, 143, 0.16);
+      border-color: rgba(245, 123, 143, 0.42);
+      color: #ffd9df;
+    }
+
+    .ew-floating-notice__action[data-kind='danger']:hover,
+    .ew-floating-notice__action[data-kind='danger']:focus-visible {
+      background: rgba(245, 123, 143, 0.24);
+      border-color: rgba(245, 123, 143, 0.58);
     }
 
     .ew-floating-notice__close {
@@ -188,6 +243,15 @@ function ensureStyle(doc: Document) {
       }
     }
 
+    @keyframes ewNoticeBusy {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
     @media (max-width: 900px) {
       #${HOST_ID} {
         top: 8px;
@@ -243,9 +307,55 @@ function getIcon(level: EwNoticeLevel): string {
   }
 }
 
-export function showEwNotice(input: EwNoticeInput) {
+function applyNoticeState(item: HTMLElement, input: EwNoticeInput, progress: HTMLElement) {
   const level = input.level ?? 'info';
-  const duration = Math.max(1400, input.duration_ms ?? 3200);
+
+  item.dataset.level = level;
+  item.dataset.busy = input.busy ? 'true' : 'false';
+
+  const icon = item.querySelector('.ew-floating-notice__icon');
+  if (icon) {
+    icon.textContent = input.busy ? '◌' : getIcon(level);
+  }
+
+  const title = item.querySelector('.ew-floating-notice__title');
+  if (title) {
+    title.textContent = input.title;
+  }
+
+  const message = item.querySelector('.ew-floating-notice__message');
+  if (message) {
+    message.textContent = input.message;
+  }
+
+  const actionButton = item.querySelector('.ew-floating-notice__action') as HTMLButtonElement | null;
+  const actionWrap = item.querySelector('.ew-floating-notice__actions') as HTMLElement | null;
+  if (actionButton && actionWrap) {
+    if (input.action) {
+      actionWrap.style.display = '';
+      actionButton.style.display = '';
+      actionButton.textContent = input.action.label;
+      actionButton.dataset.kind = input.action.kind ?? 'neutral';
+    } else {
+      actionWrap.style.display = 'none';
+      actionButton.style.display = 'none';
+      actionButton.textContent = '';
+      actionButton.dataset.kind = 'neutral';
+    }
+  }
+
+  if (input.persist) {
+    progress.style.display = 'none';
+    progress.style.animationDuration = '';
+  } else {
+    const duration = Math.max(1400, input.duration_ms ?? 3200);
+    progress.style.display = '';
+    progress.style.animationDuration = `${duration}ms`;
+  }
+}
+
+export function showManagedEwNotice(input: EwNoticeInput): EwNoticeHandle {
+  const initialDuration = Math.max(1400, input.duration_ms ?? 3200);
 
   const doc = resolveNoticeDocument();
   ensureStyle(doc);
@@ -253,11 +363,9 @@ export function showEwNotice(input: EwNoticeInput) {
 
   const item = doc.createElement('article');
   item.className = 'ew-floating-notice';
-  item.dataset.level = level;
 
   const icon = doc.createElement('span');
   icon.className = 'ew-floating-notice__icon';
-  icon.textContent = getIcon(level);
 
   const content = doc.createElement('div');
   content.className = 'ew-floating-notice__content';
@@ -270,6 +378,15 @@ export function showEwNotice(input: EwNoticeInput) {
   message.className = 'ew-floating-notice__message';
   message.textContent = input.message;
 
+  const actions = doc.createElement('div');
+  actions.className = 'ew-floating-notice__actions';
+
+  const actionButton = doc.createElement('button');
+  actionButton.className = 'ew-floating-notice__action';
+  actionButton.type = 'button';
+  actionButton.style.display = 'none';
+  actionButton.dataset.kind = 'neutral';
+
   const closeButton = doc.createElement('button');
   closeButton.className = 'ew-floating-notice__close';
   closeButton.type = 'button';
@@ -278,20 +395,34 @@ export function showEwNotice(input: EwNoticeInput) {
 
   const progress = doc.createElement('div');
   progress.className = 'ew-floating-notice__progress';
-  progress.style.animationDuration = `${duration}ms`;
 
   content.appendChild(title);
   content.appendChild(message);
+  actions.appendChild(actionButton);
+  content.appendChild(actions);
   item.appendChild(icon);
   item.appendChild(content);
   item.appendChild(closeButton);
   item.appendChild(progress);
 
+  applyNoticeState(item, input, progress);
+
   let closed = false;
+  let closeTimer: ReturnType<typeof setTimeout> | null = null;
+  let currentAction = input.action?.onClick ?? null;
+
+  const clearCloseTimer = () => {
+    if (closeTimer) {
+      clearTimeout(closeTimer);
+      closeTimer = null;
+    }
+  };
+
   const close = () => {
     if (closed) {
       return;
     }
+    clearCloseTimer();
     closed = true;
     item.classList.add('ew-floating-notice--out');
     setTimeout(() => {
@@ -302,8 +433,42 @@ export function showEwNotice(input: EwNoticeInput) {
     }, 170);
   };
 
+  const scheduleAutoClose = (nextInput: EwNoticeInput) => {
+    clearCloseTimer();
+    if (nextInput.persist) {
+      return;
+    }
+
+    const duration = Math.max(1400, nextInput.duration_ms ?? initialDuration);
+    closeTimer = setTimeout(close, duration);
+  };
+
+  const update = (nextInput: EwNoticeInput) => {
+    if (closed) {
+      return;
+    }
+
+    currentAction = nextInput.action?.onClick ?? null;
+    applyNoticeState(item, nextInput, progress);
+    scheduleAutoClose(nextInput);
+  };
+
+  actionButton.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    currentAction?.();
+  });
   closeButton.addEventListener('click', close);
-  setTimeout(close, duration);
+  scheduleAutoClose(input);
 
   host.appendChild(item);
+
+  return {
+    update,
+    dismiss: close,
+  };
+}
+
+export function showEwNotice(input: EwNoticeInput) {
+  showManagedEwNotice(input);
 }
