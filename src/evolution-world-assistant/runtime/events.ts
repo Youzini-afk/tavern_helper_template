@@ -177,6 +177,13 @@ function installTavernHelperHook() {
       return win._ew_originalGenerate.apply(this, args);
     }
 
+    // M-2: 与 GENERATION_AFTER_COMMANDS 路径保持一致的类型过滤
+    const genType = options.type ?? getRuntimeState().last_generation?.type ?? 'normal';
+    const allowedTypes = new Set(['normal', 'continue', 'regenerate', 'swipe']);
+    if (!allowedTypes.has(genType)) {
+      return win._ew_originalGenerate.apply(this, args);
+    }
+
     // Extract user input without modifying it
     let userInput = String(options.user_input || options.prompt || '');
     if (options.injects?.[0]?.content) {

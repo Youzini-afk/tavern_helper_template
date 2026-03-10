@@ -130,6 +130,7 @@ function resolveApiPreset(settings: EwSettings, flow: EwFlowConfig): EwApiPreset
   }
 
   if (settings.api_presets.length > 0) {
+    console.warn(`[EW] Flow "${flow.id}": api_preset_id "${flow.api_preset_id}" not found, falling back to first preset "${settings.api_presets[0].name}"`);
     return settings.api_presets[0];
   }
 

@@ -33,8 +33,8 @@ const runListeners = new Set<RunListener>();
 const ioListeners = new Set<IoListener>();
 
 let cachedSettings: EwSettings | null = null;
-let cachedLastRun: RunSummary | null = null;
-let cachedLastIo: LastIoSummary | null = null;
+let cachedLastRun: RunSummary | null | undefined = undefined;
+let cachedLastIo: LastIoSummary | null | undefined = undefined;
 
 // M-3: 使用 factory.ts 中的共享工厂函数。
 const makeDefaultApiPreset = createDefaultApiPreset;
@@ -302,10 +302,10 @@ export function loadLastRun(): RunSummary | null {
 }
 
 export function getLastRun(): RunSummary | null {
-  if (cachedLastRun === null) {
+  if (cachedLastRun === undefined) {
     return loadLastRun();
   }
-  return klona(cachedLastRun);
+  return cachedLastRun ? klona(cachedLastRun) : null;
 }
 
 export function setLastRun(summary: RunSummary) {
@@ -328,10 +328,10 @@ export function loadLastIo(): LastIoSummary | null {
 }
 
 export function getLastIo(): LastIoSummary | null {
-  if (cachedLastIo === null) {
+  if (cachedLastIo === undefined) {
     return loadLastIo();
   }
-  return klona(cachedLastIo);
+  return cachedLastIo ? klona(cachedLastIo) : null;
 }
 
 export function setLastIo(summary: LastIoSummary) {

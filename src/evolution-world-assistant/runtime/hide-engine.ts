@@ -226,14 +226,13 @@ export function applyFloorLimit(settings: HideSettings): void {
   clearChat();
   $('#chat').attr('data-limiter-active', 'true');
 
-  const messagesToDisplay = chat.slice(-limit);
-  for (const message of messagesToDisplay) {
-    const originalIndex = chat.indexOf(message);
-    addOneMessage(message, { scroll: false, forceId: originalIndex });
+  const startIdx = Math.max(0, chat.length - limit);
+  for (let i = startIdx; i < chat.length; i++) {
+    addOneMessage(chat[i], { scroll: false, forceId: i });
   }
 
   if (swipe?.refresh) swipe.refresh();
-  console.log(`[EW Hide] Limiter: displaying ${messagesToDisplay.length}/${chat.length} messages`);
+  console.log(`[EW Hide] Limiter: displaying ${chat.length - startIdx}/${chat.length} messages`);
 }
 
 // ── 5. Reset state ───────────────────────────────────────────────────

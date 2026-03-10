@@ -171,6 +171,60 @@ export async function collectLatestSnapshots(): Promise<{
   return { controller: latestController, dyn: dynMerged };
 }
 
+/**
+ * 仅获取最新一条快照（为 injectEntryNames 优化）。
+ * 倒序遍历消息，找到第一条有快照的消息后立即返回，最多 1 次 HTTP 请求。
+ */
+export async function collectLatestSnapshotFast(): Promise<{
+  controller: string | null;
+  dyn: Map<string, DynSnapshot>;
+}> {
+  const lastId = getLastMessageId();
+  if (lastId < 0) {
+    return { controller: null, dyn: new Map() };
+  }
+
+  const allMessages = getChatMessages(`0-${lastId}`);
+
+  // 倒序遍历：最新的消息优先
+  for (let i = allMessages.length - 1; i >= 0; i--) {
+    const msg = allMessages[i];
+
+    // 检查文件模式快照
+    const snapshotFile: string | undefined = _.get(msg.data, EW_SNAPSHOT_FILE_KEY);
+    if (snapshotFile) {
+      const fileData = await readSnapshot(snapshotFile);
+      if (fileData) {
+        const dyn = new Map<string, DynSnapshot>();
+        for (const snap of fileData.dyn_entries) {
+          if (snap.name && typeof snap.content === 'string') {
+            dyn.set(snap.name, snap);
+          }
+        }
+        return { controller: fileData.controller || null, dyn };
+      }
+    }
+
+    // 检查消息数据模式快照
+    const snapshots: DynSnapshot[] | undefined = _.get(msg.data, EW_DYN_SNAPSHOTS_KEY);
+    const ctrlSnap: string | undefined = _.get(msg.data, EW_CONTROLLER_DATA_KEY);
+
+    if ((Array.isArray(snapshots) && snapshots.length > 0) || (typeof ctrlSnap === 'string' && ctrlSnap.length > 0)) {
+      const dyn = new Map<string, DynSnapshot>();
+      if (Array.isArray(snapshots)) {
+        for (const snap of snapshots) {
+          if (snap.name && typeof snap.content === 'string') {
+            dyn.set(snap.name, snap);
+          }
+        }
+      }
+      return { controller: (typeof ctrlSnap === 'string' && ctrlSnap.length > 0) ? ctrlSnap : null, dyn };
+    }
+  }
+
+  return { controller: null, dyn: new Map() };
+}
+
 // ── Unified Purge + Restore ─────────────────────────────────
 
 /**
@@ -186,7 +240,7 @@ export async function purgeAndRestoreForChat(settings: EwSettings): Promise<void
   const target = await resolveTargetWorldbook(settings);
 
   // Step 1: Remove all EW/Dyn/* entries and clear EW/Controller.
-  const nextEntries = target.entries.filter(
+  const nextEntries = klona(target.entries).filter(
     entry => !entry.name.startsWith(settings.dynamic_entry_prefix),
   );
   const ctrlEntry = nextEntries.find(e => e.name === settings.controller_entry_name);
@@ -460,7 +514,7 @@ export async function rollbackToFloor(
 
   // Apply to worldbook (same pattern as purgeAndRestoreForChat)
   const target = await resolveTargetWorldbook(settings);
-  const nextEntries = target.entries.filter(
+  const nextEntries = klona(target.entries).filter(
     entry => !entry.name.startsWith(settings.dynamic_entry_prefix),
   );
   const ctrlEntry = nextEntries.find(e => e.name === settings.controller_entry_name);

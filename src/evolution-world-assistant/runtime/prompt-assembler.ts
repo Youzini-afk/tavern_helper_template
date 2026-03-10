@@ -1,6 +1,6 @@
 ﻿import type { EwFlowConfig, EwPromptOrderEntry } from './types';
 import { renderEjsContent } from './ejs-bridge';
-import { collectLatestSnapshots } from './floor-binding';
+import { collectLatestSnapshotFast } from './floor-binding';
 
 // SillyTavern 运行时全局变量，在扩展上下文中可用
 declare function getCharacterCardFields(): {
@@ -245,18 +245,16 @@ export async function assembleOrderedPrompts(
 
     // Sort by depth descending so deeper injections are inserted first
     // (this preserves correct positions when inserting multiple items)
-    deferredInjections.sort((a, b) => b.depth - a.depth);
-    let insertedCount = 0;
-
-    for (const { role, content, depth } of deferredInjections) {
-      // Calculate insertion point: end of chat minus depth
-      // Each prior splice shifted the array, so add insertedCount offset
+    // 按 depth 升序排列，从最浅到最深
+    deferredInjections.sort((a, b) => a.depth - b.depth);
+    // 从后往前插入：每次插入不影响之前已计算的位置
+    for (let i = deferredInjections.length - 1; i >= 0; i--) {
+      const { role, content, depth } = deferredInjections[i];
       const insertIdx = Math.max(
         chatHistoryStartIdx,
-        chatHistoryEndIdx + insertedCount - Math.min(depth, chatLen),
+        chatHistoryEndIdx - Math.min(depth, chatLen),
       );
       result.splice(insertIdx, 0, { role, content });
-      insertedCount++;
     }
   } else if (deferredInjections.length > 0) {
     // No chat history marker — append deferred items at the end
@@ -309,7 +307,7 @@ export async function injectEntryNames(
   messages: AssembledMessage[],
   controllerEntryName: string,
 ): Promise<void> {
-  const { controller, dyn } = await collectLatestSnapshots();
+  const { controller, dyn } = await collectLatestSnapshotFast();
 
   // Build a list of { name, content } to match, sorted by content length descending
   // (longer content first to avoid partial substring matches).
