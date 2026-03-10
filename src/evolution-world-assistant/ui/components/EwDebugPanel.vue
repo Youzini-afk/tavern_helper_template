@@ -649,4 +649,24 @@ function formatTime(ts: number): string {
   color: #fff;
   box-shadow: 0 4px 12px color-mix(in srgb, var(--ew-danger) 30%, transparent);
 }
+
+@media (max-width: 900px) {
+  .dbg-snap-section {
+    padding: 0.5rem;
+  }
+  .dbg-snap-table {
+    font-size: 0.68rem;
+  }
+  .dbg-snap-table th,
+  .dbg-snap-table td {
+    padding: 0.25rem 0.35rem;
+  }
+  .dbg-snap-excerpt {
+    max-width: 180px;
+  }
+  .dbg-snap-content pre {
+    font-size: 0.66rem;
+    max-height: 8rem;
+  }
+}
 </style>

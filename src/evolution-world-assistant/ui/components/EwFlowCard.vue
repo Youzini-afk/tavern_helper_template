@@ -1092,6 +1092,21 @@ function openRegexPreview() {
   .ew-range {
     grid-template-columns: 1fr;
   }
+  .ew-toggle-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 0.5rem;
+    padding: 0.55rem 0.65rem;
+  }
+  .ew-flow-card__body {
+    padding: 0 0.65rem 0.65rem;
+  }
+  .ew-flow-card__subsection {
+    padding: 0.5rem 0.55rem;
+  }
+  .ew-flow-card__action {
+    font-size: 0.72rem;
+    padding: 0.3rem 0.55rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1289,6 +1304,32 @@ function openRegexPreview() {
 }
 .ew-modal-leave-to .ew-modal--regex {
   transform: scale(0.96) translateY(5px);
+}
+
+/* 弹窗移动端适配 */
+@media (max-width: 640px) {
+  .ew-modal--regex {
+    width: 100vw;
+    max-height: 100vh;
+    border-radius: 0;
+    border: none;
+  }
+  .ew-modal__header {
+    padding: 0.7rem 0.85rem;
+  }
+  .ew-modal__header h3 {
+    font-size: 0.88rem;
+  }
+  .ew-modal__body {
+    padding: 0.65rem 0.75rem;
+  }
+  .ew-regex-preview-item__row {
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  .ew-regex-preview-item__row code {
+    font-size: 0.68rem;
+  }
 }
 </style>
 
