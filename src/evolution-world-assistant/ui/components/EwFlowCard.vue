@@ -728,7 +728,13 @@ const regexPreviewList = ref<RegexPreviewItem[]>([]);
 
 function openRegexPreview() {
   try {
-    const placementNames: Record<number, string> = { 0: '用户消息', 1: 'AI消息', 2: '斜杠命令', 3: '世界书' };
+    const placementNames: Record<number, string> = {
+      0: '用户消息',
+      1: 'AI消息',
+      2: '斜杠命令',
+      3: '世界书',
+      4: '推理内容',
+    };
     const scripts = collectAllRegexScripts();
     console.log('[EW] openRegexPreview collected', scripts.length, 'scripts');
     regexPreviewList.value = scripts.map(s => {
