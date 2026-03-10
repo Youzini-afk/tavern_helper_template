@@ -164,7 +164,7 @@ export function collectPromptComponents(flow: EwFlowConfig): PromptComponents {
   return components;
 }
 
-type AssembledMessage = { role: 'system' | 'user' | 'assistant'; content: string; name?: string };
+export type AssembledMessage = { role: 'system' | 'user' | 'assistant'; content: string; name?: string };
 
 /**
  * Assemble an ordered array of prompt messages according to a flow's prompt_order.
@@ -341,4 +341,23 @@ export async function injectEntryNames(
       }
     }
   }
+}
+
+// ── Prompt Preview (Debug) ───────────────────────────────────
+
+/**
+ * Build and return the full prompt messages array for debug preview.
+ *
+ * Runs the same pipeline as the real dispatch (collect components →
+ * assemble ordered prompts → inject entry names) but does NOT send
+ * anything to the AI. Returns the messages array for UI display.
+ */
+export async function previewPrompt(
+  flow: EwFlowConfig,
+  controllerEntryName: string,
+): Promise<AssembledMessage[]> {
+  const components = collectPromptComponents(flow);
+  const messages = await assembleOrderedPrompts(flow.prompt_order, components);
+  await injectEntryNames(messages, controllerEntryName);
+  return messages;
 }

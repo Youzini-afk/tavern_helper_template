@@ -22,6 +22,8 @@ import {
 } from '../runtime/settings';
 import { runWorkflow } from '../runtime/pipeline';
 import { showEwNotice } from './notice';
+import { previewPrompt, type AssembledMessage } from '../runtime/prompt-assembler';
+import { collectLatestSnapshots, type DynSnapshot } from '../runtime/floor-binding';
 
 
 
@@ -41,6 +43,11 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   const activeCharName = ref<string>('');
   const flowScope = ref<'global' | 'character'>('global');
   const charFlowsLoading = ref(false);
+
+  // ── 调试预览 ──
+  const promptPreview = ref<AssembledMessage[] | null>(null);
+  const snapshotPreview = ref<{ controller: string | null; dyn: Map<string, DynSnapshot> } | null>(null);
+  const previewFlowId = ref<string>('');
 
   const syncFromRuntime = subscribeSettings(next => {
     if (!_.isEqual(settings.value, next)) {
@@ -486,6 +493,45 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     }
   }
 
+  // ── 调试预览 ──────────────────────────────────────────
+
+  async function loadPromptPreview() {
+    const flowId = previewFlowId.value;
+    // Find target flow from global or character flows
+    const allFlows = [...settings.value.flows, ...charFlows.value];
+    const flow = allFlows.find(f => f.id === flowId) ?? allFlows.find(f => f.enabled) ?? allFlows[0];
+    if (!flow) {
+      showEwNotice({ title: '调试', message: '没有可用的工作流', level: 'warning' });
+      return;
+    }
+    previewFlowId.value = flow.id;
+    busy.value = true;
+    try {
+      promptPreview.value = await previewPrompt(flow, settings.value.controller_entry_name);
+      showEwNotice({ title: '调试', message: `Prompt 预览已生成（${promptPreview.value.length} 条消息）`, level: 'success' });
+    } catch (e) {
+      console.error('[Evolution World] previewPrompt failed:', e);
+      showEwNotice({ title: '调试', message: 'Prompt 预览失败: ' + (e as Error).message, level: 'error' });
+    } finally {
+      busy.value = false;
+    }
+  }
+
+  async function loadSnapshotPreview() {
+    busy.value = true;
+    try {
+      snapshotPreview.value = await collectLatestSnapshots();
+      const dynCount = snapshotPreview.value.dyn.size;
+      const hasCtrl = snapshotPreview.value.controller ? '✅' : '❌';
+      showEwNotice({ title: '调试', message: `Controller: ${hasCtrl} | Dyn 条目: ${dynCount}`, level: 'success' });
+    } catch (e) {
+      console.error('[Evolution World] loadSnapshotPreview failed:', e);
+      showEwNotice({ title: '调试', message: '快照读取失败: ' + (e as Error).message, level: 'error' });
+    } finally {
+      busy.value = false;
+    }
+  }
+
   return {
     settings,
     lastRun,
@@ -528,5 +574,11 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     addCharFlow,
     removeCharFlow,
     setFlowScope,
+    // debug
+    promptPreview,
+    snapshotPreview,
+    previewFlowId,
+    loadPromptPreview,
+    loadSnapshotPreview,
   };
 });

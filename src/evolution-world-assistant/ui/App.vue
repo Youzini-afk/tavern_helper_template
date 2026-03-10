@@ -357,38 +357,7 @@
         </template>
 
         <template v-else>
-          <EwSectionCard title="调试操作" subtitle="手动执行、语法校验与快速回滚。">
-            <div class="ew-actions-wrap">
-              <button type="button" class="ew-btn" @click="store.runManual(manualMessage)">手动运行</button>
-              <button type="button" class="ew-btn" @click="store.validateControllerSyntax">控制器语法校验</button>
-              <button type="button" class="ew-btn ew-btn--danger" @click="store.rollbackController">回滚控制器</button>
-            </div>
-
-            <EwFieldRow label="手动运行输入" :help="help('manual_message')">
-              <textarea v-model="manualMessage" rows="3" placeholder="留空将使用最新楼层文本" />
-            </EwFieldRow>
-          </EwSectionCard>
-
-          <EwSectionCard title="运行记录" subtitle="最近一次执行与请求响应摘要。">
-            <div class="ew-debug-grid">
-              <div class="ew-pre-box">
-                <strong>最近运行</strong>
-                <pre>{{ formattedLastRun }}</pre>
-              </div>
-              <div class="ew-pre-box">
-                <strong>最近请求/响应摘要</strong>
-                <pre>{{ formattedLastIo }}</pre>
-              </div>
-            </div>
-
-            <EwFieldRow label="导入配置(JSON)" :help="help('import_text')">
-              <textarea v-model="store.importText" rows="6" placeholder="paste config json" />
-            </EwFieldRow>
-
-            <div class="ew-actions-wrap">
-              <button type="button" class="ew-btn" @click="store.importConfig">导入配置</button>
-            </div>
-          </EwSectionCard>
+          <EwDebugPanel />
         </template>
       </div>
     </transition>
@@ -404,13 +373,13 @@ import EwFieldRow from './components/EwFieldRow.vue';
 import EwFlowCard from './components/EwFlowCard.vue';
 import EwPanelShell from './components/EwPanelShell.vue';
 import EwSectionCard from './components/EwSectionCard.vue';
+import EwDebugPanel from './components/EwDebugPanel.vue';
 import { getFieldHelp, PANEL_TABS } from './help-meta';
 import { showEwNotice } from './notice';
 import { useEwStore } from './store';
 import { migrateSnapshots } from '../runtime/floor-binding';
 
 const store = useEwStore();
-const manualMessage = ref('');
 const importFileInputRef = ref<HTMLInputElement | null>(null);
 const flowImportRef = ref<HTMLInputElement | null>(null);
 const migratingSnapshots = ref(false);
@@ -420,8 +389,6 @@ function emitFabChanged() {
 }
 
 const enabledFlowCount = computed(() => store.settings.flows.filter(flow => flow.enabled).length);
-const formattedLastRun = computed(() => JSON.stringify(store.lastRun ?? {}, null, 2));
-const formattedLastIo = computed(() => JSON.stringify(store.lastIo ?? {}, null, 2));
 
 async function onMigrateSnapshots() {
   if (migratingSnapshots.value) return;
