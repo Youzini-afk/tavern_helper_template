@@ -7,7 +7,6 @@ type DispatchInput = {
   settings: EwSettings;
   flows: EwFlowConfig[];
   message_id: number;
-  user_input: string;
   request_id: string;
 };
 
@@ -271,7 +270,6 @@ async function executeFlow(
   flow: EwFlowConfig,
   flowOrder: number,
   messageId: number,
-  userInput: string,
   requestId: string,
   serialResults: Record<string, any>[],
 ): Promise<DispatchFlowAttempt> {
@@ -287,7 +285,6 @@ async function executeFlow(
     settings,
     flow,
     message_id: messageId,
-    user_input: userInput,
     request_id: requestId,
     serial_results: serialResults,
   });
@@ -348,7 +345,6 @@ export async function dispatchFlows(input: DispatchInput): Promise<DispatchFlows
         flow,
         index,
         input.message_id,
-        input.user_input,
         input.request_id,
         serialResults,
       );
@@ -378,7 +374,7 @@ export async function dispatchFlows(input: DispatchInput): Promise<DispatchFlows
 
   const attempts = await Promise.all(
     flows.map((flow, index) =>
-      executeFlow(input.settings, flow, index, input.message_id, input.user_input, input.request_id, []),
+      executeFlow(input.settings, flow, index, input.message_id, input.request_id, []),
     ),
   );
 

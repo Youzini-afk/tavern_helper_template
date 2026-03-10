@@ -2,13 +2,11 @@ import { FlowRequestV1, FlowRequestSchema } from './contracts';
 import { EwFlowConfig, EwSettings } from './types';
 import { uuidv4 } from './helpers';
 import { resolveTargetWorldbook } from './worldbook-runtime';
-import { renderEjsReadOnly } from './ejs-bridge';
 
 export type BuildRequestInput = {
   settings: EwSettings;
   flow: EwFlowConfig;
   message_id: number;
-  user_input: string;
   request_id?: string;
   serial_results?: Record<string, any>[];
 };
@@ -37,39 +35,13 @@ export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRe
   );
   const requestId = input.request_id ?? uuidv4();
 
-  // Resolve the target worldbook (character card's primary worldbook).
+  // Resolve the target worldbook name (needed for write operations).
   let worldbookName = '';
-  let worldbookEntries: Array<{ name: string; enabled: boolean; content: string }> = [];
-  let target: import('./worldbook-runtime').TargetWorldbook | undefined;
   try {
-    target = await resolveTargetWorldbook(input.settings);
+    const target = await resolveTargetWorldbook(input.settings);
     worldbookName = target.worldbook_name;
-    worldbookEntries = target.entries.map(entry => ({
-      name: entry.name,
-      enabled: entry.enabled,
-      content: entry.content,
-    }));
   } catch (e) {
     console.debug('[Evolution World] worldbook resolution failed in buildFlowRequest:', e);
-    // Proceed with empty worldbook snapshot.
-  }
-
-  // Character name for the request payload.
-  const characterName = typeof getCurrentCharacterName === 'function' ? (getCurrentCharacterName() ?? '') : '';
-
-  // Character card worldbook entries snapshot.
-  let charWbEntries: Array<{ name: string; enabled: boolean; content: string }> = [];
-  try {
-    const charWb = getCharWorldbookNames('current');
-    if (charWb.primary && target) {
-      charWbEntries = target.entries.map(e => ({ name: e.name, enabled: e.enabled, content: e.content }));
-    }
-  } catch { /* proceed with empty */ }
-
-  // Save raw EJS source, then render entries in read-only mode.
-  const rawEntries = worldbookEntries.map(e => ({ ...e }));
-  for (const entry of worldbookEntries) {
-    entry.content = await renderEjsReadOnly(entry.content);
   }
 
   const payload = FlowRequestSchema.parse({
@@ -77,7 +49,6 @@ export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRe
     request_id: requestId,
     chat_id: chatId,
     message_id: input.message_id,
-    user_input: input.user_input,
     flow: {
       id: input.flow.id,
       name: input.flow.name,
@@ -93,20 +64,7 @@ export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRe
     },
     worldbook: {
       worldbook_name: worldbookName,
-      entries: worldbookEntries,
-      raw_entries: rawEntries,
     },
-    character_context: {
-      name: characterName,
-      worldbook_entries: charWbEntries,
-    },
-    prompt_ordering: input.flow.prompt_order.map(entry => ({
-      identifier: entry.identifier,
-      name: entry.name,
-      type: entry.type,
-      role: entry.role,
-      enabled: entry.enabled,
-    })),
     mvu: getMvuSnapshot(input.message_id),
     serial_results: input.serial_results ?? [],
   });

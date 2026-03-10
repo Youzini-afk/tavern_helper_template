@@ -13,7 +13,6 @@ export const FlowRequestSchema = z.object({
   request_id: z.string().min(1),
   chat_id: z.string().min(1),
   message_id: z.number(),
-  user_input: z.string().default(''),
   flow: z.object({
     id: z.string().min(1),
     name: z.string().default(''),
@@ -52,51 +51,7 @@ export const FlowRequestSchema = z.object({
   }),
   worldbook: z.object({
     worldbook_name: z.string().default(''),
-    entries: z
-      .array(
-        z.object({
-          name: z.string().min(1),
-          enabled: z.boolean().default(true),
-          content: z.string().default(''),
-        }),
-      )
-      .default([]),
-    raw_entries: z
-      .array(
-        z.object({
-          name: z.string().min(1),
-          enabled: z.boolean().default(true),
-          content: z.string().default(''),
-        }),
-      )
-      .optional(),
   }),
-  character_context: z
-    .object({
-      name: z.string().default(''),
-      worldbook_entries: z
-        .array(
-          z.object({
-            name: z.string().default(''),
-            enabled: z.boolean().default(true),
-            content: z.string().default(''),
-          }),
-        )
-        .default([]),
-    })
-    .default({ name: '', worldbook_entries: [] }),
-
-  prompt_ordering: z
-    .array(
-      z.object({
-        identifier: z.string(),
-        name: z.string().default(''),
-        type: z.enum(['marker', 'prompt']).default('prompt'),
-        role: z.string().default('system'),
-        enabled: z.boolean().default(true),
-      }),
-    )
-    .default([]),
   mvu: z.object({
     message_id: z.number().default(-1),
     stat_data: z.record(z.string(), z.any()).default({}),
