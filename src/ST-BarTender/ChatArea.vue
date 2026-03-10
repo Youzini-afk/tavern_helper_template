@@ -32,10 +32,18 @@
                 @keydown.escape="cancelEdit"
               />
               <div class="chat-area__bubble-edit-actions">
-                <button class="chat-area__bubble-action-btn chat-area__bubble-action-btn--confirm" title="确认 (Ctrl+Enter)" @click="confirmEdit(msg.id)">
+                <button
+                  class="chat-area__bubble-action-btn chat-area__bubble-action-btn--confirm"
+                  title="确认 (Ctrl+Enter)"
+                  @click="confirmEdit(msg.id)"
+                >
                   <i class="fa-solid fa-check" />
                 </button>
-                <button class="chat-area__bubble-action-btn chat-area__bubble-action-btn--cancel" title="取消 (Esc)" @click="cancelEdit">
+                <button
+                  class="chat-area__bubble-action-btn chat-area__bubble-action-btn--cancel"
+                  title="取消 (Esc)"
+                  @click="cancelEdit"
+                >
                   <i class="fa-solid fa-xmark" />
                 </button>
               </div>
@@ -45,10 +53,7 @@
             <div v-else class="chat-area__bubble-content">{{ msg.content }}</div>
 
             <!-- 操作栏（消息下方，常驻显示） -->
-            <div
-              v-if="editingMsgId !== msg.id && !store.isLoading"
-              class="chat-area__bubble-toolbar"
-            >
+            <div v-if="editingMsgId !== msg.id && !store.isLoading" class="chat-area__bubble-toolbar">
               <template v-if="msg.role === 'user'">
                 <button class="chat-area__bubble-action-btn" title="编辑" @click="startEdit(msg)">
                   <i class="fa-solid fa-pen" />
@@ -59,7 +64,11 @@
                   <i class="fa-solid fa-rotate" />
                 </button>
               </template>
-              <button class="chat-area__bubble-action-btn chat-area__bubble-action-btn--danger" title="删除" @click="store.deleteMessage(msg.id)">
+              <button
+                class="chat-area__bubble-action-btn chat-area__bubble-action-btn--danger"
+                title="删除"
+                @click="store.deleteMessage(msg.id)"
+              >
                 <i class="fa-solid fa-trash-can" />
               </button>
             </div>
@@ -99,8 +108,13 @@
     </div>
 
     <!-- 系统提示词弹窗 -->
-    <div v-if="promptDialogOpen" class="prompt-dialog__backdrop" @mousedown.self="promptDialogOpen = false">
-      <div class="prompt-dialog" @mousedown.stop>
+    <div
+      v-if="promptDialogOpen"
+      class="prompt-dialog__backdrop"
+      @pointerdown.self="promptDialogOpen = false"
+      @click.self="promptDialogOpen = false"
+    >
+      <div class="prompt-dialog" @pointerdown.stop @click.stop>
         <div class="prompt-dialog__header">
           <span class="prompt-dialog__title">系统提示词</span>
           <button class="prompt-dialog__close" @click="promptDialogOpen = false">
@@ -108,10 +122,7 @@
           </button>
         </div>
         <div class="prompt-dialog__body">
-          <textarea
-            v-model="effectivePrompt"
-            class="prompt-dialog__textarea"
-          />
+          <textarea v-model="effectivePrompt" class="prompt-dialog__textarea" />
         </div>
         <div class="prompt-dialog__footer">
           <button class="prompt-dialog__reset" @click="resetPrompt">
@@ -140,12 +151,7 @@
       >
         <i class="fa-solid fa-stop" />
       </button>
-      <button
-        v-else
-        class="chat-area__send-btn"
-        :disabled="!inputText.trim()"
-        @click="handleSend"
-      >
+      <button v-else class="chat-area__send-btn" :disabled="!inputText.trim()" @click="handleSend">
         <i class="fa-solid fa-paper-plane" />
       </button>
     </div>
@@ -153,8 +159,8 @@
 </template>
 
 <script setup lang="ts">
-import { useStore } from './store';
 import type { ChatMessage } from './schema';
+import { useStore } from './store';
 
 const store = useStore();
 const inputText = ref('');
@@ -288,6 +294,7 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 8px;
+  overscroll-behavior: contain;
 }
 
 .chat-area__empty {
@@ -423,8 +430,14 @@ watch(
 }
 
 @keyframes toolbar-in {
-  from { opacity: 0; transform: translateY(-2px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .chat-area__bubble-action-btn {
@@ -439,7 +452,9 @@ watch(
   align-items: center;
   justify-content: center;
   font-size: 11px;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .chat-area__bubble-action-btn:hover {
@@ -517,7 +532,10 @@ watch(
   border-radius: 4px;
   font-size: 11px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
+  touch-action: manipulation;
 }
 
 .chat-area__shortcut-btn:hover {
@@ -531,6 +549,7 @@ watch(
   gap: 6px;
   padding: 8px 12px;
   border-top: 1px solid var(--ub-border);
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
 }
 
 .chat-area__input {
@@ -564,7 +583,10 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s, transform 0.1s;
+  transition:
+    background 0.15s,
+    transform 0.1s;
+  touch-action: manipulation;
 }
 
 .chat-area__send-btn:hover:not(:disabled) {
@@ -607,13 +629,17 @@ watch(
 }
 
 @keyframes prompt-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .prompt-dialog {
   width: min(560px, 90vw);
-  max-height: 80vh;
+  max-height: min(80vh, calc(100dvh - 24px));
   display: flex;
   flex-direction: column;
   border-radius: 14px;
@@ -627,8 +653,14 @@ watch(
 }
 
 @keyframes prompt-dialog-in {
-  from { opacity: 0; transform: scale(0.94) translateY(12px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .prompt-dialog__header {
@@ -657,7 +689,9 @@ watch(
   align-items: center;
   justify-content: center;
   font-size: 13px;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .prompt-dialog__close:hover {
@@ -714,7 +748,9 @@ watch(
   color: var(--ub-text-muted);
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .prompt-dialog__reset:hover {
@@ -725,5 +761,65 @@ watch(
 .prompt-dialog__hint {
   font-size: 11px;
   color: var(--ub-text-muted);
+}
+
+@media (pointer: coarse) {
+  .chat-area__bubble-action-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 13px;
+  }
+
+  .chat-area__shortcut-btn {
+    min-height: 36px;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .chat-area__input {
+    min-height: 40px;
+    font-size: 14px;
+  }
+
+  .chat-area__send-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .prompt-dialog__close,
+  .prompt-dialog__reset {
+    min-height: 36px;
+  }
+}
+
+@media (max-width: 768px) {
+  .chat-area__shortcuts {
+    flex-wrap: wrap;
+  }
+
+  .chat-area__shortcut-btn {
+    flex: 1 1 calc(50% - 4px);
+    justify-content: center;
+  }
+
+  .prompt-dialog {
+    width: calc(100vw - 20px);
+    max-height: calc(100dvh - 20px);
+    border-radius: 12px;
+  }
+
+  .prompt-dialog__body {
+    padding: 10px 12px;
+  }
+
+  .prompt-dialog__textarea {
+    height: min(48vh, 360px);
+    font-size: 13px;
+  }
+
+  .prompt-dialog__footer {
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
 }
 </style>

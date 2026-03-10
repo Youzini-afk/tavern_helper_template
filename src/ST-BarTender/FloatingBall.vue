@@ -25,8 +25,8 @@
 </template>
 
 <script setup lang="ts">
-import { useStore } from './store';
 import BubbleMenu from './BubbleMenu.vue';
+import { useStore } from './store';
 
 const store = useStore();
 
@@ -129,8 +129,7 @@ function cleanupDragListeners() {
 function openMainPanel() {
   store.ballMenuOpen = false;
   store.panelOpen = true;
-  // DEBUG: 验证点击是否到达此处
-  try { (window.parent as any).toastr?.info?.(`panelOpen=${store.panelOpen}, isMobile=${store.isMobile}`, '🔧 DEBUG'); } catch {}
+  store.scanPreset();
 }
 
 // ---------- 视口尺寸与位置约束 ----------
@@ -142,7 +141,9 @@ function getViewportSize() {
       w = window.parent.innerWidth;
       h = window.parent.innerHeight;
     }
-  } catch { /* 跨域静默 */ }
+  } catch {
+    /* 跨域静默 */
+  }
   return { w, h };
 }
 
@@ -161,12 +162,15 @@ function clampBallPosition() {
 }
 
 // 视口变化时（桌面↔移动切换、屏幕旋转）自动校正位置
-watch(() => store.isMobile, () => {
-  clampBallPosition();
-  // 同步保存校正后的位置
-  store.settings.ball_x = ballPos.value.x;
-  store.settings.ball_y = ballPos.value.y;
-});
+watch(
+  () => store.isMobile,
+  () => {
+    clampBallPosition();
+    // 同步保存校正后的位置
+    store.settings.ball_x = ballPos.value.x;
+    store.settings.ball_y = ballPos.value.y;
+  },
+);
 
 onMounted(() => {
   clampBallPosition();
@@ -209,7 +213,10 @@ onUnmounted(() => {
   box-shadow:
     0 4px 20px var(--ub-shadow),
     0 0 0 1px var(--ub-border-light) inset;
-  transition: box-shadow 0.25s, transform 0.2s, background 0.25s;
+  transition:
+    box-shadow 0.25s,
+    transform 0.2s,
+    background 0.25s;
 }
 
 .fb-ball:hover {

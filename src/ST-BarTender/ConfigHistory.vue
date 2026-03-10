@@ -1,6 +1,12 @@
 <template>
   <transition name="ch-fade">
-    <div v-if="store.historyOpen" class="ch-overlay" :class="['ub-theme-' + store.settings.theme]" @mousedown.self="store.historyOpen = false">
+    <div
+      v-if="store.historyOpen"
+      class="ch-overlay"
+      :class="['ub-theme-' + store.settings.theme]"
+      @pointerdown.self="store.historyOpen = false"
+      @click.self="store.historyOpen = false"
+    >
       <div class="ch-dialog">
         <!-- 标题栏 -->
         <div class="ch-header">
@@ -47,8 +53,8 @@
 </template>
 
 <script setup lang="ts">
-import { useStore } from './store';
 import BlockRenderer from './BlockRenderer.vue';
+import { useStore } from './store';
 
 const store = useStore();
 
@@ -78,7 +84,7 @@ function rollback(id: string) {
 
 .ch-dialog {
   width: 480px;
-  max-height: 80vh;
+  max-height: min(80vh, calc(100dvh - 24px));
   display: flex;
   flex-direction: column;
   border-radius: 16px;
@@ -236,6 +242,43 @@ function rollback(id: string) {
   background: rgba(220, 60, 60, 0.15);
   color: #dc3c3c;
   border-color: rgba(220, 60, 60, 0.3);
+}
+
+@media (pointer: coarse) {
+  .ch-close {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  .ch-btn {
+    min-height: 36px;
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 768px) {
+  .ch-dialog {
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+    border-radius: 12px;
+  }
+
+  .ch-header {
+    padding: 12px 14px;
+  }
+
+  .ch-list {
+    padding: 10px;
+  }
+
+  .ch-preview-wrap {
+    height: 96px;
+  }
+
+  .ch-actions {
+    flex-wrap: wrap;
+  }
 }
 
 /* 弹窗动画 */

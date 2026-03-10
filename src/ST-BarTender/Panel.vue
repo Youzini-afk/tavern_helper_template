@@ -1,40 +1,19 @@
 <template>
-    <div
-      ref="panelRef"
-      class="pc-panel"
-      :class="['ub-theme-' + store.settings.theme]"
-      :style="panelStyle"
-  >
+  <div ref="panelRef" class="pc-panel" :class="['ub-theme-' + store.settings.theme]" :style="panelStyle">
     <!-- 标题栏（拖拽手柄） -->
-    <div
-      ref="headerRef"
-      class="pc-panel__header"
-      :class="{ 'pc-panel__header--mobile': store.isMobile }"
-    >
+    <div ref="headerRef" class="pc-panel__header" :class="{ 'pc-panel__header--mobile': store.isMobile }">
       <div class="pc-panel__header-left">
         <i class="fa-solid fa-sliders pc-panel__icon" />
         <span class="pc-panel__title">预设控制</span>
       </div>
       <div class="pc-panel__header-actions">
-        <button
-          class="pc-panel__header-btn"
-          title="历史记录"
-          @click="store.historyOpen = true"
-        >
+        <button class="pc-panel__header-btn" title="历史记录" @click="store.historyOpen = true">
           <i class="fa-solid fa-clock-rotate-left" />
         </button>
-        <button
-          class="pc-panel__header-btn"
-          title="导出面板"
-          @click="store.exportConfig()"
-        >
+        <button class="pc-panel__header-btn" title="导出面板" @click="store.exportConfig()">
           <i class="fa-solid fa-file-export" />
         </button>
-        <button
-          class="pc-panel__header-btn"
-          title="导入面板"
-          @click="store.importConfig()"
-        >
+        <button class="pc-panel__header-btn" title="导入面板" @click="store.importConfig()">
           <i class="fa-solid fa-file-import" />
         </button>
         <button
@@ -44,12 +23,12 @@
         >
           <i class="fa-solid fa-palette" />
         </button>
-        <button
-          class="pc-panel__header-btn"
-          title="API 配置"
-          @click="apiConfigOpen = !apiConfigOpen"
-        >
-          <i class="fa-solid fa-gear" :class="{ 'icon-rotated': apiConfigOpen }" style="transition: transform 0.3s ease" />
+        <button class="pc-panel__header-btn" title="API 配置" @click="apiConfigOpen = !apiConfigOpen">
+          <i
+            class="fa-solid fa-gear"
+            :class="{ 'icon-rotated': apiConfigOpen }"
+            style="transition: transform 0.3s ease"
+          />
         </button>
         <button class="pc-panel__header-btn" title="关闭" @click="store.panelOpen = false">
           <i class="fa-solid fa-xmark" />
@@ -70,11 +49,20 @@
         <template v-if="store.settings.api.mode === 'custom'">
           <div class="pc-panel__api-row">
             <label class="pc-panel__api-label">地址</label>
-            <input v-model="store.settings.api.custom_url" class="pc-panel__api-input" placeholder="https://api.example.com/v1" />
+            <input
+              v-model="store.settings.api.custom_url"
+              class="pc-panel__api-input"
+              placeholder="https://api.example.com/v1"
+            />
           </div>
           <div class="pc-panel__api-row">
             <label class="pc-panel__api-label">密钥</label>
-            <input v-model="store.settings.api.custom_key" class="pc-panel__api-input" type="password" placeholder="sk-..." />
+            <input
+              v-model="store.settings.api.custom_key"
+              class="pc-panel__api-input"
+              type="password"
+              placeholder="sk-..."
+            />
           </div>
           <div class="pc-panel__api-row">
             <label class="pc-panel__api-label">模型</label>
@@ -117,21 +105,42 @@
         <template v-if="store.settings.api.mode === 'custom'">
           <div class="pc-panel__api-row">
             <label class="pc-panel__api-label">最大Tokens</label>
-            <input v-model.number="store.settings.api.gen_max_tokens" class="pc-panel__api-input" type="number" min="1024" max="200000" step="1024" />
+            <input
+              v-model.number="store.settings.api.gen_max_tokens"
+              class="pc-panel__api-input"
+              type="number"
+              min="1024"
+              max="200000"
+              step="1024"
+            />
           </div>
           <div class="pc-panel__api-row">
             <label class="pc-panel__api-label">温度</label>
-            <input v-model.number="store.settings.api.gen_temperature" class="pc-panel__api-input" type="number" min="0" max="2" step="0.05" />
+            <input
+              v-model.number="store.settings.api.gen_temperature"
+              class="pc-panel__api-input"
+              type="number"
+              min="0"
+              max="2"
+              step="0.05"
+            />
           </div>
           <div class="pc-panel__api-row">
             <label class="pc-panel__api-label">Top P</label>
-            <input v-model.number="store.settings.api.gen_top_p" class="pc-panel__api-input" type="number" min="0" max="1" step="0.05" />
+            <input
+              v-model.number="store.settings.api.gen_top_p"
+              class="pc-panel__api-input"
+              type="number"
+              min="0"
+              max="1"
+              step="0.05"
+            />
           </div>
         </template>
         <div class="pc-panel__api-row">
           <label class="pc-panel__api-label">流式</label>
           <div class="pc-panel__api-toggle" @click="store.settings.api.gen_stream = !store.settings.api.gen_stream">
-            <div class="pc-panel__api-toggle-track" :class="{ 'active': store.settings.api.gen_stream }">
+            <div class="pc-panel__api-toggle-track" :class="{ active: store.settings.api.gen_stream }">
               <div class="pc-panel__api-toggle-thumb" />
             </div>
             <span class="pc-panel__api-toggle-text">{{ store.settings.api.gen_stream ? '开启' : '关闭' }}</span>
@@ -139,8 +148,11 @@
         </div>
         <div class="pc-panel__api-row">
           <label class="pc-panel__api-label">保留用户编辑</label>
-          <div class="pc-panel__api-toggle" @click="store.settings.preserve_user_edits = !store.settings.preserve_user_edits">
-            <div class="pc-panel__api-toggle-track" :class="{ 'active': store.settings.preserve_user_edits }">
+          <div
+            class="pc-panel__api-toggle"
+            @click="store.settings.preserve_user_edits = !store.settings.preserve_user_edits"
+          >
+            <div class="pc-panel__api-toggle-track" :class="{ active: store.settings.preserve_user_edits }">
               <div class="pc-panel__api-toggle-thumb" />
             </div>
             <span class="pc-panel__api-toggle-text">{{ store.settings.preserve_user_edits ? '开启' : '关闭' }}</span>
@@ -151,17 +163,13 @@
 
     <!-- 移动端标签页切换 -->
     <div v-if="store.isMobile" class="pc-panel__mobile-tabs">
-      <button
-        class="pc-panel__mobile-tab-btn"
-        :class="{ 'active': mobileTab === 'chat' }"
-        @click="mobileTab = 'chat'"
-      >
+      <button class="pc-panel__mobile-tab-btn" :class="{ active: mobileTab === 'chat' }" @click="mobileTab = 'chat'">
         <i class="fa-regular fa-comments" />
         <span>对话</span>
       </button>
       <button
         class="pc-panel__mobile-tab-btn"
-        :class="{ 'active': mobileTab === 'control' }"
+        :class="{ active: mobileTab === 'control' }"
         @click="mobileTab = 'control'"
       >
         <i class="fa-solid fa-sliders" />
@@ -189,23 +197,23 @@
 
     <!-- 主题切换径向扩散动画覆盖层 -->
     <div v-if="themeOverlayVisible" class="pc-panel__theme-overlay" :style="themeOverlayStyle" />
-    </div>
-
+  </div>
 
   <!-- 历史记录弹窗 -->
   <ConfigHistory />
 </template>
 
 <script setup lang="ts">
-import { useStore } from './store';
 import ChatArea from './ChatArea.vue';
-import ControlArea from './ControlArea.vue';
 import ConfigHistory from './ConfigHistory.vue';
+import ControlArea from './ControlArea.vue';
+import { useStore } from './store';
 
 const store = useStore();
 const apiConfigOpen = ref(false);
 const headerRef = ref<HTMLElement>();
 const mobileTab = ref<'chat' | 'control'>('control');
+const mobileViewportHeight = ref(0);
 
 // ---------- 拖拽 ----------
 const isDragging = ref(false);
@@ -218,6 +226,20 @@ function getParentDoc(): Document {
   } catch {}
   return document;
 }
+
+function getParentWindow(): Window {
+  try {
+    if (window.parent && window.parent !== window) return window.parent;
+  } catch {}
+  return window;
+}
+
+function updateMobileViewportHeight() {
+  const parentWindow = getParentWindow();
+  const viewport = parentWindow.visualViewport;
+  mobileViewportHeight.value = Math.round(viewport?.height ?? parentWindow.innerHeight);
+}
+
 const panelPos = ref({
   x: store.settings.panel_x >= 0 ? store.settings.panel_x : -1,
   y: store.settings.panel_y >= 0 ? store.settings.panel_y : -1,
@@ -237,7 +259,8 @@ const panelStyle = computed(() => {
     backdropFilter: 'blur(18px) saturate(180%)',
     WebkitBackdropFilter: 'blur(18px) saturate(180%)',
     border: '1px solid var(--ub-border, rgba(148, 163, 184, 0.15))',
-    boxShadow: '0 8px 32px var(--ub-shadow, rgba(0,0,0,0.4)), 0 0 0 1px var(--ub-border-light, rgba(255,255,255,0.05)) inset',
+    boxShadow:
+      '0 8px 32px var(--ub-shadow, rgba(0,0,0,0.4)), 0 0 0 1px var(--ub-border-light, rgba(255,255,255,0.05)) inset',
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif",
     color: 'var(--ub-text-main, #e2e8f0)',
   };
@@ -246,10 +269,15 @@ const panelStyle = computed(() => {
     return {
       ...base,
       left: '0px',
+      right: '0px',
       bottom: '0px',
       top: 'auto',
       width: '100%',
-      height: '85vh',
+      maxWidth: '100%',
+      height: `${Math.max(320, mobileViewportHeight.value || getParentWindow().innerHeight)}px`,
+      maxHeight: `${Math.max(320, mobileViewportHeight.value || getParentWindow().innerHeight)}px`,
+      borderTopLeftRadius: '16px',
+      borderTopRightRadius: '16px',
       borderBottomLeftRadius: '0px',
       borderBottomRightRadius: '0px',
     };
@@ -350,20 +378,18 @@ function toggleTheme(e: MouseEvent) {
   if (themeOverlayVisible.value) return;
 
   const nextTheme = store.settings.theme === 'dark' ? 'parchment' : 'dark';
-  const targetBg = nextTheme === 'parchment'
-    ? 'rgb(246, 239, 221)'
-    : 'rgb(30, 30, 38)';
+  const targetBg = nextTheme === 'parchment' ? 'rgb(246, 239, 221)' : 'rgb(30, 30, 38)';
 
   const panel = (e.currentTarget as HTMLElement).closest('.pc-panel') as HTMLElement | null;
-  if (!panel) { store.settings.theme = nextTheme; return; }
+  if (!panel) {
+    store.settings.theme = nextTheme;
+    return;
+  }
 
   const panelRect = panel.getBoundingClientRect();
   const x = e.clientX - panelRect.left;
   const y = e.clientY - panelRect.top;
-  const endRadius = Math.hypot(
-    Math.max(x, panelRect.width - x),
-    Math.max(y, panelRect.height - y)
-  );
+  const endRadius = Math.hypot(Math.max(x, panelRect.width - x), Math.max(y, panelRect.height - y));
 
   // 1. 面板覆盖层 (初始状态)
   themeOverlayStyle.value = {
@@ -404,6 +430,8 @@ function toggleTheme(e: MouseEvent) {
 
 // Fix #11: 合并为一个 onMounted
 onMounted(() => {
+  updateMobileViewportHeight();
+
   // 初始位置居中
   if (panelPos.value.x < 0 || panelPos.value.y < 0) {
     // 获取可视区域尺寸（兼容 iframe 和主文档）
@@ -414,19 +442,31 @@ onMounted(() => {
         w = window.parent.innerWidth;
         h = window.parent.innerHeight;
       }
-    } catch { /* 跨域静默 */ }
+    } catch {
+      /* 跨域静默 */
+    }
     panelPos.value.x = Math.max(40, (w - store.settings.panel_width) / 2);
     panelPos.value.y = Math.max(40, (h - store.settings.panel_height) / 2);
   }
 
   // 注册拖拽
   headerRef.value?.addEventListener('mousedown', onMouseDown);
+
+  const parentWindow = getParentWindow();
+  parentWindow.addEventListener('resize', updateMobileViewportHeight);
+  parentWindow.visualViewport?.addEventListener('resize', updateMobileViewportHeight);
+  parentWindow.visualViewport?.addEventListener('scroll', updateMobileViewportHeight);
 });
 
 onUnmounted(() => {
   headerRef.value?.removeEventListener('mousedown', onMouseDown);
   cleanupDragListeners();
   onResizeEnd();
+
+  const parentWindow = getParentWindow();
+  parentWindow.removeEventListener('resize', updateMobileViewportHeight);
+  parentWindow.visualViewport?.removeEventListener('resize', updateMobileViewportHeight);
+  parentWindow.visualViewport?.removeEventListener('scroll', updateMobileViewportHeight);
 });
 </script>
 
@@ -450,6 +490,7 @@ onUnmounted(() => {
 .pc-panel__header--mobile {
   cursor: default;
   touch-action: manipulation;
+  padding-top: max(12px, env(safe-area-inset-top));
 }
 
 .pc-panel__header:active:not(.pc-panel__header--mobile) {
@@ -479,8 +520,8 @@ onUnmounted(() => {
 }
 
 .pc-panel__header-btn {
-  width: 28px;
-  height: 20px;
+  width: 32px;
+  height: 28px;
   border: none;
   border-radius: 4px;
   background: transparent;
@@ -610,7 +651,10 @@ onUnmounted(() => {
   cursor: pointer;
   flex-shrink: 0;
   font-size: 12px;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
 }
 
 .pc-panel__api-fetch-btn:hover:not(:disabled) {
@@ -714,6 +758,7 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   min-height: 0;
+  overflow: hidden;
 }
 
 .pc-panel__chat-col {
@@ -729,6 +774,84 @@ onUnmounted(() => {
 .pc-panel__control-col {
   flex: 1;
   min-width: 0;
+}
+
+@media (pointer: coarse) {
+  .pc-panel__header {
+    padding: 12px 14px;
+  }
+
+  .pc-panel__header-actions {
+    gap: 6px;
+  }
+
+  .pc-panel__header-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+
+  .pc-panel__api-row {
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .pc-panel__api-input,
+  .pc-panel__api-select {
+    min-height: 38px;
+    font-size: 14px;
+  }
+
+  .pc-panel__api-fetch-btn {
+    width: 38px;
+    height: 38px;
+  }
+
+  .pc-panel__api-toggle {
+    min-height: 38px;
+  }
+}
+
+@media (max-width: 768px) {
+  .pc-panel__header-left {
+    min-width: 0;
+  }
+
+  .pc-panel__title {
+    font-size: 15px;
+  }
+
+  .pc-panel__icon {
+    font-size: 15px;
+  }
+
+  .pc-panel__api-row {
+    flex-wrap: wrap;
+  }
+
+  .pc-panel__api-label {
+    width: auto;
+    text-align: left;
+  }
+
+  .pc-panel__body {
+    flex-direction: column;
+  }
+
+  .pc-panel__chat-col,
+  .pc-panel__control-col {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .pc-panel__mobile-tabs {
+    padding-top: 6px;
+  }
+
+  .pc-panel__mobile-tab-btn {
+    min-height: 44px;
+  }
 }
 
 :deep(::-webkit-scrollbar) {

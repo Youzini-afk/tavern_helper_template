@@ -1,10 +1,17 @@
 <template>
   <div>
     <!-- 点击外部关闭 -->
-    <div class="bm-backdrop" @mousedown="emit('close')" />
+    <div class="bm-backdrop" @pointerdown="emit('close')" @click="emit('close')" />
 
     <!-- 气泡菜单 -->
-    <div ref="menuRef" class="bm-menu" :class="['ub-theme-' + store.settings.theme]" :style="menuStyle" @mousedown.stop>
+    <div
+      ref="menuRef"
+      class="bm-menu"
+      :class="['ub-theme-' + store.settings.theme, { 'bm-menu--mobile': store.isMobile }]"
+      :style="menuStyle"
+      @pointerdown.stop
+      @click.stop
+    >
       <!-- 标题栏 -->
       <div class="bm-header">
         <span class="bm-title">{{ store.widgetConfig.title }}</span>
@@ -40,18 +47,23 @@
       </div>
 
       <!-- 拖拽缩放手柄 -->
-      <div class="bm-resize bm-resize--bottom" @mousedown.prevent="onResizeStart($event, 'bottom')" />
       <div
-        v-if="expandsLeft"
+        v-if="!store.isMobile"
+        class="bm-resize bm-resize--bottom"
+        @mousedown.prevent="onResizeStart($event, 'bottom')"
+      />
+      <div
+        v-if="expandsLeft && !store.isMobile"
         class="bm-resize bm-resize--left"
         @mousedown.prevent="onResizeStart($event, 'left')"
       />
       <div
-        v-else
+        v-else-if="!store.isMobile"
         class="bm-resize bm-resize--right"
         @mousedown.prevent="onResizeStart($event, 'right')"
       />
       <div
+        v-if="!store.isMobile"
         class="bm-resize bm-resize--corner"
         :class="expandsLeft ? 'bm-resize--corner-left' : 'bm-resize--corner-right'"
         @mousedown.prevent="onResizeStart($event, expandsLeft ? 'corner-left' : 'corner-right')"
@@ -64,8 +76,8 @@
 </template>
 
 <script setup lang="ts">
-import { useStore } from './store';
 import BlockRenderer from './BlockRenderer.vue';
+import { useStore } from './store';
 
 const props = defineProps<{
   ballX: number;
@@ -85,42 +97,46 @@ const menuRef = ref<HTMLElement>();
 const bmOverlayVisible = ref(false);
 const bmOverlayStyle = ref<Record<string, string>>({});
 
-watch(() => store.themeTransition, (t) => {
-  if (t?.active && menuRef.value) {
-    const rect = menuRef.value.getBoundingClientRect();
-    const x = t.clientX - rect.left;
-    const y = t.clientY - rect.top;
-    const radius = Math.hypot(
-      Math.max(x, rect.width - x),
-      Math.max(y, rect.height - y),
-    );
-    bmOverlayStyle.value = {
-      background: t.targetBg,
-      clipPath: `circle(0px at ${x}px ${y}px)`,
-      transition: 'none',
-    };
-    bmOverlayVisible.value = true;
-    nextTick(() => {
-      requestAnimationFrame(() => {
-        bmOverlayStyle.value = {
-          background: t.targetBg,
-          clipPath: `circle(${radius}px at ${x}px ${y}px)`,
-          transition: 'clip-path 800ms ease-in-out',
-        };
+watch(
+  () => store.themeTransition,
+  t => {
+    if (t?.active && menuRef.value) {
+      const rect = menuRef.value.getBoundingClientRect();
+      const x = t.clientX - rect.left;
+      const y = t.clientY - rect.top;
+      const radius = Math.hypot(Math.max(x, rect.width - x), Math.max(y, rect.height - y));
+      bmOverlayStyle.value = {
+        background: t.targetBg,
+        clipPath: `circle(0px at ${x}px ${y}px)`,
+        transition: 'none',
+      };
+      bmOverlayVisible.value = true;
+      nextTick(() => {
+        requestAnimationFrame(() => {
+          bmOverlayStyle.value = {
+            background: t.targetBg,
+            clipPath: `circle(${radius}px at ${x}px ${y}px)`,
+            transition: 'clip-path 800ms ease-in-out',
+          };
+        });
       });
-    });
-  } else if (t === null) {
-    bmOverlayVisible.value = false;
-  }
-});
+    } else if (t === null) {
+      bmOverlayVisible.value = false;
+    }
+  },
+);
 
 const menuWidth = computed({
   get: () => store.settings.bubble_width,
-  set: (v: number) => { store.settings.bubble_width = v; },
+  set: (v: number) => {
+    store.settings.bubble_width = v;
+  },
 });
 const menuHeight = computed({
   get: () => store.settings.bubble_height,
-  set: (v: number) => { store.settings.bubble_height = v; },
+  set: (v: number) => {
+    store.settings.bubble_height = v;
+  },
 });
 const MIN_W = 240;
 const MAX_W = 500;
@@ -131,7 +147,9 @@ const MARGIN = 12;
 // 计算展开方向
 const expandsLeft = computed(() => {
   let vw = window.innerWidth;
-  try { if (window.parent && window.parent !== window) vw = window.parent.innerWidth; } catch {}
+  try {
+    if (window.parent && window.parent !== window) vw = window.parent.innerWidth;
+  } catch {}
   const ballCenterX = props.ballX + props.ballSize / 2;
   return ballCenterX > vw / 2;
 });
@@ -145,32 +163,37 @@ const menuStyle = computed(() => {
       vw = window.parent.innerWidth;
       vh = window.parent.innerHeight;
     }
-  } catch { /* 跨域静默 */ }
+  } catch {
+    /* 跨域静默 */
+  }
 
-  const w = menuWidth.value;
+  const w = store.isMobile ? Math.min(menuWidth.value, vw - MARGIN * 2) : menuWidth.value;
+  const h = store.isMobile ? Math.min(menuHeight.value, vh - MARGIN * 2) : menuHeight.value;
 
   // 水平位置
   let left: number;
-  if (expandsLeft.value) {
+  if (store.isMobile) {
+    left = (vw - w) / 2;
+  } else if (expandsLeft.value) {
     left = props.ballX - w - MARGIN;
   } else {
     left = props.ballX + props.ballSize + MARGIN;
   }
 
   // 垂直位置
-  let top = props.ballY;
+  let top = store.isMobile ? vh - h - MARGIN : props.ballY;
 
   // 边界约束
   if (left < MARGIN) left = MARGIN;
   if (left + w > vw - MARGIN) left = vw - w - MARGIN;
   if (top < MARGIN) top = MARGIN;
-  if (top + menuHeight.value > vh - MARGIN) top = vh - menuHeight.value - MARGIN;
+  if (top + h > vh - MARGIN) top = vh - h - MARGIN;
 
   return {
     left: `${left}px`,
     top: `${top}px`,
     width: `${w}px`,
-    maxHeight: `${menuHeight.value}px`,
+    maxHeight: `${h}px`,
   };
 });
 
@@ -249,6 +272,12 @@ function onResizeEnd() {
   animation: bm-fade-in 0.18s ease-out;
 }
 
+.bm-menu--mobile {
+  width: min(100vw - 24px, 420px) !important;
+  max-height: min(75vh, 560px) !important;
+  border-radius: 16px;
+}
+
 @keyframes bm-fade-in {
   from {
     opacity: 0;
@@ -283,8 +312,8 @@ function onResizeEnd() {
 }
 
 .bm-header-btn {
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   border: none;
   border-radius: 6px;
   background: transparent;
@@ -294,7 +323,9 @@ function onResizeEnd() {
   align-items: center;
   justify-content: center;
   font-size: 12px;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .bm-header-btn:hover {
@@ -313,6 +344,28 @@ function onResizeEnd() {
   padding: 12px;
   display: flex;
   flex-direction: column;
+  overscroll-behavior: contain;
+}
+
+@media (pointer: coarse) {
+  .bm-header {
+    padding: 12px 14px;
+  }
+
+  .bm-title {
+    font-size: 14px;
+  }
+
+  .bm-header-actions {
+    gap: 6px;
+  }
+
+  .bm-header-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
 }
 
 /* 自定义滚动条 */

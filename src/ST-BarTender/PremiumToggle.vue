@@ -1,5 +1,13 @@
 <template>
-  <div class="premium-toggle" @click="toggle">
+  <div
+    class="premium-toggle"
+    role="switch"
+    :aria-checked="checked"
+    tabindex="0"
+    @click="toggle"
+    @keydown.enter.prevent="toggle"
+    @keydown.space.prevent="toggle"
+  >
     <span v-if="label" class="pt-label">{{ label }}</span>
     <div class="pt-track" :class="{ 'pt-track--active': checked }">
       <div class="pt-thumb" />
@@ -32,10 +40,13 @@ function toggle() {
   background: var(--ub-bg-glass);
   border: 1px solid var(--ub-border);
   cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
   user-select: none;
   width: 100%;
   box-sizing: border-box;
+  touch-action: manipulation;
 }
 
 .premium-toggle:hover {
@@ -67,7 +78,9 @@ function toggle() {
 
 .pt-track--active {
   background: var(--ub-accent-active);
-  box-shadow: inset 0 1px 3px var(--ub-shadow), 0 0 12px var(--ub-accent-bg);
+  box-shadow:
+    inset 0 1px 3px var(--ub-shadow),
+    0 0 12px var(--ub-accent-bg);
 }
 
 .pt-thumb {
@@ -79,7 +92,9 @@ function toggle() {
   background: #ffffff;
   border-radius: 50%;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.2s;
+  transition:
+    transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+    width 0.2s;
 }
 
 .premium-toggle:active .pt-thumb {
@@ -88,5 +103,16 @@ function toggle() {
 
 .pt-track--active .pt-thumb {
   transform: translateX(20px);
+}
+
+@media (pointer: coarse) {
+  .premium-toggle {
+    min-height: 44px;
+    padding: 10px 12px;
+  }
+
+  .pt-label {
+    font-size: 14px;
+  }
 }
 </style>

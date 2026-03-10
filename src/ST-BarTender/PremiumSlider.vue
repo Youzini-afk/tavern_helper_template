@@ -5,7 +5,7 @@
       <span class="ps-value">{{ displayValue }}</span>
     </div>
 
-    <div ref="trackRef" class="ps-track-container" @mousedown="onMouseDown">
+    <div ref="trackRef" class="ps-track-container" @pointerdown.prevent="onPointerDown">
       <div class="ps-track-bg" />
       <div class="ps-track-fill" :style="{ width: percent + '%' }" />
       <div class="ps-thumb" :style="{ left: percent + '%' }" />
@@ -14,7 +14,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue';
+import { computed, onUnmounted, ref } from 'vue';
 
 const props = withDefaults(
   defineProps<{
@@ -38,6 +38,14 @@ const emit = defineEmits<{
 
 const trackRef = ref<HTMLElement>();
 const isDragging = ref(false);
+let activePointerId: number | null = null;
+
+function getParentDoc(): Document {
+  try {
+    if (window.parent && window.parent !== window) return window.parent.document;
+  } catch {}
+  return document;
+}
 
 const percent = computed(() => {
   let val = props.value;
@@ -53,10 +61,10 @@ const displayValue = computed(() => {
   return Number(props.value).toFixed(decimals);
 });
 
-function updateValueFromMouse(e: MouseEvent) {
+function updateValueFromClientX(clientX: number) {
   if (!trackRef.value) return;
   const rect = trackRef.value.getBoundingClientRect();
-  let x = e.clientX - rect.left;
+  let x = clientX - rect.left;
   if (x < 0) x = 0;
   if (x > rect.width) x = rect.width;
 
@@ -69,28 +77,40 @@ function updateValueFromMouse(e: MouseEvent) {
   emit('update:value', newVal);
 }
 
-function onMouseDown(e: MouseEvent) {
+function onPointerDown(e: PointerEvent) {
   isDragging.value = true;
-  updateValueFromMouse(e);
-  document.addEventListener('mousemove', onMouseMove);
-  document.addEventListener('mouseup', onMouseUp);
+  activePointerId = e.pointerId;
+  updateValueFromClientX(e.clientX);
+  trackRef.value?.setPointerCapture?.(e.pointerId);
+
+  const parentDoc = getParentDoc();
+  parentDoc.addEventListener('pointermove', onPointerMove);
+  parentDoc.addEventListener('pointerup', onPointerUp);
+  parentDoc.addEventListener('pointercancel', onPointerUp);
 }
 
-function onMouseMove(e: MouseEvent) {
+function onPointerMove(e: PointerEvent) {
   if (!isDragging.value) return;
-  updateValueFromMouse(e);
+  if (activePointerId !== null && e.pointerId !== activePointerId) return;
+  updateValueFromClientX(e.clientX);
 }
 
-function onMouseUp() {
+function onPointerUp(e: PointerEvent) {
+  if (activePointerId !== null && e.pointerId !== activePointerId) return;
   isDragging.value = false;
-  document.removeEventListener('mousemove', onMouseMove);
-  document.removeEventListener('mouseup', onMouseUp);
+  activePointerId = null;
+  const parentDoc = getParentDoc();
+  parentDoc.removeEventListener('pointermove', onPointerMove);
+  parentDoc.removeEventListener('pointerup', onPointerUp);
+  parentDoc.removeEventListener('pointercancel', onPointerUp);
 }
 
 // Fix #4: 确保组件卸载时清理事件监听器
 onUnmounted(() => {
-  document.removeEventListener('mousemove', onMouseMove);
-  document.removeEventListener('mouseup', onMouseUp);
+  const parentDoc = getParentDoc();
+  parentDoc.removeEventListener('pointermove', onPointerMove);
+  parentDoc.removeEventListener('pointerup', onPointerUp);
+  parentDoc.removeEventListener('pointercancel', onPointerUp);
 });
 </script>
 
@@ -130,6 +150,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   cursor: pointer;
+  touch-action: none;
 }
 
 .ps-track-bg {
@@ -161,7 +182,9 @@ onUnmounted(() => {
   transform: translateX(-50%);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
   pointer-events: none;
-  transition: box-shadow 0.2s, transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  transition:
+    box-shadow 0.2s,
+    transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 .ps-thumb::after {
@@ -185,5 +208,35 @@ onUnmounted(() => {
 .ps-track-container:active .ps-thumb::after {
   transform: scale(1.3);
   background: var(--ub-accent-border);
+}
+
+@media (pointer: coarse) {
+  .premium-slider {
+    gap: 10px;
+  }
+
+  .ps-header {
+    min-height: 24px;
+  }
+
+  .ps-label,
+  .ps-value {
+    font-size: 13px;
+  }
+
+  .ps-track-container {
+    height: 32px;
+  }
+
+  .ps-track-bg,
+  .ps-track-fill {
+    height: 8px;
+    border-radius: 4px;
+  }
+
+  .ps-thumb {
+    width: 20px;
+    height: 20px;
+  }
 }
 </style>

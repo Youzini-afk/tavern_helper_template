@@ -29,8 +29,8 @@
 </template>
 
 <script setup lang="ts">
-import { useStore } from './store';
 import BlockRenderer from './BlockRenderer.vue';
+import { useStore } from './store';
 
 const store = useStore();
 </script>
@@ -51,6 +51,7 @@ const store = useStore();
   padding: 8px 12px;
   background: var(--ub-bg-glass);
   border-bottom: 1px solid var(--ub-border);
+  flex-wrap: wrap;
 }
 
 .control-area__tool-btn {
@@ -65,7 +66,10 @@ const store = useStore();
   border-radius: 6px;
   font-size: 13px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
+  touch-action: manipulation;
 }
 
 .control-area__tool-btn:hover {
@@ -92,5 +96,26 @@ const store = useStore();
   padding: 16px; /* 给动态内容充足的边距 */
   display: flex;
   flex-direction: column;
+  overscroll-behavior: contain;
+}
+
+@media (pointer: coarse) {
+  .control-area__tool-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 768px) {
+  .control-area__title {
+    width: 100%;
+    margin-left: 0;
+    text-align: left;
+  }
+
+  .control-area__dynamic-root {
+    padding: 12px;
+  }
 }
 </style>
