@@ -218,7 +218,7 @@ function addCustomEntry() {
   editingId.value = id;
 }
 
-// ── Drag-and-drop reorder (PERF-1: only emit on dragend) ───────────────
+// ── 拖拽排序（PERF-1: 仅在 dragend 时发射 emit） ──────────────
 function onDragStart(idx: number, e: DragEvent) {
   dragFromIdx = idx;
   dragPreview.value = clone();
@@ -237,8 +237,8 @@ function onDragOver(toIdx: number) {
 function onDragEnd() {
   if (dragPreview.value) {
     const finalOrder = dragPreview.value;
-    // CR-6: emit new order first, then clear preview on nextTick
-    // to avoid a one-frame flicker back to old props.promptOrder
+    // CR-6: 先发射新顺序，然后在 nextTick 中清除预览
+    // 避免回退到旧的 props.promptOrder 产生一帧闪烁
     emit('update:promptOrder', finalOrder);
     nextTick(() => {
       dragPreview.value = null;

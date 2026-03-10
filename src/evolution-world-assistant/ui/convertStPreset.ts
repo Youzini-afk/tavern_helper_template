@@ -92,14 +92,14 @@ export function convertStPresetToFlow(
   let promptOrder: EwPromptOrderEntry[];
 
   if (Array.isArray(stPrompts) && stPrompts.length > 0) {
-    // (a) Build lookup: identifier → prompt definition
+    // (a) 构建查找表：identifier → prompt 定义
     const promptMap = new Map<string, Record<string, unknown>>();
     for (const p of stPrompts) {
       const id = typeof p.identifier === 'string' ? p.identifier : '';
       if (id) promptMap.set(id, p);
     }
 
-    // (b) Extract ordering from prompt_order (if present)
+    // (b) 从 prompt_order 中提取排序（如果存在）
     const stOrder = preset.prompt_order as Array<Record<string, unknown>> | undefined;
     let orderList: Array<{ identifier: string; enabled: boolean }> | null = null;
 
@@ -116,7 +116,7 @@ export function convertStPresetToFlow(
       }
     }
 
-    // (c) Convert prompt definitions using order
+    // (c) 按照顺序转换 prompt 定义
     const seen = new Set<string>();
     const result: EwPromptOrderEntry[] = [];
 

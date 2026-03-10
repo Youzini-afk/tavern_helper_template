@@ -313,8 +313,8 @@ const emit = defineEmits<{ (event: 'toggle-expand'): void; (event: 'remove'): vo
 
 const flow = computed(() => props.modelValue);
 
-// "Once-expanded" pattern: after first expansion, keep DOM alive (v-show)
-// to avoid re-mount cost on subsequent toggles.
+// "已展开过"模式：首次展开后保持 DOM 存活（v-show）
+// 避免后续切换时重新挂载的开销。
 const hasBeenExpanded = ref(props.expanded);
 watch(() => props.expanded, (val) => { if (val) hasBeenExpanded.value = true; });
 
@@ -395,7 +395,7 @@ function patchRegexText(index: number, key: 'name' | 'find_regex' | 'replace_str
   patch({ custom_regex_rules: nextRules });
 }
 
-// ── Per-flow import ──
+// ── 单工作流导入 ──
 const flowFileInput = ref<HTMLInputElement | null>(null);
 
 function openFlowFilePicker() {
@@ -411,7 +411,7 @@ async function onImportFile(event: Event) {
     const text = await file.text();
     const parsed = JSON.parse(text);
 
-    // Support: EW wrapped format, ST preset, or raw flow object
+    // 支持格式：EW 封装格式、ST 预设、或原始 flow 对象
     let validated: EwFlowConfig;
     if (parsed?.ew_flow_export === true && Array.isArray(parsed.flows)) {
       if (parsed.flows.length === 0) {
@@ -427,7 +427,7 @@ async function onImportFile(event: Event) {
     } else {
       validated = EwFlowConfigSchema.parse(parsed);
     }
-    // Preserve current flow's ID so it overwrites in-place
+    // 保留当前 flow 的 ID，以便就地覆盖
     validated.id = flow.value.id;
     emit('update:modelValue', validated);
     toastr.success('工作流已导入覆盖', 'Evolution World');

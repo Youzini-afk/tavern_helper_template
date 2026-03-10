@@ -153,7 +153,7 @@ const compareSnapshot = computed<SnapshotData | null>(() => {
   return floor?.snapshot ?? null;
 });
 
-// Compute cross-diff for coloring entries in compare view
+// 计算跨楼层 diff，用于对比视图中的条目着色
 const crossDiff = computed<SnapshotDiff | null>(() => {
   if (!props.snapshot || !compareSnapshot.value) return null;
   return diffSnapshots(props.snapshot, compareSnapshot.value);

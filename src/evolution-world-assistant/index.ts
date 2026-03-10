@@ -66,15 +66,15 @@ async function bootstrap() {
 }
 
 $(() => {
-  // Create FAB immediately (sync) — it's pure DOM and doesn't need runtime globals.
-  // This matches ST-Manager-STscript's pattern where init() is synchronous.
+  // 立即同步创建悬浮球（纯 DOM 操作，不依赖运行时全局变量）
+  // 匹配 ST-Manager-STscript 的同步初始化模式
   try {
     mountFabEarly();
   } catch (error) {
     console.error('[Evolution World] early FAB setup failed:', error);
   }
 
-  // The rest of bootstrap is async (waits for runtime globals)
+  // 其余启动流程异步执行（等待运行时全局变量注入）
   void bootstrap().catch(reportBootstrapError);
 });
 

@@ -173,12 +173,12 @@ import { useEwStore } from '../store';
 const store = useEwStore();
 const manualMessage = ref('');
 
-// Section collapse state
+// 区域折叠状态
 const promptSectionOpen = ref(true);
 const snapshotSectionOpen = ref(false);
 const logSectionOpen = ref(true);
 
-// Message expand state
+// 消息展开状态
 const expandedMsgs = ref(new Set<number>());
 const expandedIos = ref(new Set<number>());
 
@@ -213,7 +213,7 @@ function truncate(str: string, maxLen: number): string {
 }
 
 function highlightEwTags(text: string): string {
-  // Highlight [EW/xxx] tags with an accent span
+  // 用强调样式高亮 [EW/xxx] 标签
   return text.replace(
     /\[([^\]]*(?:EW|Controller|Dyn)[^\]]*)\]/g,
     '<span class="dbg-ew-tag">[$1]</span>',

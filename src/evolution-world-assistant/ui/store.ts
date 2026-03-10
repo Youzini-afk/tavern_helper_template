@@ -73,7 +73,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     lastIo.value = next;
   });
 
-  // L-3: Properly clean up subscriptions when the store's scope is disposed.
+  // L-3: 当 store 的作用域被销毁时，正确清理订阅。
   onScopeDispose(() => {
     syncFromRuntime.stop();
     syncRun.stop();
@@ -273,7 +273,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
 
     try {
       const parsed = JSON.parse(importText.value);
-      // CR-2: Validate against schema before replacing, so invalid JSON is caught explicitly.
+      // CR-2: 替换前先校验 schema，确保无效 JSON 被明确捕获。
       EwSettingsSchema.parse(parsed);
       replaceSettings(parsed as EwSettings);
       settings.value = getSettings();
@@ -296,7 +296,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     }
   }
 
-  // ── Flow-level import / export ──
+  // ── 单工作流导入 / 导出 ──
 
   function downloadJson(data: unknown, filename: string) {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -383,7 +383,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
         return;
       }
 
-      // Deduplicate IDs: if conflict, append timestamp suffix
+      // ID 去重：若冲突，追加时间戳后缀
       const existingIds = new Set(settings.value.flows.map(f => f.id));
       for (const flow of validated) {
         if (existingIds.has(flow.id)) {
@@ -508,7 +508,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
 
   async function loadPromptPreview() {
     const flowId = previewFlowId.value;
-    // Find target flow from global or character flows
+    // 从全局或角色工作流中查找目标 flow
     const allFlows = [...settings.value.flows, ...charFlows.value];
     const flow = allFlows.find(f => f.id === flowId) ?? allFlows.find(f => f.enabled) ?? allFlows[0];
     if (!flow) {
@@ -613,13 +613,13 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     addCharFlow,
     removeCharFlow,
     setFlowScope,
-    // debug
+    // 调试
     promptPreview,
     snapshotPreview,
     previewFlowId,
     loadPromptPreview,
     loadSnapshotPreview,
-    // history
+    // 历史记录
     floorSnapshots,
     selectedFloorId,
     compareFloorId,

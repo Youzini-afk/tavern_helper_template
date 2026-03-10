@@ -77,14 +77,14 @@ const selectedSnapshot = computed<SnapshotData | null>(() => {
 const selectedPrevSnapshot = computed<SnapshotData | null>(() => {
   const idx = store.floorSnapshots.findIndex(f => f.messageId === selectedFloorId.value);
   if (idx <= 0) return null;
-  // Find the nearest previous floor that has a snapshot
+  // 查找最近的拥有快照的前一楼层
   for (let i = idx - 1; i >= 0; i--) {
     if (store.floorSnapshots[i].snapshot) return store.floorSnapshots[i].snapshot;
   }
   return null;
 });
 
-// Cache diffs to avoid recomputation in v-for
+// 缓存 diff 结果以避免 v-for 中重复计算
 const diffCache = computed(() => {
   const cache = new Map<number, SnapshotDiff>();
   const floors = store.floorSnapshots;

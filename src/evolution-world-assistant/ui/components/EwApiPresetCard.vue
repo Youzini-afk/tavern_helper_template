@@ -174,16 +174,16 @@ async function loadModels() {
   const timeout = setTimeout(() => controller.abort(), 10_000);
 
   try {
-    // Build the /v1/models endpoint from the base URL
+    // 根据 base URL 构建 /v1/models 端点
     const base = apiurl.replace(/\/+$/, '');
     const modelsUrl = base.endsWith('/models') ? base : `${base}/models`;
 
-    // Merge default + custom headers (same pattern as dispatcher.ts)
+    // 合并默认和自定义请求头（与 dispatcher.ts 相同模式）
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
 
-    // Parse user-defined custom headers
+    // 解析用户自定义请求头
     const headersJson = preset.value.headers_json?.trim();
     if (headersJson) {
       try {
@@ -192,7 +192,7 @@ async function loadModels() {
           Object.assign(headers, custom);
         }
       } catch {
-        // Non-fatal: custom headers parse failure
+        // 非致命错误：自定义请求头解析失败
       }
     }
 
@@ -213,10 +213,10 @@ async function loadModels() {
 
     const json = await resp.json();
 
-    // Support multiple response formats:
-    // 1. OpenAI standard: { data: [{ id: "model-name" }, ...] }
-    // 2. Plain array: ["model-a", "model-b"]
-    // 3. Array of objects: [{ id: "model-name" }]
+    // 支持多种响应格式：
+    // 1. OpenAI 标准: { data: [{ id: "model-name" }, ...] }
+    // 2. 纯数组: ["model-a", "model-b"]
+    // 3. 对象数组: [{ id: "model-name" }]
     let rawList: string[];
     if (Array.isArray(json.data)) {
       rawList = json.data.map((m: any) => String(m.id ?? m.name ?? '')).filter(Boolean);

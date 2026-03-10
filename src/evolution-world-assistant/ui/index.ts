@@ -2,13 +2,13 @@ import { createScriptIdDiv, teleportStyle } from '@util/script';
 import App from './App.vue';
 import { patchSettings, getSettings } from '../runtime/settings';
 
-// Cache for early FAB visibility — if settings haven't loaded yet, default true
+// 提前判断悬浮球是否可见 —— 如果设置尚未加载，默认为 true
 function shouldShowFab(): boolean {
   try {
     const s = getSettings();
     return s.show_fab !== false;
   } catch {
-    // Settings not ready yet (runtime globals not loaded yet), default to true
+    // 设置未就绪（运行时全局变量尚未加载），默认显示
     return true;
   }
 }
@@ -112,7 +112,7 @@ function uninstallMagicWandMenuItem() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ── FAB (Floating Access Button) — raw DOM, not Vue ──
+// ── 悬浮球（Floating Access Button）—— 原生 DOM，非 Vue ──
 // ═══════════════════════════════════════════════════════════════
 
 function ensureFabStyle(): void {
@@ -203,7 +203,7 @@ function createFab(): void {
   fab.setAttribute('tabindex', '-1');
   fab.setAttribute('inputmode', 'none');
 
-  // Restore saved position or default to bottom-right
+  // 恢复已保存的位置，否则默认右下角
   let vpX: number | null = null;
   let vpY: number | null = null;
 
@@ -224,7 +224,7 @@ function createFab(): void {
     fab.style.bottom = '80px';
   }
 
-  // ── Drag support (matching ST-Manager-STscript pattern) ──
+  // ── 拖拽支持（匹配 ST-Manager-STscript 的模式） ──
   let dragging = false;
   let dragMoved = false;
   let startX = 0;
@@ -282,11 +282,11 @@ function createFab(): void {
     patchSettings({ ui_open: true });
   });
 
-  // Append to <html> to sit above all transformed containers
+  // 追加到 <html> 以覆盖所有带 transform 的容器
   doc.documentElement.appendChild(fab);
 
-  // Trigger pop-in animation via JS to avoid fill-mode: both making element
-  // invisible when CSS animation doesn't fire on first load.
+  // 通过 JS 触发弹入动画，避免 fill-mode: both 在首次加载时
+  // CSS 动画未触发导致元素不可见
   requestAnimationFrame(() => {
     fab.style.animation = 'ew-fab-pop-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both';
   });
@@ -300,8 +300,8 @@ function removeFab(): void {
 }
 
 /**
- * Directly set FAB visibility — matches ST-Manager's approach.
- * No event dispatching, no runtime cache reads, just direct DOM manipulation.
+ * 直接设置悬浮球可见性 —— 匹配 ST-Manager 的做法。
+ * 不派发事件，不读取运行时缓存，直接操作 DOM。
  */
 export function setFabVisibility(visible: boolean): void {
   const doc = resolveParentDocument();
@@ -314,8 +314,8 @@ export function setFabVisibility(visible: boolean): void {
 }
 
 /**
- * Create FAB early—called synchronously from $() before async bootstrap.
- * Does NOT depend on runtime globals (getScriptId/getVariables etc.).
+ * 提前创建悬浮球 —— 在 $() 中同步调用，先于异步 bootstrap。
+ * 不依赖运行时全局变量（getScriptId / getVariables 等）。
  */
 export function mountFabEarly(): void {
   try {
@@ -344,7 +344,7 @@ export function mountUi() {
     toastr.error(`魔法棒菜单挂载失败: ${error instanceof Error ? error.message : String(error)}`, 'Evolution World');
   }
 
-  // FAB should already exist from mountFabEarly(). Re-sync with loaded settings.
+  // 悬浮球应该已经由 mountFabEarly() 创建。根据已加载的设置同步状态。
   const settings = getSettings();
   if (settings.show_fab === false) {
     removeFab();
