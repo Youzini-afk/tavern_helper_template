@@ -19,17 +19,7 @@ const FAB_POS_KEY = '__EW_FAB_POS__';
 const FAB_SIZE = 48;
 
 function resolveParentDocument(): Document {
-  const runtime = globalThis as Record<string, any>;
-  const chatDocument = runtime.SillyTavern?.Chat?.document;
-  if (chatDocument && typeof chatDocument.querySelector === 'function') {
-    return chatDocument as Document;
-  }
-
-  try {
-    return (window.parent && window.parent !== window ? window.parent : window).document;
-  } catch {
-    return document;
-  }
+  return getHostWindow().document;
 }
 
 function getHostWindow(): Window {
@@ -318,30 +308,6 @@ function syncFabVisibility(): void {
   }
 }
 
-let fabRetryTimer: ReturnType<typeof setTimeout> | null = null;
-
-function clearFabRetryTimer() {
-  if (fabRetryTimer) {
-    clearTimeout(fabRetryTimer);
-    fabRetryTimer = null;
-  }
-}
-
-/**
- * Ensure the FAB exists. If it doesn't, create it after a short delay.
- * On first script load (dynamic injection by ST), the DOM might not be
- * fully ready. A deferred creation + periodic re-check covers this.
- */
-function ensureFabExists() {
-  const doc = resolveParentDocument();
-  if (doc.getElementById(FAB_ID)) return; // already exists
-
-  const settings = getSettings();
-  if (settings.show_fab === false) return;
-
-  createFab();
-}
-
 let fabVisibilityListener: (() => void) | null = null;
 
 export function mountUi() {
@@ -363,23 +329,12 @@ export function mountUi() {
     toastr.error(`魔法棒菜单挂载失败: ${error instanceof Error ? error.message : String(error)}`, 'Evolution World');
   }
 
-  // Create FAB immediately, then re-check after delays for first-load timing
+  // Create FAB immediately
   try {
     createFab();
   } catch (error) {
     console.error('[Evolution World] FAB setup failed:', error);
   }
-
-  // Deferred re-check: on first dynamic script load, the immediate create
-  // may fail silently (DOM not ready, parent doc not resolved, etc.).
-  // Schedule re-checks at 1s and 3s to cover various timing scenarios.
-  fabRetryTimer = setTimeout(() => {
-    ensureFabExists();
-    fabRetryTimer = setTimeout(() => {
-      ensureFabExists();
-      fabRetryTimer = null;
-    }, 2000);
-  }, 1000);
 
   fabVisibilityListener = () => syncFabVisibility();
   window.addEventListener('ew:fab-visibility-changed', fabVisibilityListener);
@@ -387,7 +342,6 @@ export function mountUi() {
 
 export function unmountUi() {
   uninstallMagicWandMenuItem();
-  clearFabRetryTimer();
   removeFab();
 
   if (fabVisibilityListener) {
