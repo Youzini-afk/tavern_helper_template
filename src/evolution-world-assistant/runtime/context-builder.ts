@@ -2,6 +2,7 @@ import { FlowRequestV1, FlowRequestSchema } from './contracts';
 import { EwFlowConfig, EwSettings } from './types';
 import { uuidv4 } from './helpers';
 import { resolveTargetWorldbook } from './worldbook-runtime';
+import { renderEjsReadOnly } from './ejs-bridge';
 
 export type BuildRequestInput = {
   settings: EwSettings;
@@ -65,6 +66,12 @@ export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRe
     }
   } catch { /* proceed with empty */ }
 
+  // Save raw EJS source, then render entries in read-only mode.
+  const rawEntries = worldbookEntries.map(e => ({ ...e }));
+  for (const entry of worldbookEntries) {
+    entry.content = await renderEjsReadOnly(entry.content);
+  }
+
   const payload = FlowRequestSchema.parse({
     version: 'ew-flow/v1',
     request_id: requestId,
@@ -87,6 +94,7 @@ export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRe
     worldbook: {
       worldbook_name: worldbookName,
       entries: worldbookEntries,
+      raw_entries: rawEntries,
     },
     character_context: {
       name: characterName,

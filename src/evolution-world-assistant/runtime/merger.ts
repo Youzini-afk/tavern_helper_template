@@ -1,5 +1,6 @@
 import { MergeInput, MergedPlan, Prioritized } from './types';
 import { ControllerModel } from './contracts';
+import { checkEjsSyntax } from './ejs-bridge';
 
 function comparePriority(lhs: { priority: number; flow_order: number }, rhs: { priority: number; flow_order: number }): number {
   if (lhs.priority !== rhs.priority) {
@@ -105,13 +106,24 @@ export function mergeFlowResults(results: MergeInput): MergedPlan {
     console.warn('[EW Merger] No flow returned controller_model — using empty fallback.');
   }
 
+  const desiredEntries = [...desiredMap.entries()].map(([name, value]) => ({
+    name,
+    content: value.value.content,
+    enabled: value.value.enabled,
+  }));
+
+  // EJS syntax validation: warn (but do not block) on malformed EJS in entries.
+  for (const entry of desiredEntries) {
+    const err = checkEjsSyntax(entry.content);
+    if (err) {
+      console.warn(`[EW Merger] EJS syntax error in entry "${entry.name}":`, err);
+      try { (globalThis as any).toastr?.warning(`EJS 语法错误: ${entry.name}`, 'Evolution World'); } catch { /* noop */ }
+    }
+  }
+
   return {
     worldbook: {
-      desired_entries: [...desiredMap.entries()].map(([name, value]) => ({
-        name,
-        content: value.value.content,
-        enabled: value.value.enabled,
-      })),
+      desired_entries: desiredEntries,
       remove_entries: [...removeMap.keys()].map(name => ({ name })),
     },
     controller_model: controllerModel ? controllerModel.value : fallbackController,

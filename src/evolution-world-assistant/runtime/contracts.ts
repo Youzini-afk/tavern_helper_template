@@ -61,6 +61,15 @@ export const FlowRequestSchema = z.object({
         }),
       )
       .default([]),
+    raw_entries: z
+      .array(
+        z.object({
+          name: z.string().min(1),
+          enabled: z.boolean().default(true),
+          content: z.string().default(''),
+        }),
+      )
+      .optional(),
   }),
   character_context: z
     .object({

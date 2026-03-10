@@ -149,7 +149,7 @@ async function executeFlowViaLlmConnector(
     throw new Error(`[${flow.id}] generateRaw is unavailable`);
   }
 
-  const orderedPrompts = assembleOrderedPrompts(flow.prompt_order, components);
+  const orderedPrompts = await assembleOrderedPrompts(flow.prompt_order, components);
   orderedPrompts.push({ role: 'system', content: LLM_WORKFLOW_SYSTEM_PROMPT });
   orderedPrompts.push({ role: 'user', content: JSON.stringify(body, null, 2) });
 
@@ -189,7 +189,7 @@ async function executeFlowViaStBackend(
     throw new Error(`[${flow.id}] model is empty`);
   }
 
-  const orderedPrompts = assembleOrderedPrompts(flow.prompt_order, components);
+  const orderedPrompts = await assembleOrderedPrompts(flow.prompt_order, components);
   orderedPrompts.push({ role: 'system', content: LLM_WORKFLOW_SYSTEM_PROMPT });
   orderedPrompts.push({ role: 'user', content: JSON.stringify(body, null, 2) });
 

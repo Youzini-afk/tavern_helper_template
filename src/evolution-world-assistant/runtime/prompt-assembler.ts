@@ -1,4 +1,5 @@
 import type { EwFlowConfig, EwPromptOrderEntry } from './types';
+import { renderEjsContent } from './ejs-bridge';
 
 // SillyTavern globals available at runtime in extension context
 declare function getCharacterCardFields(): {
@@ -175,10 +176,10 @@ type AssembledMessage = { role: 'system' | 'user' | 'assistant'; content: string
  * Supports injection_position='in_chat' + injection_depth for prompts
  * that should be inserted at a specific depth inside the chat history.
  */
-export function assembleOrderedPrompts(
+export async function assembleOrderedPrompts(
   promptOrder: EwPromptOrderEntry[],
   components: PromptComponents,
-): AssembledMessage[] {
+): Promise<AssembledMessage[]> {
   const result: AssembledMessage[] = [];
   // Deferred injections: prompts with in_chat position that go inside chat history
   const deferredInjections: Array<{ content: string; role: 'system' | 'user' | 'assistant'; depth: number }> = [];
@@ -190,9 +191,10 @@ export function assembleOrderedPrompts(
     // Defer in_chat injections — they'll be inserted after chat history is placed
     if (entry.injection_position === 'in_chat' && entry.identifier !== 'chatHistory') {
       if (entry.type === 'prompt' && entry.content.trim()) {
-        deferredInjections.push({ content: entry.content, role: entry.role, depth: entry.injection_depth });
+        const rendered = await renderEjsContent(entry.content);
+        deferredInjections.push({ content: rendered, role: entry.role, depth: entry.injection_depth });
       } else if (entry.type === 'marker') {
-        const content = resolveMarkerContent(entry.identifier, components);
+        const content = await renderEjsContent(resolveMarkerContent(entry.identifier, components));
         if (content.trim()) {
           deferredInjections.push({ content, role: entry.role, depth: entry.injection_depth });
         }
@@ -213,15 +215,16 @@ export function assembleOrderedPrompts(
         continue;
       }
 
-      const content = resolveMarkerContent(entry.identifier, components);
+      const content = await renderEjsContent(resolveMarkerContent(entry.identifier, components));
       if (content.trim()) {
         result.push({ role: entry.role, content });
       }
     } else {
       // User-editable prompt — use entry.content, fallback to marker for 'main'
-      const content = entry.content.trim()
+      const raw = entry.content.trim()
         || (entry.identifier === 'main' ? components.main : '');
-      if (content.trim()) {
+      if (raw.trim()) {
+        const content = await renderEjsContent(raw);
         result.push({ role: entry.role, content });
       }
     }
