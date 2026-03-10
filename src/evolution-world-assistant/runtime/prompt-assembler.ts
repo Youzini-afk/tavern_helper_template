@@ -1,5 +1,6 @@
 import type { EwFlowConfig, EwPromptOrderEntry } from './types';
 import { renderEjsContent } from './ejs-bridge';
+import { collectLatestSnapshots } from './floor-binding';
 
 // SillyTavern globals available at runtime in extension context
 declare function getCharacterCardFields(): {
@@ -288,5 +289,56 @@ function resolveMarkerContent(identifier: string, components: PromptComponents):
     case 'dialogueExamples':   return components.dialogueExamples;
     case 'postHistoryInstructions': return components.jailbreak;
     default:                   return '';
+  }
+}
+
+// ── Entry Name Injection ─────────────────────────────────────
+
+/**
+ * Inject EW entry names into assembled prompt messages via content matching.
+ *
+ * Uses the latest snapshot data (Controller + Dyn entries) to find their
+ * content in the assembled messages and prepend `[entry_name]` labels.
+ * This lets the AI identify which EW worldbook entry each content block
+ * belongs to.
+ *
+ * @param messages  The assembled prompt messages (mutated in place)
+ * @param controllerEntryName  The name of the Controller entry (from settings)
+ */
+export async function injectEntryNames(
+  messages: AssembledMessage[],
+  controllerEntryName: string,
+): Promise<void> {
+  const { controller, dyn } = await collectLatestSnapshots();
+
+  // Build a list of { name, content } to match, sorted by content length descending
+  // (longer content first to avoid partial substring matches).
+  const matchTargets: Array<{ name: string; content: string }> = [];
+
+  if (controller && controller.trim()) {
+    matchTargets.push({ name: controllerEntryName, content: controller });
+  }
+
+  for (const snap of dyn.values()) {
+    if (snap.content && snap.content.trim()) {
+      matchTargets.push({ name: snap.name, content: snap.content });
+    }
+  }
+
+  // Sort longest first for greedy matching.
+  matchTargets.sort((a, b) => b.content.length - a.content.length);
+
+  if (matchTargets.length === 0) return;
+
+  // Scan each message and prepend entry names where content matches.
+  for (const msg of messages) {
+    for (const target of matchTargets) {
+      if (msg.content.includes(target.content)) {
+        msg.content = msg.content.replace(
+          target.content,
+          `[${target.name}]\n${target.content}`,
+        );
+      }
+    }
   }
 }

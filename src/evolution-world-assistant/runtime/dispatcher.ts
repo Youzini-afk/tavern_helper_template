@@ -1,6 +1,6 @@
 import { buildFlowRequest } from './context-builder';
 import { FlowResponseSchema } from './contracts';
-import { collectPromptComponents, assembleOrderedPrompts, PromptComponents } from './prompt-assembler';
+import { collectPromptComponents, assembleOrderedPrompts, injectEntryNames, PromptComponents } from './prompt-assembler';
 import { DispatchFlowAttempt, DispatchFlowResult, EwApiPreset, EwFlowConfig, EwSettings } from './types';
 
 type DispatchInput = {
@@ -143,12 +143,14 @@ async function executeFlowViaLlmConnector(
   flow: EwFlowConfig,
   body: Record<string, any>,
   components: PromptComponents,
+  controllerEntryName: string,
 ): Promise<NonNullable<DispatchFlowAttempt['response']>> {
   if (typeof generateRaw !== 'function') {
     throw new Error(`[${flow.id}] generateRaw is unavailable`);
   }
 
   const orderedPrompts = await assembleOrderedPrompts(flow.prompt_order, components);
+  await injectEntryNames(orderedPrompts, controllerEntryName);
   orderedPrompts.push({ role: 'system', content: LLM_WORKFLOW_SYSTEM_PROMPT });
   orderedPrompts.push({ role: 'user', content: JSON.stringify(body, null, 2) });
 
@@ -180,6 +182,7 @@ async function executeFlowViaStBackend(
   apiPreset: EwApiPreset,
   body: Record<string, any>,
   components: PromptComponents,
+  controllerEntryName: string,
 ): Promise<NonNullable<DispatchFlowAttempt['response']>> {
   if (!apiPreset.api_url.trim()) {
     throw new Error(`[${flow.id}] custom api_url is empty`);
@@ -189,6 +192,7 @@ async function executeFlowViaStBackend(
   }
 
   const orderedPrompts = await assembleOrderedPrompts(flow.prompt_order, components);
+  await injectEntryNames(orderedPrompts, controllerEntryName);
   orderedPrompts.push({ role: 'system', content: LLM_WORKFLOW_SYSTEM_PROMPT });
   orderedPrompts.push({ role: 'user', content: JSON.stringify(body, null, 2) });
 
@@ -296,10 +300,10 @@ async function executeFlow(
 
     if (usesTavernMain) {
       // 主 API：通过 TavernHelper.generateRaw，使用酒馆当前配置
-      response = await executeFlowViaLlmConnector(flow, body, promptComponents);
+      response = await executeFlowViaLlmConnector(flow, body, promptComponents, settings.controller_entry_name);
     } else {
       // 自定义 API：通过 ST 后端代理，完全控制参数
-      response = await executeFlowViaStBackend(flow, apiPreset, body, promptComponents);
+      response = await executeFlowViaStBackend(flow, apiPreset, body, promptComponents, settings.controller_entry_name);
     }
 
     return {

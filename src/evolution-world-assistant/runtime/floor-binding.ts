@@ -13,7 +13,7 @@ const EW_CONTROLLER_DATA_KEY = 'ew_controller';
 const EW_DYN_SNAPSHOTS_KEY = 'ew_dyn_snapshots';
 const EW_SNAPSHOT_FILE_KEY = 'ew_snapshot_file';
 
-type DynSnapshot = { name: string; content: string; enabled: boolean };
+export type DynSnapshot = { name: string; content: string; enabled: boolean };
 
 const floorBindingListenerStops: EventOnReturn[] = [];
 
@@ -119,7 +119,7 @@ export function getFloorEntryNames(messageId: number): string[] {
  * mixed-mode chats work correctly (e.g. user switched mode mid-chat).
  * The latest snapshot (by message position) wins.
  */
-async function collectLatestSnapshots(): Promise<{
+export async function collectLatestSnapshots(): Promise<{
   controller: string | null;
   dyn: Map<string, DynSnapshot>;
 }> {
