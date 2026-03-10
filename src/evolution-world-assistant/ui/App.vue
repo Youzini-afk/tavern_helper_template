@@ -371,6 +371,7 @@
 
 <script setup lang="ts">
 import type { EwApiPreset, EwFlowConfig } from '../runtime/types';
+import { patchSettings } from '../runtime/settings';
 import { runFullHideCheck, unhideAll, applyFloorLimit } from '../runtime/hide-engine';
 import EwApiPresetCard from './components/EwApiPresetCard.vue';
 import EwFieldRow from './components/EwFieldRow.vue';
@@ -390,6 +391,9 @@ const flowImportRef = ref<HTMLInputElement | null>(null);
 const migratingSnapshots = ref(false);
 
 function emitFabChanged() {
+  // Sync Vue store's show_fab value to runtime settings cache,
+  // so syncFabVisibility() → getSettings() sees the updated value.
+  patchSettings({ show_fab: store.settings.show_fab });
   window.dispatchEvent(new Event('ew:fab-visibility-changed'));
 }
 
