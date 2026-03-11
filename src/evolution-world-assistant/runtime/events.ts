@@ -151,6 +151,16 @@ function resolveFallbackWorkflowUserInput(generationType: string): string {
   return '';
 }
 
+function resolveAfterReplyUserInput(): string {
+  const runtimeState = getRuntimeState();
+  return firstNonEmptyText(
+    runtimeState.after_reply.pending_user_input,
+    runtimeState.last_send?.user_input,
+    runtimeState.last_send_intent?.user_input,
+    getLatestUserMessageText(),
+  );
+}
+
 function installSendIntentHooks() {
   for (const cleanup of domCleanup.splice(0, domCleanup.length)) {
     cleanup();
@@ -695,11 +705,13 @@ async function onAfterReplyMessage(messageId: number, type: string, source: 'mes
 
   const runtimeState = getRuntimeState();
   const generationType = runtimeState.after_reply.pending_generation_type || runtimeState.last_generation?.type || type;
+  const userInput = resolveAfterReplyUserInput();
 
   setProcessing(true);
   try {
     await executeWorkflowWithPolicy(settings, {
       messageId,
+      userInput,
       injectReply: false,
       trigger: {
         timing: 'after_reply',
@@ -746,11 +758,13 @@ export async function rerollCurrentAfterReplyWorkflow(): Promise<{ ok: boolean; 
 
   const runtimeState = getRuntimeState();
   const generationType = runtimeState.last_generation?.type || 'manual';
+  const userInput = resolveAfterReplyUserInput();
 
   setProcessing(true);
   try {
     const outcome = await executeWorkflowWithPolicy(settings, {
       messageId,
+      userInput,
       injectReply: false,
       trigger: {
         timing: 'after_reply',

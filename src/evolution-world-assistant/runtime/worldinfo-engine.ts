@@ -16,6 +16,7 @@
  */
 
 import { createRenderContext, evalEjsTemplate } from './ejs-internal';
+import { isMvuTaggedWorldInfoComment } from './mvu-compat';
 import { EwSettings } from './types';
 
 // ---------------------------------------------------------------------------
@@ -159,16 +160,6 @@ declare function getLorebookEntries(name: string): Promise<Array<{ uid: number; 
 declare function getCharWorldbookNames(target: 'current'): { primary: string | null; additional: string[] };
 declare function getGlobalWorldbookNames(): string[];
 declare const SillyTavern: { getContext(): Record<string, any> } | undefined;
-
-const MVU_COMMENT_REGEX = /\[(mvu_update|mvu_plot|initvar)\]/i;
-const MVU_CONTENT_MARKERS = [
-  '<status_current_variable>',
-  '<updatevariable>',
-  '<statusplaceholderimpl/>',
-  '<initvar>',
-  'mvu_variableupdate',
-  'mvu_updateround',
-];
 
 function getStContext(): Record<string, any> {
   try {
@@ -337,21 +328,8 @@ function normalizeEntry(raw: RawWbEntry, worldbookName: string): NormalizedEntry
   };
 }
 
-function hasMvuContentMarker(value: string): boolean {
-  const lowered = value.toLowerCase();
-  return MVU_CONTENT_MARKERS.some(marker => lowered.includes(marker));
-}
-
 function shouldIgnoreForWorkflow(entry: NormalizedEntry): boolean {
-  if (MVU_COMMENT_REGEX.test(entry.comment)) {
-    return true;
-  }
-
-  if (hasMvuContentMarker(entry.name)) {
-    return true;
-  }
-
-  return hasMvuContentMarker(entry.cleanContent || entry.content);
+  return isMvuTaggedWorldInfoComment(entry.comment);
 }
 
 // ---------------------------------------------------------------------------

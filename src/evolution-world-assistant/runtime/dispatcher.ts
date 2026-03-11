@@ -84,13 +84,24 @@ function throwIfDispatchAborted(signal?: AbortSignal, isCancelled?: () => boolea
   }
 }
 
+function buildTemplateContext(base: Record<string, any>): Record<string, any> {
+  const userInput = typeof base.user_input === 'string' ? base.user_input : '';
+  return _.merge({}, base, {
+    lastUserMessage: userInput,
+    last_user_message: userInput,
+    userInput,
+  });
+}
+
 function applyTemplate(base: Record<string, any>, templateText: string): Record<string, any> {
   if (!templateText.trim()) {
     return base;
   }
 
+  const templateContext = buildTemplateContext(base);
+
   const replaced = templateText.replace(/\{\{\s*([a-zA-Z0-9_.$]+)\s*\}\}/g, (_match, path) => {
-    const value = _.get(base, path);
+    const value = _.get(templateContext, path);
     if (_.isPlainObject(value) || Array.isArray(value)) {
       return JSON.stringify(value);
     }

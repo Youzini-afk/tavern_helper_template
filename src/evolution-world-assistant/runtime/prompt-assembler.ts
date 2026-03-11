@@ -1,4 +1,5 @@
 ﻿import { renderEjsContent } from './ejs-internal';
+import { stripMvuPromptArtifacts } from './mvu-compat';
 import { applyTavernRegex } from './regex-engine';
 import type { EwFlowConfig, EwPromptOrderEntry, EwSettings } from './types';
 import { resolveWorldInfo, type ResolvedWiEntry } from './worldinfo-engine';
@@ -346,16 +347,8 @@ function appendDiagnosticNote(
   };
 }
 
-function shouldIgnoreWorkflowExtensionPrompt(content: string): boolean {
-  const lowered = content.toLowerCase();
-  return [
-    '<status_current_variable>',
-    '<updatevariable>',
-    '<statusplaceholderimpl/>',
-    '<initvar>',
-    'mvu_variableupdate',
-    'mvu_updateround',
-  ].some(marker => lowered.includes(marker));
+function sanitizeWorkflowExtensionPrompt(content: string): string {
+  return stripMvuPromptArtifacts(content);
 }
 
 function formatAttempt(attempt: PromptDiagnosticAttempt): string {
@@ -714,33 +707,32 @@ export async function collectPromptComponents(flow: EwFlowConfig, settings?: EwS
       for (const [, prompt] of Object.entries(extPrompts)) {
         const p = prompt as any;
         if (!p || typeof p.value !== 'string' || !p.value.trim()) continue;
-        if (shouldIgnoreWorkflowExtensionPrompt(p.value)) continue;
+
+        const sanitizedPromptValue = sanitizeWorkflowExtensionPrompt(p.value);
+        if (!sanitizedPromptValue) continue;
 
         const role = roleMap[p.role] ?? 'system';
 
         switch (p.position) {
           case 0: // IN_PROMPT — in the prompt area (near character definitions)
-            promptAreaEntries.push({ content: p.value.trim(), label: 'ExtPrompt(IN_PROMPT)' });
+            promptAreaEntries.push({ content: sanitizedPromptValue, label: 'ExtPrompt(IN_PROMPT)' });
             break;
           case 1: // IN_CHAT — depth-based injection into chat history
             components.depthInjections.push({
-              content: p.value.trim(),
+              content: sanitizedPromptValue,
               depth: typeof p.depth === 'number' ? p.depth : 0,
               role,
             });
             break;
           case 2: // BEFORE_PROMPT — before all other prompts
-            // Keep host-side BEFORE_PROMPT content inside EW's prompt order instead of
-            // prepending it out-of-band, otherwise worldbook-derived content can appear
-            // earlier than the user-configured marker position.
-            promptAreaEntries.push({ content: p.value.trim(), label: 'ExtPrompt(BEFORE_PROMPT)' });
+            components.beforePromptInjections.push(sanitizedPromptValue);
             break;
           // NONE (-1) is intentionally ignored
         }
       }
 
-      // Host prompt injections that belong to the prompt area are folded into
-      // worldInfoBefore so they respect the user's prompt_order placement.
+      // Host IN_PROMPT injections belong to the prompt area near character definitions,
+      // so fold them into worldInfoBefore to respect the user's marker placement.
       if (promptAreaEntries.length) {
         for (const promptEntry of promptAreaEntries) {
           components.worldInfoBefore.push({
@@ -768,6 +760,13 @@ export async function collectPromptComponents(flow: EwFlowConfig, settings?: EwS
             ? `${components.diagnostics.worldInfoBefore.note}; 追加了 ${promptAreaEntries.length} 条 prompt-area 扩展提示词`
             : `追加了 ${promptAreaEntries.length} 条 prompt-area 扩展提示词`,
         };
+      }
+
+      if (components.beforePromptInjections.length) {
+        components.diagnostics.worldInfoBefore = appendDiagnosticNote(
+          components.diagnostics.worldInfoBefore,
+          `检测到 ${components.beforePromptInjections.length} 条 BEFORE_PROMPT 扩展提示词，已放到请求最前面`,
+        );
       }
     }
   } catch (e) {
@@ -852,6 +851,12 @@ export async function assembleOrderedPrompts(
   // Deferred injections: prompts with in_chat position that go inside chat history
   const deferredInjections: Array<{ content: string; role: 'system' | 'user' | 'assistant'; depth: number }> = [];
   let chatHistoryStartIdx = -1;
+
+  for (const content of components.beforePromptInjections) {
+    if (content.trim()) {
+      result.push({ role: 'system', content });
+    }
+  }
 
   for (const entry of promptOrder) {
     if (!entry.enabled) continue;
