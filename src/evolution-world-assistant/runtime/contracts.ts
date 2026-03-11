@@ -85,11 +85,37 @@ export const ControllerRuleSchema = z.object({
   include_entries: z.array(z.string().min(1)).default([]),
 });
 
+export const ControllerSetVarSchema = z.object({
+  key: z.string().min(1),
+  value: z.any(),
+  scope: z.enum(['local', 'global', 'message']).default('local'),
+});
+
+export const ControllerActivateSchema = z.object({
+  world: z.string().optional(),
+  entry: z.string().min(1),
+});
+
+export const ControllerCharDetectionSchema = z.object({
+  alias_map: z.record(z.string(), z.string()).default({}),
+  scene_var: z.string().optional(),
+  scan_messages: z.number().int().min(0).default(1),
+  entry_patterns: z.array(z.string().min(1)).default(['{name}']),
+});
+
 export const ControllerModelSchema = z.object({
   template_id: z.literal('entry_selector_v1'),
+  // 现有字段
   variables: z.array(ControllerVariableSchema).default([]),
   rules: z.array(ControllerRuleSchema).default([]),
   fallback_entries: z.array(z.string().min(1)).default([]),
+  // 新增字段
+  decorators: z.array(z.string().min(1)).default([]),
+  skip_floor_zero: z.boolean().default(false),
+  set_variables: z.array(ControllerSetVarSchema).default([]),
+  activate_entries: z.array(ControllerActivateSchema).default([]),
+  inject_text: z.array(z.string()).default([]),
+  char_detection: ControllerCharDetectionSchema.optional(),
 });
 
 export const FlowResponseSchema = z.object({

@@ -136,7 +136,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
 
     const mergedPlan = mergeFlowResults(results, settings);
     throwIfWorkflowCancelled(input);
-    const controllerTemplate = await renderControllerTemplate(mergedPlan.controller_model);
+    const controllerTemplate = await renderControllerTemplate(mergedPlan.controller_model, settings.dynamic_entry_prefix);
     throwIfWorkflowCancelled(input);
 
     const commitResult = await commitMergedPlan(settings, mergedPlan, controllerTemplate, requestId, input.message_id);
