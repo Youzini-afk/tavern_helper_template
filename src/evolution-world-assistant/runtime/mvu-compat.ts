@@ -10,6 +10,8 @@ const MVU_STATUS_CURRENT_VARIABLE_REPLACE_REGEX =
 const MVU_STATUS_CURRENT_VARIABLE_DETECT_REGEX = /<status_current_variables?>[\s\S]*?<\/status_current_variables?>/i;
 const MVU_VARIABLE_OUTPUT_ENTRY_REGEX = /变量输出格式:\s*[\s\S]*?<UpdateVariable>/i;
 const MVU_VARIABLE_RULES_ENTRY_REGEX = /变量更新规则:\s*[\s\S]*?(?:type:\s*|check:\s*|当前时间:|近期事务:)/i;
+const MVU_FORMAT_EMPHASIS_ENTRY_REGEX =
+  /(?:变量输出格式强调|格式强调[：:]?-?变量更新规则|格式强调[：:]?-?剧情演绎|The following must be inserted to the end of (?:each )?reply,? and cannot be omitted)[\s\S]*?format:\s*\|-?/i;
 
 export function isMvuTaggedWorldInfoComment(comment: string): boolean {
   return MVU_ENTRY_COMMENT_REGEX.test(comment);
@@ -32,7 +34,8 @@ export function isLikelyMvuWorldInfoContent(content: string): boolean {
   return (
     MVU_STATUS_CURRENT_VARIABLE_DETECT_REGEX.test(normalized) ||
     MVU_VARIABLE_OUTPUT_ENTRY_REGEX.test(normalized) ||
-    MVU_VARIABLE_RULES_ENTRY_REGEX.test(normalized)
+    MVU_VARIABLE_RULES_ENTRY_REGEX.test(normalized) ||
+    MVU_FORMAT_EMPHASIS_ENTRY_REGEX.test(normalized)
   );
 }
 
