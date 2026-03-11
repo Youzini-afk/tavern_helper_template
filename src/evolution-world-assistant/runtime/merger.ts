@@ -1,8 +1,11 @@
-import { EwSettings, MergeInput, MergedPlan, Prioritized } from './types';
 import { ControllerModel } from './contracts';
 import { checkEjsSyntax } from './ejs-internal';
+import { EwSettings, MergeInput, MergedPlan, Prioritized } from './types';
 
-function comparePriority(lhs: { priority: number; flow_order: number }, rhs: { priority: number; flow_order: number }): number {
+function comparePriority(
+  lhs: { priority: number; flow_order: number },
+  rhs: { priority: number; flow_order: number },
+): number {
   if (lhs.priority !== rhs.priority) {
     return rhs.priority - lhs.priority;
   }
@@ -54,7 +57,11 @@ export function mergeFlowResults(results: MergeInput, settings: EwSettings): Mer
     const worldbookOps = result.response.operations.worldbook;
 
     for (const desired of worldbookOps.desired_entries) {
-      const normalizedName = normalizeEntryName(desired.name, settings.dynamic_entry_prefix, settings.controller_entry_name);
+      const normalizedName = normalizeEntryName(
+        desired.name,
+        settings.dynamic_entry_prefix,
+        settings.controller_entry_name,
+      );
       const next: Prioritized<{ content: string; enabled: boolean }> = {
         value: { content: desired.content, enabled: desired.enabled },
         priority,
@@ -67,7 +74,11 @@ export function mergeFlowResults(results: MergeInput, settings: EwSettings): Mer
     }
 
     for (const removal of worldbookOps.remove_entries) {
-      const normalizedName = normalizeEntryName(removal.name, settings.dynamic_entry_prefix, settings.controller_entry_name);
+      const normalizedName = normalizeEntryName(
+        removal.name,
+        settings.dynamic_entry_prefix,
+        settings.controller_entry_name,
+      );
       const next: Prioritized<null> = { value: null, priority, flow_order: flowOrder };
       const current = removeMap.get(normalizedName);
       if (shouldReplace(current, next)) {
@@ -129,7 +140,11 @@ export function mergeFlowResults(results: MergeInput, settings: EwSettings): Mer
     const err = checkEjsSyntax(entry.content);
     if (err) {
       console.warn(`[EW Merger] EJS syntax error in entry "${entry.name}":`, err);
-      try { (globalThis as any).toastr?.warning(`EJS 语法错误: ${entry.name}`, 'Evolution World'); } catch { /* noop */ }
+      try {
+        (globalThis as any).toastr?.warning(`EJS 语法错误: ${entry.name}`, 'Evolution World');
+      } catch {
+        /* noop */
+      }
     }
   }
 
@@ -141,6 +156,10 @@ export function mergeFlowResults(results: MergeInput, settings: EwSettings): Mer
     fallback_entries: rawControllerModel.fallback_entries.map(name =>
       normalizeEntryName(name, settings.dynamic_entry_prefix, settings.controller_entry_name),
     ),
+    activate_entries: (rawControllerModel.activate_entries ?? []).map(entry => ({
+      ...entry,
+      entry: normalizeEntryName(entry.entry, settings.dynamic_entry_prefix, settings.controller_entry_name),
+    })),
     rules: rawControllerModel.rules.map(rule => ({
       ...rule,
       include_entries: rule.include_entries.map(name =>

@@ -257,8 +257,8 @@ function parseDecorators(content: string): { decorators: string[]; cleanContent:
 
 const SPECIAL_NAME_MARKERS = ['[GENERATE:', '[RENDER:', '@INJECT', '[InitialVariables]'];
 
-function isSpecialEntryByName(name: string): boolean {
-  return SPECIAL_NAME_MARKERS.some(marker => name.includes(marker));
+function isSpecialEntryByComment(comment: string): boolean {
+  return SPECIAL_NAME_MARKERS.some(marker => comment.includes(marker));
 }
 
 // ---------------------------------------------------------------------------
@@ -463,7 +463,7 @@ function selectActivatedEntries(entries: NormalizedEntry[], trigger: string): No
     if (entry.decorators.some(d => specialDecorators.includes(d))) continue;
 
     // Fix #6: Special entry name markers
-    if (isSpecialEntryByName(entry.name)) continue;
+    if (isSpecialEntryByComment(entry.comment)) continue;
 
     // Primary keyword matching (Fix #1: substituteParams before match)
     if (entry.keys.length === 0) continue;
@@ -758,6 +758,7 @@ export async function resolveWorldInfo(_settings: EwSettings, chatMessages: stri
     // 4. Build render context (for EJS getwi calls)
     const allForGetwi = allEntries.map(e => ({
       name: e.name,
+      comment: e.comment,
       content: e.cleanContent || e.content,
       worldbook: e.worldbook,
     }));
@@ -767,9 +768,12 @@ export async function resolveWorldInfo(_settings: EwSettings, chatMessages: stri
     for (const entry of activated) {
       const contentToRender = entry.cleanContent || entry.content;
       let rendered: string;
+      renderCtx.pulledEntries.clear();
 
       try {
-        rendered = await evalEjsTemplate(contentToRender, renderCtx);
+        rendered = await evalEjsTemplate(contentToRender, renderCtx, {
+          world_info: { comment: entry.comment || entry.name, name: entry.name, world: entry.worldbook },
+        });
       } catch (e) {
         console.warn(`[EW WI Engine] EJS render failed for entry '${entry.name}':`, e);
         rendered = contentToRender;
@@ -779,6 +783,34 @@ export async function resolveWorldInfo(_settings: EwSettings, chatMessages: stri
       if (!rendered.trim()) continue;
 
       const bucket = classifyPosition(entry);
+      const targetBucket = result[bucket];
+
+      if (entry.name === _settings.controller_entry_name) {
+        const rawControllerEntry: ResolvedWiEntry = {
+          name: entry.name,
+          content: contentToRender,
+          role: roleMap[entry.role] ?? 'system',
+          position: entry.position,
+          depth: entry.depth,
+          order: entry.order,
+        };
+        targetBucket.push(rawControllerEntry);
+
+        for (const pulled of renderCtx.pulledEntries.values()) {
+          if (!pulled.content.trim()) continue;
+          if (pulled.worldbook === entry.worldbook && pulled.name === entry.name) continue;
+          targetBucket.push({
+            name: pulled.comment || pulled.name,
+            content: pulled.content,
+            role: roleMap[entry.role] ?? 'system',
+            position: entry.position,
+            depth: entry.depth,
+            order: entry.order,
+          });
+        }
+        continue;
+      }
+
       const resolvedEntry: ResolvedWiEntry = {
         name: entry.name,
         content: rendered,
@@ -787,7 +819,7 @@ export async function resolveWorldInfo(_settings: EwSettings, chatMessages: stri
         depth: entry.depth,
         order: entry.order,
       };
-      result[bucket].push(resolvedEntry);
+      targetBucket.push(resolvedEntry);
     }
   } catch (e) {
     console.error('[EW WI Engine] resolveWorldInfo failed:', e);

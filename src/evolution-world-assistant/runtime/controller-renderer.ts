@@ -82,9 +82,9 @@ function renderCharDetection(model: ControllerModel, dynPrefix: string): string 
   // 从消息文本扫描（分别获取用户和AI最后消息，与原始脚本一致）
   if (scanDepth > 0) {
     code += `var _ewUserMsgs = getChatMessages(-${scanDepth}, -1, 'user');\n`;
-    code += `var _ewUserText = _ewUserMsgs.length > 0 ? _ewUserMsgs[_ewUserMsgs.length - 1].message : '';\n`;
+    code += `var _ewUserText = _ewUserMsgs.length > 0 ? String(_ewUserMsgs[_ewUserMsgs.length - 1] || '') : '';\n`;
     code += `var _ewCharMsgs = getChatMessages(-${scanDepth}, -1, 'assistant');\n`;
-    code += `var _ewCharText = _ewCharMsgs.length > 0 ? _ewCharMsgs[_ewCharMsgs.length - 1].message : '';\n`;
+    code += `var _ewCharText = _ewCharMsgs.length > 0 ? String(_ewCharMsgs[_ewCharMsgs.length - 1] || '') : '';\n`;
     code += `var _ewScanText = _ewUserText + '\\n' + _ewCharText;\n`;
     code += `for (var _alias of Object.keys(_ewAliasMap)) {\n`;
     code += `  if (_ewScanText.includes(_alias)) _ewDetected.add(_ewAliasMap[_alias]);\n`;
@@ -200,10 +200,7 @@ export async function validateEjsTemplate(content: string): Promise<void> {
 // 主渲染入口
 // ────────────────────────────────────────────────────
 
-export async function renderControllerTemplate(
-  model: ControllerModel,
-  dynPrefix: string = 'EW/Dyn/',
-): Promise<string> {
+export async function renderControllerTemplate(model: ControllerModel, dynPrefix: string = 'EW/Dyn/'): Promise<string> {
   if (model.template_id !== 'entry_selector_v1') {
     throw new Error(`unsupported controller template: ${model.template_id}`);
   }
@@ -233,8 +230,7 @@ export async function renderControllerTemplate(
   // skip_floor_zero 包裹
   if (model.skip_floor_zero) {
     const wrapped =
-      `<%\nvar _ewFloorMsgs = getChatMessages(-1);\n` +
-      `var _ewIsFloorZero = _ewFloorMsgs.length > 0 && _ewFloorMsgs[0].message_id === 0;\n` +
+      `<%\nvar _ewIsFloorZero = lastMessageId === 0;\n` +
       `%>\n` +
       `<% if (!_ewIsFloorZero) { %>\n` +
       body +
