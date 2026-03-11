@@ -1,3 +1,24 @@
+import { readCharFlows, writeCharFlows } from '../runtime/char-flows';
+import { createDefaultApiPreset, createDefaultFlow } from '../runtime/factory';
+import {
+  collectAllFloorSnapshots,
+  collectLatestSnapshots,
+  rollbackToFloor,
+  type DynSnapshot,
+  type FloorSnapshot,
+} from '../runtime/floor-binding';
+import { runWorkflow } from '../runtime/pipeline';
+import { previewPrompt, type PromptPreviewMessage } from '../runtime/prompt-assembler';
+import {
+  getLastIo,
+  getLastRun,
+  getSettings,
+  patchSettings,
+  replaceSettings,
+  subscribeLastIo,
+  subscribeLastRun,
+  subscribeSettings,
+} from '../runtime/settings';
 import {
   EwFlowConfig,
   EwFlowConfigSchema,
@@ -6,32 +27,9 @@ import {
   LastIoSummary,
   RunSummary,
 } from '../runtime/types';
-import { createDefaultApiPreset, createDefaultFlow } from '../runtime/factory';
-import { isSillyTavernPreset, convertStPresetToFlow } from './convertStPreset';
-import { readCharFlows, writeCharFlows } from '../runtime/char-flows';
+import { convertStPresetToFlow, isSillyTavernPreset } from './convertStPreset';
 import type { TabKey } from './help-meta';
-import {
-  getLastIo,
-  getSettings,
-  getLastRun,
-  patchSettings,
-  replaceSettings,
-  subscribeLastIo,
-  subscribeLastRun,
-  subscribeSettings,
-} from '../runtime/settings';
-import { runWorkflow } from '../runtime/pipeline';
 import { showEwNotice } from './notice';
-import { previewPrompt, type AssembledMessage } from '../runtime/prompt-assembler';
-import {
-  collectLatestSnapshots,
-  collectAllFloorSnapshots,
-  rollbackToFloor,
-  type DynSnapshot,
-  type FloorSnapshot,
-} from '../runtime/floor-binding';
-
-
 
 export const useEwStore = defineStore('evolution-world-store', () => {
   const settings = ref<EwSettings>(getSettings());
@@ -51,7 +49,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   const charFlowsLoading = ref(false);
 
   // ── 调试预览 ──
-  const promptPreview = ref<AssembledMessage[] | null>(null);
+  const promptPreview = ref<PromptPreviewMessage[] | null>(null);
   const snapshotPreview = ref<{ controller: string | null; dyn: Map<string, DynSnapshot> } | null>(null);
   const previewFlowId = ref<string>('');
 
@@ -368,9 +366,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
       } else if (isSillyTavernPreset(parsed)) {
         // ── ST 预设 → 转换为单个 flow ──
         const flowName = filename?.replace(/\.json$/i, '') || 'ST Preset';
-        const flow = EwFlowConfigSchema.parse(
-          convertStPresetToFlow(parsed, flowName),
-        );
+        const flow = EwFlowConfigSchema.parse(convertStPresetToFlow(parsed, flowName));
         validated = [flow];
         toastr.info('已识别为酒馆预设并转换', 'Evolution World');
       } else {
@@ -471,7 +467,11 @@ export const useEwStore = defineStore('evolution-world-store', () => {
       showEwNotice({ title: 'Evolution World', message: '角色卡工作流已保存到世界书', level: 'success' });
     } catch (e) {
       console.error('[Evolution World] saveCharFlows failed:', e);
-      showEwNotice({ title: 'Evolution World', message: '角色卡工作流保存失败: ' + (e as Error).message, level: 'error' });
+      showEwNotice({
+        title: 'Evolution World',
+        message: '角色卡工作流保存失败: ' + (e as Error).message,
+        level: 'error',
+      });
     }
   }
 
@@ -482,10 +482,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
       next.api_presets.push(createDefaultApiPreset(1));
       settings.value = next;
     }
-    const newFlow = createDefaultFlow(
-      charFlows.value.length + 1,
-      settings.value.api_presets[0].id,
-    );
+    const newFlow = createDefaultFlow(charFlows.value.length + 1, settings.value.api_presets[0].id);
     charFlows.value = [...charFlows.value, newFlow];
     expandedFlowId.value = newFlow.id;
   }
@@ -519,7 +516,11 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     busy.value = true;
     try {
       promptPreview.value = await previewPrompt(flow, settings.value.controller_entry_name);
-      showEwNotice({ title: '调试', message: `Prompt 预览已生成（${promptPreview.value.length} 条消息）`, level: 'success' });
+      showEwNotice({
+        title: '调试',
+        message: `Prompt 预览已生成（${promptPreview.value.length} 条消息）`,
+        level: 'success',
+      });
     } catch (e) {
       console.error('[Evolution World] previewPrompt failed:', e);
       showEwNotice({ title: '调试', message: 'Prompt 预览失败: ' + (e as Error).message, level: 'error' });

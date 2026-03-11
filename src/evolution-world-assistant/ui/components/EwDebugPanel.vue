@@ -19,7 +19,12 @@
   </EwSectionCard>
 
   <!-- ── B. Prompt 预览区 ── -->
-  <EwSectionCard v-model="promptSectionOpen" title="Prompt 预览" subtitle="预览工作流 AI 实际接收的完整 messages 数组。" collapsible>
+  <EwSectionCard
+    v-model="promptSectionOpen"
+    title="Prompt 预览"
+    subtitle="预览工作流 AI 实际接收的完整 messages 数组。"
+    collapsible
+  >
     <div class="dbg-toolbar">
       <select v-model="store.previewFlowId" class="dbg-flow-select">
         <option value="">自动选择</option>
@@ -27,9 +32,7 @@
           {{ flow.name || flow.id }}
         </option>
       </select>
-      <button type="button" class="ew-btn" :disabled="store.busy" @click="store.loadPromptPreview">
-        📝 生成预览
-      </button>
+      <button type="button" class="ew-btn" :disabled="store.busy" @click="store.loadPromptPreview">📝 生成预览</button>
     </div>
 
     <div v-if="store.promptPreview && store.promptPreview.length > 0" class="dbg-messages">
@@ -39,9 +42,11 @@
         :key="idx"
         class="dbg-msg-card"
         :data-role="msg.role"
+        :data-debug-only="msg.debugOnly ? '1' : '0'"
       >
         <div class="dbg-msg-header" @click="toggleMsgExpand(idx)">
           <span class="dbg-role-badge" :data-role="msg.role">{{ msg.role }}</span>
+          <span v-if="msg.previewTitle" class="dbg-marker-title">{{ msg.previewTitle }}</span>
           <span v-if="msg.name" class="dbg-msg-name">{{ msg.name }}</span>
           <span class="dbg-msg-idx">#{{ idx }}</span>
           <span class="dbg-msg-len">{{ msg.content.length }} chars</span>
@@ -55,13 +60,16 @@
         </div>
       </div>
     </div>
-    <div v-else-if="store.promptPreview" class="dbg-empty">
-      没有生成任何消息。请检查工作流配置。
-    </div>
+    <div v-else-if="store.promptPreview" class="dbg-empty">没有生成任何消息。请检查工作流配置。</div>
   </EwSectionCard>
 
   <!-- ── C. 快照检视区 ── -->
-  <EwSectionCard v-model="snapshotSectionOpen" title="快照状态" subtitle="当前聊天的最新 EW 快照（Controller + Dyn 条目）。" collapsible>
+  <EwSectionCard
+    v-model="snapshotSectionOpen"
+    title="快照状态"
+    subtitle="当前聊天的最新 EW 快照（Controller + Dyn 条目）。"
+    collapsible
+  >
     <div class="dbg-toolbar">
       <button type="button" class="ew-btn" :disabled="store.busy" @click="store.loadSnapshotPreview">
         📸 读取快照
@@ -118,8 +126,7 @@
         </span>
         <span class="dbg-run-meta">
           {{ store.lastRun.mode === 'manual' ? '手动' : '自动' }}
-          · {{ store.lastRun.flow_count }} 工作流
-          · {{ store.lastRun.elapsed_ms }}ms
+          · {{ store.lastRun.flow_count }} 工作流 · {{ store.lastRun.elapsed_ms }}ms
         </span>
         <span class="dbg-run-time">{{ formatTime(store.lastRun.at) }}</span>
       </div>
@@ -132,18 +139,11 @@
     <!-- Flow IO Summary -->
     <template v-if="store.lastIo && store.lastIo.flows.length > 0">
       <h4 class="dbg-io-title">请求 / 响应详情</h4>
-      <div
-        v-for="(flowIo, idx) in store.lastIo.flows"
-        :key="idx"
-        class="dbg-io-card"
-        :data-ok="flowIo.ok ? '1' : '0'"
-      >
+      <div v-for="(flowIo, idx) in store.lastIo.flows" :key="idx" class="dbg-io-card" :data-ok="flowIo.ok ? '1' : '0'">
         <div class="dbg-io-header" @click="toggleIoExpand(idx)">
           <span class="dbg-status-dot" :data-ok="flowIo.ok ? '1' : '0'" />
           <strong>{{ flowIo.flow_name || flowIo.flow_id }}</strong>
-          <span class="dbg-io-meta">
-            {{ flowIo.api_preset_name }} · {{ flowIo.elapsed_ms }}ms
-          </span>
+          <span class="dbg-io-meta"> {{ flowIo.api_preset_name }} · {{ flowIo.elapsed_ms }}ms </span>
           <span class="dbg-expand-icon">{{ expandedIos.has(idx) ? '▼' : '▶' }}</span>
         </div>
         <div v-if="flowIo.error" class="dbg-io-error">{{ flowIo.error }}</div>
@@ -165,10 +165,10 @@
 </template>
 
 <script setup lang="ts">
-import EwFieldRow from './EwFieldRow.vue';
-import EwSectionCard from './EwSectionCard.vue';
 import { getFieldHelp } from '../help-meta';
 import { useEwStore } from '../store';
+import EwFieldRow from './EwFieldRow.vue';
+import EwSectionCard from './EwSectionCard.vue';
 
 const store = useEwStore();
 const manualMessage = ref('');
@@ -214,10 +214,7 @@ function truncate(str: string, maxLen: number): string {
 
 function highlightEwTags(text: string): string {
   // 用强调样式高亮 [EW/xxx] 标签
-  return text.replace(
-    /\[([^\]]*(?:EW|Controller|Dyn)[^\]]*)\]/g,
-    '<span class="dbg-ew-tag">[$1]</span>',
-  );
+  return text.replace(/\[([^\]]*(?:EW|Controller|Dyn)[^\]]*)\]/g, '<span class="dbg-ew-tag">[$1]</span>');
 }
 
 function formatTime(ts: number): string {
@@ -268,6 +265,12 @@ function formatTime(ts: number): string {
   transition: border-color 0.2s ease;
 }
 
+.dbg-msg-card[data-debug-only='1'] {
+  border-style: dashed;
+  border-color: color-mix(in srgb, #facc15 45%, transparent);
+  background: color-mix(in srgb, #facc15 10%, rgba(0, 0, 0, 0.12));
+}
+
 .dbg-msg-card:hover {
   border-color: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 50%, transparent);
 }
@@ -279,6 +282,16 @@ function formatTime(ts: number): string {
   padding: 0.5rem 0.75rem;
   cursor: pointer;
   user-select: none;
+}
+
+.dbg-marker-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fde68a;
+  background: color-mix(in srgb, #facc15 18%, transparent);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  flex-shrink: 0;
 }
 
 .dbg-role-badge {

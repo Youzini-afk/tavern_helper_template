@@ -92,6 +92,15 @@ export type PromptComponents = {
   beforePromptInjections: string[];
 };
 
+export type PromptPreviewMessage = AssembledMessage & {
+  debugOnly?: boolean;
+  previewTitle?: string;
+};
+
+type AssemblePreviewOptions = {
+  includeMarkerPlaceholders?: boolean;
+};
+
 /**
  * Collect all prompt components from SillyTavern's runtime environment.
  *
@@ -230,6 +239,39 @@ export function collectPromptComponents(flow: EwFlowConfig): PromptComponents {
 
 export type AssembledMessage = { role: 'system' | 'user' | 'assistant'; content: string; name?: string };
 
+function createMarkerPreviewMessage(title: string, content: string): PromptPreviewMessage {
+  return {
+    role: 'system',
+    content,
+    debugOnly: true,
+    previewTitle: title,
+  };
+}
+
+async function buildMarkerPreviewMessage(
+  entry: EwPromptOrderEntry,
+  components: PromptComponents,
+): Promise<PromptPreviewMessage> {
+  const markerTitle = entry.name?.trim() || entry.identifier;
+
+  if (entry.identifier === 'chatHistory') {
+    const count = components.chatMessages.length;
+    const summary =
+      count > 0
+        ? `已读取 ${count} 条聊天消息。触发工作流时，这里会展开为多条 user/assistant 消息。`
+        : '当前没有可用的聊天消息，因此这里不会发送任何历史消息。';
+    return createMarkerPreviewMessage(`📌 ${markerTitle}`, summary);
+  }
+
+  const rawContent = resolveMarkerContent(entry.identifier, components);
+  const renderedContent = rawContent.trim() ? await renderEjsContent(rawContent) : '';
+  const summary = renderedContent.trim()
+    ? `已读取该段内容（${renderedContent.length} chars）。触发工作流时会发送。`
+    : '当前为空，因此这里不会发送任何内容。';
+
+  return createMarkerPreviewMessage(`📌 ${markerTitle}`, summary);
+}
+
 /**
  * Assemble an ordered array of prompt messages according to a flow's prompt_order.
  *
@@ -244,14 +286,19 @@ export type AssembledMessage = { role: 'system' | 'user' | 'assistant'; content:
 export async function assembleOrderedPrompts(
   promptOrder: EwPromptOrderEntry[],
   components: PromptComponents,
-): Promise<AssembledMessage[]> {
-  const result: AssembledMessage[] = [];
+  options: AssemblePreviewOptions = {},
+): Promise<PromptPreviewMessage[]> {
+  const result: PromptPreviewMessage[] = [];
   // Deferred injections: prompts with in_chat position that go inside chat history
   const deferredInjections: Array<{ content: string; role: 'system' | 'user' | 'assistant'; depth: number }> = [];
   let chatHistoryStartIdx = -1;
 
   for (const entry of promptOrder) {
     if (!entry.enabled) continue;
+
+    if (options.includeMarkerPlaceholders && entry.type === 'marker') {
+      result.push(await buildMarkerPreviewMessage(entry, components));
+    }
 
     // Defer in_chat injections — they'll be inserted after chat history is placed
     if (entry.injection_position === 'in_chat' && entry.identifier !== 'chatHistory') {
@@ -415,9 +462,9 @@ export async function injectEntryNames(messages: AssembledMessage[], controllerE
  * assemble ordered prompts → inject entry names) but does NOT send
  * anything to the AI. Returns the messages array for UI display.
  */
-export async function previewPrompt(flow: EwFlowConfig, controllerEntryName: string): Promise<AssembledMessage[]> {
+export async function previewPrompt(flow: EwFlowConfig, controllerEntryName: string): Promise<PromptPreviewMessage[]> {
   const components = collectPromptComponents(flow);
-  const messages = await assembleOrderedPrompts(flow.prompt_order, components);
+  const messages = await assembleOrderedPrompts(flow.prompt_order, components, { includeMarkerPlaceholders: true });
   await injectEntryNames(messages, controllerEntryName);
   return messages;
 }
