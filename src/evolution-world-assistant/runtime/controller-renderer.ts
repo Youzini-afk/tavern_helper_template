@@ -182,7 +182,11 @@ export async function validateEjsTemplate(content: string): Promise<void> {
     | ((code: string, count: number) => Promise<string | null>)
     | undefined;
   if (typeof checker === 'function') {
-    const error = await checker(content, 4);
+    // ST's syntax checker compiles EJS with a regular (non-async) function,
+    // so `await` is flagged as a syntax error. Strip it before validation
+    // since our templates legitimately use `await getwi(...)` at runtime.
+    const sanitized = content.replace(/\bawait\s+/g, '');
+    const error = await checker(sanitized, 4);
     if (typeof error === 'string' && error.trim()) {
       throw new Error(`EJS syntax check failed: ${error}`);
     }
