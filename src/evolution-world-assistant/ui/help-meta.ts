@@ -303,6 +303,20 @@ const FIELD_HELP_LIST: FieldHelpMeta[] = [
     placeholder: '{"context":{"turns":{{context.turns}}}}',
   },
   {
+    key: 'flow.response_remove_regex',
+    label: '移除正则',
+    shortHelp: 'AI 响应后处理：移除匹配的内容（如思考过程标签）。',
+    detailHelp: '在 JSON 解析前执行。使用正则表达式全局匹配并删除。留空则不做移除处理。',
+    placeholder: '<thinking>[\\s\\S]*?</thinking>',
+  },
+  {
+    key: 'flow.response_extract_regex',
+    label: '提取正则',
+    shortHelp: 'AI 响应后处理：从响应中提取特定标签内的内容。',
+    detailHelp: '在移除正则之后执行。使用第一个捕获组 (group 1) 的内容。留空则不做提取处理。',
+    placeholder: '<content>([\\s\\S]*?)</content>',
+  },
+  {
     key: 'manual_message',
     label: '手动运行输入',
     shortHelp: '调试模式手动执行时的输入内容。',

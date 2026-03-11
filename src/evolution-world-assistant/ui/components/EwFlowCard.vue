@@ -498,6 +498,26 @@
           />
         </EwFieldRow>
         <div v-else class="ew-flow-card__deferred-placeholder">正在加载请求模板编辑器…</div>
+
+        <section class="ew-flow-card__section">
+          <h4>响应后处理</h4>
+          <EwFieldRow label="移除正则" :help="help('flow.response_remove_regex')">
+            <input
+              :value="flow.response_remove_regex"
+              type="text"
+              placeholder="示例: <thinking>[\s\S]*?</thinking>"
+              @input="setText('response_remove_regex', $event)"
+            />
+          </EwFieldRow>
+          <EwFieldRow label="提取正则" :help="help('flow.response_extract_regex')">
+            <input
+              :value="flow.response_extract_regex"
+              type="text"
+              placeholder="示例: <content>([\s\S]*?)</content>"
+              @input="setText('response_extract_regex', $event)"
+            />
+          </EwFieldRow>
+        </section>
       </div>
     </transition>
 
@@ -705,7 +725,7 @@ function clamp(value: number, min: number, max: number) {
 function setEnabled(event: Event) {
   patch({ enabled: (event.target as HTMLInputElement).checked });
 }
-function setText(key: 'name' | 'id' | 'request_template', event: Event) {
+function setText(key: 'name' | 'id' | 'request_template' | 'response_extract_regex' | 'response_remove_regex', event: Event) {
   patch({ [key]: (event.target as HTMLInputElement | HTMLTextAreaElement).value } as Partial<EwFlowConfig>);
 }
 function setRequestTemplateDraft(event: Event) {

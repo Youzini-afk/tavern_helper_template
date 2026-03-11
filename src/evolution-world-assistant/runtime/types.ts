@@ -256,6 +256,8 @@ export const EwFlowConfigSchema = z.object({
     )
     .default([]),
   request_template: z.string().default(''),
+  response_extract_regex: z.string().default(''),
+  response_remove_regex: z.string().default(''),
   system_prompt: z.string().default(''),
   headers_json: z.string().default(''),
 });

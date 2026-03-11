@@ -35,7 +35,7 @@ export class DispatchFlowsError extends Error {
 export const DEFAULT_WORKFLOW_SYSTEM_PROMPT = [
   '你是 Evolution World 的工作流执行器。',
   '你会收到一个 FlowRequestV1 JSON，请返回一个 JSON 对象。',
-  '必须只输出 JSON 对象，不允许 markdown、不允许代码块、不允许额外解释。',
+  '输出必须包含一个有效的 JSON 对象。允许使用 <thinking> 等标签进行思考推理，插件会自动提取 JSON 内容。',
   'operations.worldbook 字段必须存在（允许为空数组）。',
   'version/flow_id/status/priority 等固定字段可省略，插件会自动补全。',
 ].join('\n');
@@ -313,6 +313,45 @@ function parseJsonFromText(rawText: string, flowId: string): Record<string, any>
 }
 
 /**
+ * Apply per-flow response regex post-processing.
+ *
+ * Execution order:
+ *  1. Remove regex — strip matched content (e.g. <thinking>...</thinking>)
+ *  2. Extract regex — extract first capture group (e.g. <content>(.*)</content>)
+ *
+ * If neither is configured, returns rawText unchanged.
+ */
+function applyResponseRegex(rawText: string, flow: EwFlowConfig): string {
+  let text = rawText;
+
+  // Step 1: Remove
+  const removePattern = flow.response_remove_regex?.trim();
+  if (removePattern) {
+    try {
+      text = text.replace(new RegExp(removePattern, 'gis'), '');
+    } catch (e) {
+      console.warn(`[${flow.id}] response_remove_regex invalid:`, e);
+    }
+  }
+
+  // Step 2: Extract
+  const extractPattern = flow.response_extract_regex?.trim();
+  if (extractPattern) {
+    try {
+      const match = new RegExp(extractPattern, 'is').exec(text);
+      if (match) {
+        // Use first capture group if available, else full match
+        text = match[1] ?? match[0];
+      }
+    } catch (e) {
+      console.warn(`[${flow.id}] response_extract_regex invalid:`, e);
+    }
+  }
+
+  return text.trim();
+}
+
+/**
  * 自动补全 AI 回复中的固定字段。
  * AI 可以省略 version / flow_id / status / priority / diagnostics，
  * 脚本在 Schema 校验前注入默认值。若 AI 已输出则不覆盖（向后兼容）。
@@ -396,7 +435,8 @@ async function executeFlowViaLlmConnector(
 
   throwIfDispatchAborted(abortSignal, isCancelled);
 
-  const parsedJson = parseJsonFromText(rawText, flow.id);
+  const processed = applyResponseRegex(rawText, flow);
+  const parsedJson = parseJsonFromText(processed, flow.id);
   normalizeAiResponse(parsedJson, flow.id, flow.priority);
   const parsed = FlowResponseSchema.safeParse(parsedJson);
   if (!parsed.success) {
@@ -455,7 +495,8 @@ async function executeFlowViaGenerateRawCustomApi(
 
     throwIfDispatchAborted(abortSignal, isCancelled);
 
-    const parsedJson = parseJsonFromText(rawText, flow.id);
+    const processed = applyResponseRegex(rawText, flow);
+    const parsedJson = parseJsonFromText(processed, flow.id);
     normalizeAiResponse(parsedJson, flow.id, flow.priority);
     const parsed = FlowResponseSchema.safeParse(parsedJson);
     if (!parsed.success) {
@@ -553,7 +594,8 @@ async function executeFlowViaStBackend(
       throw new Error(`[${flow.id}] API returned empty response: ${JSON.stringify(data).slice(0, 200)}`);
     }
 
-    const parsedJson = parseJsonFromText(rawText, flow.id);
+    const processed = applyResponseRegex(rawText, flow);
+    const parsedJson = parseJsonFromText(processed, flow.id);
     normalizeAiResponse(parsedJson, flow.id, flow.priority);
     const parsed = FlowResponseSchema.safeParse(parsedJson);
     if (!parsed.success) {
