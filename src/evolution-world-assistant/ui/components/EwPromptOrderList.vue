@@ -84,8 +84,12 @@
         </div>
 
         <!-- Inline editor for 'prompt' type entries -->
-        <transition name="ew-expand">
-          <div v-if="editingId === entry.identifier && entry.type === 'prompt'" class="ew-prompt-order__editor">
+        <transition name="ew-editor-fade">
+          <div
+            v-if="entry.type === 'prompt' && hasOpenedEditor(entry.identifier)"
+            v-show="editingId === entry.identifier"
+            class="ew-prompt-order__editor"
+          >
             <div class="ew-prompt-order__editor-grid">
               <label class="ew-prompt-order__editor-label">
                 名称
@@ -147,9 +151,10 @@
         </transition>
 
         <!-- Read-only info panel for 'marker' type entries -->
-        <transition name="ew-expand">
+        <transition name="ew-editor-fade">
           <div
-            v-if="editingId === entry.identifier && entry.type === 'marker'"
+            v-if="entry.type === 'marker' && hasOpenedEditor(entry.identifier)"
+            v-show="editingId === entry.identifier"
             class="ew-prompt-order__editor ew-prompt-order__marker-info"
           >
             <div class="ew-prompt-order__editor-grid">
@@ -198,6 +203,7 @@ const emit = defineEmits<{
 
 const editingId = ref<string | null>(null);
 const dragArmedId = ref<string | null>(null);
+const openedEditorIds = ref(new Set<string>());
 let dragFromIdx = -1;
 const dragPreview = ref<EwPromptOrderEntry[] | null>(null);
 const entryDrafts = ref<Record<string, Partial<Pick<EwPromptOrderEntry, 'name' | 'content'>>>>({});
@@ -279,8 +285,13 @@ onBeforeUnmount(() => {
 });
 
 function toggleEdit(identifier: string) {
+  openedEditorIds.value.add(identifier);
   editingId.value = editingId.value === identifier ? null : identifier;
   dragArmedId.value = null;
+}
+
+function hasOpenedEditor(identifier: string) {
+  return openedEditorIds.value.has(identifier);
 }
 
 function armDrag(identifier: string) {
@@ -351,6 +362,7 @@ function addCustomEntry() {
   });
   emit('update:promptOrder', next);
   editingId.value = id;
+  openedEditorIds.value.add(id);
 }
 
 // ── 拖拽排序（PERF-1: 仅在 dragend 时发射 emit） ──────────────
@@ -700,23 +712,20 @@ function onDragEnd() {
   background: #fff;
 }
 
-/* ew-expand transition */
-.ew-expand-enter-active,
-.ew-expand-leave-active {
-  transition:
-    max-height 0.2s ease,
-    opacity 0.2s ease;
-  overflow: hidden;
+.ew-prompt-order__editor {
+  content-visibility: auto;
+  contain-intrinsic-size: 420px;
 }
-.ew-expand-enter-from,
-.ew-expand-leave-to {
-  max-height: 0;
+
+/* 轻量过渡，避免大 textarea 配合 max-height 动画触发布局抖动 */
+.ew-editor-fade-enter-active,
+.ew-editor-fade-leave-active {
+  transition: opacity 0.12s ease;
+}
+
+.ew-editor-fade-enter-from,
+.ew-editor-fade-leave-to {
   opacity: 0;
-}
-.ew-expand-enter-to,
-.ew-expand-leave-from {
-  max-height: 1200px;
-  opacity: 1;
 }
 
 /* ── 移动端提示词列表：两行布局 ── */
