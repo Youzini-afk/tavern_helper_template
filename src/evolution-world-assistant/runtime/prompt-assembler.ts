@@ -1,4 +1,4 @@
-import { renderEjsContent } from './ejs-internal';
+﻿import { renderEjsContent } from './ejs-internal';
 import { applyTavernRegex } from './regex-engine';
 import type { EwFlowConfig, EwPromptOrderEntry, EwSettings } from './types';
 import { resolveWorldInfo, type ResolvedWiEntry } from './worldinfo-engine';
@@ -114,7 +114,6 @@ function resolveCharacterCardFieldsGetter(): {
 
   return {};
 }
-
 
 function hasCharacterCardFieldValue(fields: ReturnType<typeof getCharacterCardFields> | undefined): boolean {
   if (!fields) {
@@ -278,7 +277,6 @@ function getRuntimeChatMessages(range: string, opts?: Record<string, any>): any[
   return getChatMessages(range, opts);
 }
 
-
 function describeAttempt(label: string, value: unknown, detail?: string): PromptDiagnosticAttempt {
   if (typeof value === 'string') {
     const trimmed = value.trim();
@@ -346,6 +344,18 @@ function appendDiagnosticNote(
     ...diagnostic,
     note: diagnostic.note ? `${diagnostic.note}; ${note}` : note,
   };
+}
+
+function shouldIgnoreWorkflowExtensionPrompt(content: string): boolean {
+  const lowered = content.toLowerCase();
+  return [
+    '<status_current_variable>',
+    '<updatevariable>',
+    '<statusplaceholderimpl/>',
+    '<initvar>',
+    'mvu_variableupdate',
+    'mvu_updateround',
+  ].some(marker => lowered.includes(marker));
 }
 
 function formatAttempt(attempt: PromptDiagnosticAttempt): string {
@@ -533,12 +543,26 @@ async function populateWorldInfoComponents(components: PromptComponents, setting
 
     components.diagnostics.worldInfoBefore = {
       selectedSource: 'ew-worldinfo-engine',
-      attempts: [{ label: 'resolveWorldInfo().before', hasValue: resolved.before.length > 0, length: resolved.before.length, detail: `${resolved.before.length} entries` }],
+      attempts: [
+        {
+          label: 'resolveWorldInfo().before',
+          hasValue: resolved.before.length > 0,
+          length: resolved.before.length,
+          detail: `${resolved.before.length} entries`,
+        },
+      ],
       note: `内置世界书引擎: ${resolved.before.length} 条 before 条目`,
     };
     components.diagnostics.worldInfoAfter = {
       selectedSource: 'ew-worldinfo-engine',
-      attempts: [{ label: 'resolveWorldInfo().after', hasValue: resolved.after.length > 0, length: resolved.after.length, detail: `${resolved.after.length} entries` }],
+      attempts: [
+        {
+          label: 'resolveWorldInfo().after',
+          hasValue: resolved.after.length > 0,
+          length: resolved.after.length,
+          detail: `${resolved.after.length} entries`,
+        },
+      ],
       note: `内置世界书引擎: ${resolved.after.length} 条 after 条目, ${resolved.atDepth.length} 条 atDepth 条目`,
     };
   } catch (e) {
@@ -690,6 +714,7 @@ export async function collectPromptComponents(flow: EwFlowConfig, settings?: EwS
       for (const [, prompt] of Object.entries(extPrompts)) {
         const p = prompt as any;
         if (!p || typeof p.value !== 'string' || !p.value.trim()) continue;
+        if (shouldIgnoreWorkflowExtensionPrompt(p.value)) continue;
 
         const role = roleMap[p.role] ?? 'system';
 
@@ -865,9 +890,8 @@ export async function assembleOrderedPrompts(
 
       // World Info markers expand into individual per-entry messages
       if (entry.identifier === 'worldInfoBefore' || entry.identifier === 'worldInfoAfter') {
-        const wiEntries = entry.identifier === 'worldInfoBefore'
-          ? components.worldInfoBefore
-          : components.worldInfoAfter;
+        const wiEntries =
+          entry.identifier === 'worldInfoBefore' ? components.worldInfoBefore : components.worldInfoAfter;
         for (const wi of wiEntries) {
           if (wi.content.trim()) {
             result.push({ role: wi.role, content: `【${wi.name}】\n${wi.content}` });
@@ -955,7 +979,6 @@ function resolveMarkerContent(identifier: string, components: PromptComponents):
       return '';
   }
 }
-
 
 // ── Prompt Preview (Debug) ───────────────────────────────────
 

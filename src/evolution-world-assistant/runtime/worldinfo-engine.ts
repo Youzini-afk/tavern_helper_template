@@ -15,8 +15,8 @@
  * Used exclusively for workflow prompt assembly.
  */
 
+import { createRenderContext, evalEjsTemplate } from './ejs-internal';
 import { EwSettings } from './types';
-import { evalEjsTemplate, createRenderContext } from './ejs-internal';
 
 // ---------------------------------------------------------------------------
 // ST Constants (replicated locally to avoid import dependency)
@@ -24,31 +24,31 @@ import { evalEjsTemplate, createRenderContext } from './ejs-internal';
 
 /** ST world_info_position enum values */
 const WI_POSITION: Record<string, number> = {
-  before: 0,       // Before Char Defs
-  after: 1,        // After Char Defs
-  EMTop: 2,        // Before Example Messages
-  EMBottom: 3,     // After Example Messages
-  ANTop: 4,        // Top of Author's Note
-  ANBottom: 5,     // Bottom of Author's Note
-  atDepth: 6,      // @ D (at specified depth in chat)
+  before: 0, // Before Char Defs
+  after: 1, // After Char Defs
+  EMTop: 2, // Before Example Messages
+  EMBottom: 3, // After Example Messages
+  ANTop: 4, // Top of Author's Note
+  ANBottom: 5, // Bottom of Author's Note
+  atDepth: 6, // @ D (at specified depth in chat)
 };
 
 /** ST world_info_logic enum values (selectiveLogic) */
 const WI_LOGIC: Record<string, number> = {
-  AND_ANY: 0,   // Primary + Any secondary
-  NOT_ALL: 1,   // Primary + NOT all secondary
-  NOT_ANY: 2,   // Primary + NONE of the secondary
-  AND_ALL: 3,   // Primary + ALL secondary
+  AND_ANY: 0, // Primary + Any secondary
+  NOT_ALL: 1, // Primary + NOT all secondary
+  NOT_ANY: 2, // Primary + NONE of the secondary
+  AND_ALL: 3, // Primary + ALL secondary
 };
 
 /** Depth mapping for sorting (mirrors ST's DEPTH_MAPPING) */
 const DEPTH_MAPPING: Record<number, number> = {
-  [WI_POSITION.before]: 4,    // Before Char Defs
-  [WI_POSITION.after]: 3,     // After Char Defs
-  [WI_POSITION.EMTop]: 2,     // Before Example Messages
-  [WI_POSITION.EMBottom]: 1,  // After Example Messages
-  [WI_POSITION.ANTop]: 1,     // Top of Author's Note
-  [WI_POSITION.ANBottom]: -1,  // Bottom of Author's Note
+  [WI_POSITION.before]: 4, // Before Char Defs
+  [WI_POSITION.after]: 3, // After Char Defs
+  [WI_POSITION.EMTop]: 2, // Before Example Messages
+  [WI_POSITION.EMBottom]: 1, // After Example Messages
+  [WI_POSITION.ANTop]: 1, // Top of Author's Note
+  [WI_POSITION.ANBottom]: -1, // Bottom of Author's Note
 };
 
 const DEFAULT_DEPTH = 4;
@@ -61,6 +61,7 @@ const DEFAULT_DEPTH = 4;
 interface RawWbEntry {
   uid: number;
   name: string;
+  comment?: string;
   content: string;
   enabled: boolean;
   disable?: boolean;
@@ -100,6 +101,7 @@ interface RawWbEntry {
 interface NormalizedEntry {
   uid: number;
   name: string;
+  comment: string;
   content: string;
   cleanContent: string;
   decorators: string[];
@@ -153,9 +155,20 @@ export interface ResolvedWorldInfo {
 // ---------------------------------------------------------------------------
 
 declare function getWorldbook(name: string): Promise<RawWbEntry[]>;
+declare function getLorebookEntries(name: string): Promise<Array<{ uid: number; comment: string; content: string }>>;
 declare function getCharWorldbookNames(target: 'current'): { primary: string | null; additional: string[] };
 declare function getGlobalWorldbookNames(): string[];
 declare const SillyTavern: { getContext(): Record<string, any> } | undefined;
+
+const MVU_COMMENT_REGEX = /\[(mvu_update|mvu_plot|initvar)\]/i;
+const MVU_CONTENT_MARKERS = [
+  '<status_current_variable>',
+  '<updatevariable>',
+  '<statusplaceholderimpl/>',
+  '<initvar>',
+  'mvu_variableupdate',
+  'mvu_updateround',
+];
 
 function getStContext(): Record<string, any> {
   try {
@@ -198,10 +211,21 @@ function substituteParams(text: string): string {
 // ---------------------------------------------------------------------------
 
 const KNOWN_DECORATORS = [
-  '@@activate', '@@dont_activate', '@@message_formatting',
-  '@@generate_before', '@@generate_after', '@@render_before', '@@render_after',
-  '@@dont_preload', '@@initial_variables', '@@always_enabled',
-  '@@only_preload', '@@iframe', '@@preprocessing', '@@if', '@@private',
+  '@@activate',
+  '@@dont_activate',
+  '@@message_formatting',
+  '@@generate_before',
+  '@@generate_after',
+  '@@render_before',
+  '@@render_after',
+  '@@dont_preload',
+  '@@initial_variables',
+  '@@always_enabled',
+  '@@only_preload',
+  '@@iframe',
+  '@@preprocessing',
+  '@@if',
+  '@@private',
 ];
 
 function parseDecorators(content: string): { decorators: string[]; cleanContent: string } {
@@ -283,6 +307,7 @@ function normalizeEntry(raw: RawWbEntry, worldbookName: string): NormalizedEntry
   return {
     uid: raw.uid,
     name: raw.name,
+    comment: String(raw.comment ?? ''),
     content: raw.content,
     cleanContent,
     decorators,
@@ -310,6 +335,23 @@ function normalizeEntry(raw: RawWbEntry, worldbookName: string): NormalizedEntry
     order: raw.position?.order ?? 100,
     role: raw.position?.role ?? 'system',
   };
+}
+
+function hasMvuContentMarker(value: string): boolean {
+  const lowered = value.toLowerCase();
+  return MVU_CONTENT_MARKERS.some(marker => lowered.includes(marker));
+}
+
+function shouldIgnoreForWorkflow(entry: NormalizedEntry): boolean {
+  if (MVU_COMMENT_REGEX.test(entry.comment)) {
+    return true;
+  }
+
+  if (hasMvuContentMarker(entry.name)) {
+    return true;
+  }
+
+  return hasMvuContentMarker(entry.cleanContent || entry.content);
 }
 
 // ---------------------------------------------------------------------------
@@ -371,9 +413,7 @@ function getScore(trigger: string, entry: NormalizedEntry): number {
   if (entry.keysSecondary.length > 0) {
     if (entry.selectiveLogic === WI_LOGIC.AND_ANY) return primaryScore + secondaryScore;
     if (entry.selectiveLogic === WI_LOGIC.AND_ALL) {
-      return secondaryScore === entry.keysSecondary.length
-        ? primaryScore + secondaryScore
-        : primaryScore;
+      return secondaryScore === entry.keysSecondary.length ? primaryScore + secondaryScore : primaryScore;
     }
   }
 
@@ -409,9 +449,17 @@ function selectActivatedEntries(entries: NormalizedEntry[], trigger: string): No
     if (entry.decorators.includes('@@only_preload')) continue;
 
     // Special decorator entries (@@generate, @@render, @@initial_variables, @@preprocessing, @@iframe)
-    const specialDecorators = ['@@generate', '@@generate_before', '@@generate_after',
-      '@@render', '@@render_before', '@@render_after',
-      '@@initial_variables', '@@preprocessing', '@@iframe'];
+    const specialDecorators = [
+      '@@generate',
+      '@@generate_before',
+      '@@generate_after',
+      '@@render',
+      '@@render_before',
+      '@@render_after',
+      '@@initial_variables',
+      '@@preprocessing',
+      '@@iframe',
+    ];
     if (entry.decorators.some(d => specialDecorators.includes(d))) continue;
 
     // Fix #6: Special entry name markers
@@ -419,9 +467,7 @@ function selectActivatedEntries(entries: NormalizedEntry[], trigger: string): No
 
     // Primary keyword matching (Fix #1: substituteParams before match)
     if (entry.keys.length === 0) continue;
-    const matchedKey = entry.keys
-      .map(k => substituteParams(k))
-      .find(k => matchKeys(trigger, k, entry));
+    const matchedKey = entry.keys.map(k => substituteParams(k)).find(k => matchKeys(trigger, k, entry));
     if (!matchedKey) continue;
 
     // Secondary keyword (blue lamp) logic
@@ -493,7 +539,14 @@ function selectActivatedEntries(entries: NormalizedEntry[], trigger: string): No
       const orders = members.map(e => e.order);
       const top = Math.min(...orders);
       if (top) {
-        matched.push(members[Math.max(orders.findIndex(o => o <= top), 0)]);
+        matched.push(
+          members[
+            Math.max(
+              orders.findIndex(o => o <= top),
+              0,
+            )
+          ],
+        );
         continue;
       }
     }
@@ -504,7 +557,14 @@ function selectActivatedEntries(entries: NormalizedEntry[], trigger: string): No
       const scores = members.map(e => getScore(trigger, e));
       const top = Math.max(...scores);
       if (top > 0) {
-        matched.push(members[Math.max(scores.findIndex(s => s >= top), 0)]);
+        matched.push(
+          members[
+            Math.max(
+              scores.findIndex(s => s >= top),
+              0,
+            )
+          ],
+        );
         continue;
       }
     }
@@ -541,9 +601,7 @@ function sortEntries(a: NormalizedEntry, b: NormalizedEntry): number {
   const maxDepth = Math.max(a.depth, b.depth, DEFAULT_DEPTH);
 
   // Sort by depth (desc), then order (asc), then uid (desc) — matches ST
-  return calcDepth(b, maxDepth) - calcDepth(a, maxDepth) ||
-    a.order - b.order ||
-    b.uid - a.uid;
+  return calcDepth(b, maxDepth) - calcDepth(a, maxDepth) || a.order - b.order || b.uid - a.uid;
 }
 
 // ---------------------------------------------------------------------------
@@ -557,8 +615,29 @@ async function collectAllWorldbookEntries(): Promise<NormalizedEntry[]> {
   async function loadWb(wbName: string): Promise<void> {
     try {
       const entries = await getWorldbook(wbName);
+      let commentByUid = new Map<number, string>();
+
+      try {
+        const lorebookEntries = await getLorebookEntries(wbName);
+        commentByUid = new Map(lorebookEntries.map(entry => [entry.uid, String(entry.comment ?? '')]));
+      } catch (commentError) {
+        console.debug(`[EW WI Engine] Cannot read lorebook comments for '${wbName}':`, commentError);
+      }
+
       for (const entry of entries) {
-        allEntries.push(normalizeEntry(entry, wbName));
+        const normalized = normalizeEntry(
+          {
+            ...entry,
+            comment: commentByUid.get(entry.uid) ?? entry.comment ?? '',
+          },
+          wbName,
+        );
+
+        if (shouldIgnoreForWorkflow(normalized)) {
+          continue;
+        }
+
+        allEntries.push(normalized);
       }
     } catch (e) {
       console.debug(`[EW WI Engine] Cannot read worldbook '${wbName}':`, e);
@@ -601,8 +680,7 @@ async function collectAllWorldbookEntries(): Promise<NormalizedEntry[]> {
   try {
     const ctx = getStContext();
     const personaLorebook: string | undefined =
-      ctx.extensionSettings?.persona_description_lorebook ??
-      (ctx as any).power_user?.persona_description_lorebook;
+      ctx.extensionSettings?.persona_description_lorebook ?? (ctx as any).power_user?.persona_description_lorebook;
     if (personaLorebook) {
       await loadWbOnce(personaLorebook);
     }
@@ -656,10 +734,7 @@ function classifyPosition(entry: NormalizedEntry): 'before' | 'after' | 'atDepth
  * 3. Executes EJS rendering on activated entries
  * 4. Returns structured before/after lists with entry names
  */
-export async function resolveWorldInfo(
-  _settings: EwSettings,
-  chatMessages: string[],
-): Promise<ResolvedWorldInfo> {
+export async function resolveWorldInfo(_settings: EwSettings, chatMessages: string[]): Promise<ResolvedWorldInfo> {
   const result: ResolvedWorldInfo = { before: [], after: [], atDepth: [] };
 
   const roleMap: Record<string, 'system' | 'user' | 'assistant'> = {
