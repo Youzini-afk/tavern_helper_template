@@ -449,13 +449,26 @@ export function diffSnapshots(prev: SnapshotData | null, curr: SnapshotData | nu
  * the target messageId, then apply that state to the worldbook.
  */
 export async function rollbackToFloor(settings: EwSettings, targetMessageId: number): Promise<void> {
+  await restoreWorldbookFromSnapshots(settings, floor => floor.messageId <= targetMessageId);
+  console.info(`[Evolution World] Rolled back to floor #${targetMessageId}`);
+}
+
+export async function rollbackBeforeFloor(settings: EwSettings, messageId: number): Promise<void> {
+  await restoreWorldbookFromSnapshots(settings, floor => floor.messageId < messageId);
+  console.info(`[Evolution World] Rolled back to state before floor #${messageId}`);
+}
+
+async function restoreWorldbookFromSnapshots(
+  settings: EwSettings,
+  predicate: (floor: FloorSnapshot) => boolean,
+): Promise<void> {
   const allFloors = await collectAllFloorSnapshots();
   const dynMerged = new Map<string, DynSnapshot>();
   let controller: string | null = null;
 
-  // Merge snapshots up to targetMessageId (inclusive)
+  // Merge snapshots selected by caller.
   for (const floor of allFloors) {
-    if (floor.messageId > targetMessageId) break;
+    if (!predicate(floor)) continue;
     if (!floor.snapshot) continue;
 
     if (floor.snapshot.controller) {
@@ -496,9 +509,6 @@ export async function rollbackToFloor(settings: EwSettings, targetMessageId: num
   }
 
   await replaceWorldbook(target.worldbook_name, nextEntries, { render: 'debounced' });
-  console.info(
-    `[Evolution World] Rolled back to floor #${targetMessageId}: ${dynMerged.size} Dyn + ${controller ? 1 : 0} Controller`,
-  );
 }
 
 // ── Event Handlers ──────────────────────────────────────────

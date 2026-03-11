@@ -1,5 +1,5 @@
 import { showManagedEwNotice } from '../ui/notice';
-import { disposeFloorBindingEvents, initFloorBindingEvents } from './floor-binding';
+import { disposeFloorBindingEvents, initFloorBindingEvents, rollbackBeforeFloor } from './floor-binding';
 import { runIncrementalHideCheck } from './hide-engine';
 import { markIntercepted, resetInterceptGuard, wasRecentlyIntercepted } from './intercept-guard';
 import { runWorkflow } from './pipeline';
@@ -762,6 +762,10 @@ export async function rerollCurrentAfterReplyWorkflow(): Promise<{ ok: boolean; 
 
   setProcessing(true);
   try {
+    if (settings.floor_binding_enabled) {
+      await rollbackBeforeFloor(settings, messageId);
+    }
+
     const outcome = await executeWorkflowWithPolicy(settings, {
       messageId,
       userInput,
