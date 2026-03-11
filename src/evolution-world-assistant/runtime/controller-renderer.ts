@@ -94,25 +94,25 @@ function renderCharDetection(model: ControllerModel, dynPrefix: string): string 
   code += `var _ewChars = Array.from(_ewDetected);\n`;
   code += `%>\n\n`;
 
-  // 循环加载条目
-  code += `<% for (var _ewI = 0; _ewI < _ewChars.length; _ewI++) { %>\n`;
+  // 循环加载条目 — 用 forEach 回避 for(i<len) 中的 < 被 EJS 语法检查误判
+  code += `<% _ewChars.forEach(function(_ewName) { %>\n`;
   for (const pattern of patterns) {
-    // {name} → _ewChars[_ewI]
+    // {name} → _ewName
     // 构建动态 getwi 调用
     const prefix = quoteSingle(dynPrefix);
     if (pattern === '{name}') {
-      code += `<%- await getwi(null, ${prefix} + _ewChars[_ewI]) %>\n`;
+      code += `<%- await getwi(null, ${prefix} + _ewName) %>\n`;
     } else if (pattern.includes('{name}')) {
       const parts = pattern.split('{name}');
       const left = parts[0] || '';
       const right = parts.slice(1).join('{name}') || '';
-      code += `<%- await getwi(null, ${prefix} + ${quoteSingle(left)} + _ewChars[_ewI] + ${quoteSingle(right)}) %>\n`;
+      code += `<%- await getwi(null, ${prefix} + ${quoteSingle(left)} + _ewName + ${quoteSingle(right)}) %>\n`;
     } else {
       // 没有 {name} 占位符，作为固定条目名
       code += `<%- await getwi(null, ${quoteSingle(dynPrefix + pattern)}) %>\n`;
     }
   }
-  code += `<% } %>\n`;
+  code += `<% }); %>\n`;
 
   return code;
 }
@@ -124,14 +124,14 @@ function renderForEach(model: ControllerModel, dynPrefix: string): string {
   let code = '';
   model.for_each.forEach((fe, idx) => {
     const listVar = `_ewList${idx}`;
-    code += `<%\nvar ${listVar} = getvar(${quoteSingle(fe.list_var)}, { defaults: [] });\n`;
-    code += `for (var _feI = 0; _feI < ${listVar}.length; _feI++) {\n%>\n`;
+    code += `<%\nvar ${listVar} = getvar(${quoteSingle(fe.list_var)}, { defaults: [] });\n%>\n`;
+    code += `<% ${listVar}.forEach(function(_feItem) { %>\n`;
 
     const prefix = quoteSingle(dynPrefix + fe.entry_prefix);
     const suffix = fe.entry_suffix ? ` + ${quoteSingle(fe.entry_suffix)}` : '';
-    code += `<%- await getwi(null, ${prefix} + ${listVar}[_feI]${suffix}) %>\n`;
+    code += `<%- await getwi(null, ${prefix} + _feItem${suffix}) %>\n`;
 
-    code += `<% } %>\n`;
+    code += `<% }); %>\n`;
   });
 
   return code;
