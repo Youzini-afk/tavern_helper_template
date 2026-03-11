@@ -224,13 +224,64 @@ function createProcessingReminder(onAbort: () => void) {
   });
 }
 
+type WorkflowExecutionOutcome = {
+  shouldAbortGeneration: boolean;
+  workflowSucceeded: boolean;
+  abortedByUser: boolean;
+};
+
+function setSendTextareaValue(text: string): void {
+  const textarea = getChatDocument().getElementById('send_textarea') as HTMLTextAreaElement | null;
+  if (!textarea) {
+    return;
+  }
+
+  textarea.value = text;
+  textarea.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function restoreOriginalGenerateInput(options: Record<string, any>, userInput: string): void {
+  if (Array.isArray(options.injects) && options.injects[0] && typeof options.injects[0] === 'object') {
+    options.injects[0].content = userInput;
+    return;
+  }
+
+  if (typeof options.prompt === 'string') {
+    options.prompt = userInput;
+    return;
+  }
+
+  options.user_input = userInput;
+}
+
+function shouldReleaseInterceptedMessage(settings: EwSettings, outcome: WorkflowExecutionOutcome): boolean {
+  if (outcome.abortedByUser) {
+    return false;
+  }
+
+  const policy = settings.intercept_release_policy ?? 'success_only';
+  if (policy === 'never') {
+    return false;
+  }
+  if (policy === 'always') {
+    return true;
+  }
+
+  return outcome.workflowSucceeded;
+}
+
 // ---------------------------------------------------------------------------
 // Shared workflow execution with failure-policy handling.
 // Both the TavernHelper hook and GENERATION_AFTER_COMMANDS fallback call this.
 // ---------------------------------------------------------------------------
 
-async function executeWorkflowWithPolicy(settings: EwSettings, messageId: number, userInput: string): Promise<boolean> {
-  // Returns true if the caller should ABORT the generation (stop_generation policy).
+async function executeWorkflowWithPolicy(
+  settings: EwSettings,
+  messageId: number,
+  userInput: string,
+): Promise<WorkflowExecutionOutcome> {
+  // Returns the workflow outcome so the primary interception path can decide
+  // whether the original user message should be released after EW processing.
   // Apply incremental hide check before workflow so AI context is up-to-date
   try {
     runIncrementalHideCheck(settings.hide_settings);
@@ -266,7 +317,11 @@ async function executeWorkflowWithPolicy(settings: EwSettings, messageId: number
       level: 'warning',
       duration_ms: 2200,
     });
-    return true;
+    return {
+      shouldAbortGeneration: true,
+      workflowSucceeded: false,
+      abortedByUser: true,
+    } satisfies WorkflowExecutionOutcome;
   };
 
   let result;
@@ -333,12 +388,13 @@ async function executeWorkflowWithPolicy(settings: EwSettings, messageId: number
         case 'continue_generation':
           processingReminder.update({
             title: 'Evolution World',
-            message: `工作流失败，已回退为 AI 继续生成：${displayReason}`,
+            message: `工作流失败：${displayReason}。原消息是否继续发送取决于放行策略。`,
             level: 'warning',
             duration_ms: 3200,
           });
-          toastr.warning(`工作流失败，AI 继续生成: ${displayReason}`, 'Evolution World');
+          toastr.warning(`工作流失败，原消息是否继续发送取决于放行策略: ${displayReason}`, 'Evolution World');
           break;
+        case 'allow_partial_success':
         case 'notify_only':
           processingReminder.update({
             title: 'Evolution World',
@@ -359,10 +415,18 @@ async function executeWorkflowWithPolicy(settings: EwSettings, messageId: number
           });
           stopGenerationNow();
           toastr.error(`动态世界流程失败，本轮已中止: ${displayReason}`, 'Evolution World');
-          return true;
+          return {
+            shouldAbortGeneration: true,
+            workflowSucceeded: false,
+            abortedByUser: false,
+          };
       }
 
-      return false;
+      return {
+        shouldAbortGeneration: false,
+        workflowSucceeded: false,
+        abortedByUser: false,
+      };
     }
   }
 
@@ -372,7 +436,11 @@ async function executeWorkflowWithPolicy(settings: EwSettings, messageId: number
     level: 'success',
     duration_ms: 2200,
   });
-  return false;
+  return {
+    shouldAbortGeneration: false,
+    workflowSucceeded: true,
+    abortedByUser: false,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -423,10 +491,14 @@ function installTavernHelperHook() {
 
     const messageId = getRuntimeState().last_send?.message_id ?? getLastMessageId();
 
-    let shouldAbort = false;
+    let workflowOutcome: WorkflowExecutionOutcome = {
+      shouldAbortGeneration: false,
+      workflowSucceeded: false,
+      abortedByUser: false,
+    };
     setProcessing(true);
     try {
-      shouldAbort = await executeWorkflowWithPolicy(settings, messageId, userInput);
+      workflowOutcome = await executeWorkflowWithPolicy(settings, messageId, userInput);
     } catch (e) {
       console.error('[Evolution World] Error in TavernHelper.generate hook:', e);
     } finally {
@@ -435,10 +507,20 @@ function installTavernHelperHook() {
     }
 
     // If workflow failed with stop_generation policy, do NOT call original generate
-    if (shouldAbort) {
+    if (workflowOutcome.shouldAbortGeneration) {
       console.debug('[Evolution World] TavernHelper.generate aborted due to workflow failure (stop_generation)');
       return;
     }
+
+    if (!shouldReleaseInterceptedMessage(settings, workflowOutcome)) {
+      setSendTextareaValue(userInput);
+      console.debug('[Evolution World] Original intercepted message was not released due to intercept_release_policy');
+      return '';
+    }
+
+    restoreOriginalGenerateInput(options, userInput);
+    setSendTextareaValue(userInput);
+    recordUserSendIntent(userInput);
 
     // Flag for GENERATION_AFTER_COMMANDS dedup
     options._ew_processed = true;

@@ -1,4 +1,4 @@
-import { TextSliceRuleSchema } from './contracts';
+﻿import { TextSliceRuleSchema } from './contracts';
 
 export const EwApiPresetSchema = z.object({
   id: z.string().min(1),
@@ -269,6 +269,7 @@ export const EwSettingsSchema = z.object({
   failure_policy: z
     .enum(['stop_generation', 'continue_generation', 'retry_once', 'notify_only', 'allow_partial_success'])
     .default('stop_generation'),
+  intercept_release_policy: z.enum(['success_only', 'always', 'never']).default('success_only'),
   controller_entry_name: z.string().default('EW/Controller'),
   dynamic_entry_prefix: z.string().default('EW/Dyn/'),
   gate_ttl_ms: z.coerce.number().int().positive().default(12000),

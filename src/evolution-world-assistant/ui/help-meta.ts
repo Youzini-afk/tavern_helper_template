@@ -78,7 +78,16 @@ const FIELD_HELP_LIST: FieldHelpMeta[] = [
     key: 'failure_policy',
     label: '失败策略',
     shortHelp: '工作流失败时的处理方式。',
-    detailHelp: '失败即中止：停止 AI 生成并提示错误。静默继续：显示警告但 AI 照常生成。失败重试一次：自动重试一次，仍失败则中止。仅通知：仅弹出提示，不影响生成。',
+    detailHelp:
+      '失败即中止：停止 AI 生成并提示错误。静默继续：显示警告但 AI 照常生成。失败重试一次：自动重试一次，仍失败则中止。仅通知：仅弹出提示，不影响生成。',
+    isAdvanced: true,
+  },
+  {
+    key: 'intercept_release_policy',
+    label: '原消息放行策略',
+    shortHelp: '被 EW 拦截的原始用户消息，在工作流结束后是否自动继续发送。',
+    detailHelp:
+      '仅成功时放行：默认选项，只有工作流成功后才继续把原始用户消息发给 AI。始终放行：无论工作流成功或失败，都继续发送原消息。永不自动放行：EW 完成处理后不自动发送，保留给你手动决定。',
     isAdvanced: true,
   },
   {
