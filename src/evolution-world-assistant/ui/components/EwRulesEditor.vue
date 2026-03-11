@@ -44,27 +44,55 @@ const emit = defineEmits<{
   (event: 'update:modelValue', value: SliceRule[]): void;
 }>();
 
-const rules = computed(() => props.modelValue);
+const rules = ref<SliceRule[]>(props.modelValue.map(rule => ({ ...rule })));
+let emitTimer: number | null = null;
+
+function cloneRules(source: SliceRule[]): SliceRule[] {
+  return source.map(rule => ({ ...rule }));
+}
+
+function scheduleEmit() {
+  if (emitTimer !== null) {
+    window.clearTimeout(emitTimer);
+  }
+  emitTimer = window.setTimeout(() => {
+    emitTimer = null;
+    emit('update:modelValue', cloneRules(rules.value));
+  }, 120);
+}
+
+watch(
+  () => props.modelValue,
+  next => {
+    rules.value = cloneRules(next);
+  },
+  { deep: true },
+);
+
+onBeforeUnmount(() => {
+  if (emitTimer !== null) {
+    window.clearTimeout(emitTimer);
+  }
+});
 
 function addRule() {
-  emit('update:modelValue', [...rules.value, { start: '', end: '' }]);
+  rules.value = [...rules.value, { start: '', end: '' }];
+  emit('update:modelValue', cloneRules(rules.value));
 }
 
 function removeRule(index: number) {
-  emit(
-    'update:modelValue',
-    rules.value.filter((_, current) => current !== index),
-  );
+  rules.value = rules.value.filter((_, current) => current !== index);
+  emit('update:modelValue', cloneRules(rules.value));
 }
 
 function setRuleValue(index: number, key: 'start' | 'end', value: string) {
-  const next = rules.value.map((rule, current) => {
+  rules.value = rules.value.map((rule, current) => {
     if (current !== index) {
       return rule;
     }
     return { ...rule, [key]: value };
   });
-  emit('update:modelValue', next);
+  scheduleEmit();
 }
 </script>
 

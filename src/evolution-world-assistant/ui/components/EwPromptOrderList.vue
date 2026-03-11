@@ -26,12 +26,27 @@
             <div class="ew-prompt-order__chips">
               <template v-if="entry.type === 'prompt'">
                 <span :class="['ew-prompt-order__chip', `ew-prompt-order__chip--${entry.role}`]">{{ entry.role }}</span>
-                <span :class="['ew-prompt-order__chip', entry.injection_position === 'in_chat' ? 'ew-prompt-order__chip--inchat' : 'ew-prompt-order__chip--relative']">
+                <span
+                  :class="[
+                    'ew-prompt-order__chip',
+                    entry.injection_position === 'in_chat'
+                      ? 'ew-prompt-order__chip--inchat'
+                      : 'ew-prompt-order__chip--relative',
+                  ]"
+                >
                   {{ entry.injection_position === 'in_chat' ? '聊天中' : '相对' }}
                 </span>
-                <span v-if="entry.injection_position === 'in_chat'" class="ew-prompt-order__chip ew-prompt-order__chip--depth">深度 {{ entry.injection_depth }}</span>
+                <span
+                  v-if="entry.injection_position === 'in_chat'"
+                  class="ew-prompt-order__chip ew-prompt-order__chip--depth"
+                  >深度 {{ entry.injection_depth }}</span
+                >
               </template>
-              <span v-else-if="entry.role !== 'system'" :class="['ew-prompt-order__chip', `ew-prompt-order__chip--${entry.role}`]">{{ entry.role }}</span>
+              <span
+                v-else-if="entry.role !== 'system'"
+                :class="['ew-prompt-order__chip', `ew-prompt-order__chip--${entry.role}`]"
+                >{{ entry.role }}</span
+              >
             </div>
           </div>
 
@@ -41,14 +56,18 @@
               class="ew-mini-btn"
               :title="entry.type === 'marker' ? '查看' : '编辑'"
               @click="toggleEdit(entry.identifier)"
-            >✎</button>
+            >
+              ✎
+            </button>
             <button
               v-if="canDelete(entry)"
               type="button"
               class="ew-mini-btn ew-mini-btn--danger"
               title="删除"
               @click="removeEntry(entry.identifier)"
-            >✕</button>
+            >
+              ✕
+            </button>
             <label class="ew-switch ew-prompt-order__toggle">
               <input type="checkbox" :checked="entry.enabled" @change="toggleEnabled(entry.identifier)" />
               <span class="ew-switch__slider"></span>
@@ -62,11 +81,18 @@
             <div class="ew-prompt-order__editor-grid">
               <label class="ew-prompt-order__editor-label">
                 名称
-                <input type="text" :value="entry.name" @input="patchEntry(entry.identifier, 'name', ($event.target as HTMLInputElement).value)" />
+                <input
+                  type="text"
+                  :value="getDraftEntryValue(entry, 'name')"
+                  @input="setDraftEntryValue(entry.identifier, 'name', ($event.target as HTMLInputElement).value)"
+                />
               </label>
               <label class="ew-prompt-order__editor-label">
                 角色
-                <select :value="entry.role" @change="patchEntry(entry.identifier, 'role', ($event.target as HTMLSelectElement).value)">
+                <select
+                  :value="entry.role"
+                  @change="patchEntry(entry.identifier, 'role', ($event.target as HTMLSelectElement).value)"
+                >
                   <option value="system">system</option>
                   <option value="user">user</option>
                   <option value="assistant">assistant</option>
@@ -74,23 +100,39 @@
               </label>
               <label class="ew-prompt-order__editor-label">
                 插入位置
-                <select :value="entry.injection_position" @change="patchEntry(entry.identifier, 'injection_position', ($event.target as HTMLSelectElement).value)">
+                <select
+                  :value="entry.injection_position"
+                  @change="
+                    patchEntry(entry.identifier, 'injection_position', ($event.target as HTMLSelectElement).value)
+                  "
+                >
                   <option value="relative">相对</option>
                   <option value="in_chat">聊天中</option>
                 </select>
               </label>
               <label v-if="entry.injection_position === 'in_chat'" class="ew-prompt-order__editor-label">
                 注入深度
-                <input type="number" min="0" :value="entry.injection_depth" @input="patchEntry(entry.identifier, 'injection_depth', Number(($event.target as HTMLInputElement).value) || 0)" />
+                <input
+                  type="number"
+                  min="0"
+                  :value="entry.injection_depth"
+                  @input="
+                    patchEntry(
+                      entry.identifier,
+                      'injection_depth',
+                      Number(($event.target as HTMLInputElement).value) || 0,
+                    )
+                  "
+                />
               </label>
             </div>
             <label class="ew-prompt-order__editor-label">
               内容
               <textarea
-                :value="entry.content"
+                :value="getDraftEntryValue(entry, 'content')"
                 rows="12"
                 placeholder="在此输入提示词内容..."
-                @input="patchEntry(entry.identifier, 'content', ($event.target as HTMLTextAreaElement).value)"
+                @input="setDraftEntryValue(entry.identifier, 'content', ($event.target as HTMLTextAreaElement).value)"
               ></textarea>
             </label>
           </div>
@@ -98,7 +140,10 @@
 
         <!-- Read-only info panel for 'marker' type entries -->
         <transition name="ew-expand">
-          <div v-if="editingId === entry.identifier && entry.type === 'marker'" class="ew-prompt-order__editor ew-prompt-order__marker-info">
+          <div
+            v-if="editingId === entry.identifier && entry.type === 'marker'"
+            class="ew-prompt-order__editor ew-prompt-order__marker-info"
+          >
             <div class="ew-prompt-order__editor-grid">
               <label class="ew-prompt-order__editor-label">
                 名称
@@ -106,7 +151,11 @@
               </label>
               <label class="ew-prompt-order__editor-label">
                 角色
-                <input type="text" :value="entry.role === 'system' ? '系统' : entry.role === 'user' ? '用户' : '助手'" disabled />
+                <input
+                  type="text"
+                  :value="entry.role === 'system' ? '系统' : entry.role === 'user' ? '用户' : '助手'"
+                  disabled
+                />
               </label>
               <label class="ew-prompt-order__editor-label">
                 位置
@@ -122,16 +171,14 @@
       </div>
     </div>
 
-    <button type="button" class="ew-prompt-order__add" @click="addCustomEntry">
-      + 新增自定义提示词
-    </button>
+    <button type="button" class="ew-prompt-order__add" @click="addCustomEntry">+ 新增自定义提示词</button>
   </div>
 </template>
 
 <script setup lang="ts">
+import { simpleHash } from '../../runtime/helpers';
 import type { EwPromptOrderEntry } from '../../runtime/types';
 import { BUILTIN_MARKERS, BUILTIN_PROMPTS } from '../../runtime/types';
-import { simpleHash } from '../../runtime/helpers';
 
 const props = defineProps<{
   promptOrder: EwPromptOrderEntry[];
@@ -144,13 +191,83 @@ const emit = defineEmits<{
 const editingId = ref<string | null>(null);
 let dragFromIdx = -1;
 const dragPreview = ref<EwPromptOrderEntry[] | null>(null);
+const entryDrafts = ref<Record<string, Partial<Pick<EwPromptOrderEntry, 'name' | 'content'>>>>({});
+const draftCommitTimers = new Map<string, number>();
 
 /** The displayed list: use drag preview during drag, else props */
 const displayOrder = computed(() => dragPreview.value ?? props.promptOrder);
 
 function clone(source?: EwPromptOrderEntry[]): EwPromptOrderEntry[] {
-  return JSON.parse(JSON.stringify(source ?? props.promptOrder));
+  return (source ?? props.promptOrder).map(entry => ({ ...entry }));
 }
+
+function getDraftEntryValue(entry: EwPromptOrderEntry, field: 'name' | 'content'): string {
+  return entryDrafts.value[entry.identifier]?.[field] ?? entry[field] ?? '';
+}
+
+function clearDraftCommitTimer(key: string) {
+  const timer = draftCommitTimers.get(key);
+  if (timer !== undefined) {
+    window.clearTimeout(timer);
+    draftCommitTimers.delete(key);
+  }
+}
+
+function setDraftEntryValue(identifier: string, field: 'name' | 'content', value: string) {
+  entryDrafts.value = {
+    ...entryDrafts.value,
+    [identifier]: {
+      ...(entryDrafts.value[identifier] ?? {}),
+      [field]: value,
+    },
+  };
+
+  const timerKey = `${identifier}:${field}`;
+  clearDraftCommitTimer(timerKey);
+  const timer = window.setTimeout(() => {
+    draftCommitTimers.delete(timerKey);
+    patchEntry(identifier, field, value);
+  }, 140);
+  draftCommitTimers.set(timerKey, timer);
+}
+
+watch(
+  () => props.promptOrder,
+  next => {
+    const byId = new Map(next.map(entry => [entry.identifier, entry]));
+    const normalizedDrafts: Record<string, Partial<Pick<EwPromptOrderEntry, 'name' | 'content'>>> = {};
+
+    for (const [identifier, draft] of Object.entries(entryDrafts.value)) {
+      const entry = byId.get(identifier);
+      if (!entry) {
+        clearDraftCommitTimer(`${identifier}:name`);
+        clearDraftCommitTimer(`${identifier}:content`);
+        continue;
+      }
+
+      const nextDraft: Partial<Pick<EwPromptOrderEntry, 'name' | 'content'>> = {};
+      if (draft.name !== undefined && draft.name !== entry.name) {
+        nextDraft.name = draft.name;
+      }
+      if (draft.content !== undefined && draft.content !== entry.content) {
+        nextDraft.content = draft.content;
+      }
+      if (Object.keys(nextDraft).length > 0) {
+        normalizedDrafts[identifier] = nextDraft;
+      }
+    }
+
+    entryDrafts.value = normalizedDrafts;
+  },
+  { deep: true },
+);
+
+onBeforeUnmount(() => {
+  for (const timer of draftCommitTimers.values()) {
+    window.clearTimeout(timer);
+  }
+  draftCommitTimers.clear();
+});
 
 function toggleEdit(identifier: string) {
   editingId.value = editingId.value === identifier ? null : identifier;
@@ -161,14 +278,14 @@ function canDelete(entry: EwPromptOrderEntry): boolean {
 }
 
 const MARKER_SOURCES: Record<string, string> = {
-  worldInfoBefore:    'World Info (↑ 角色描述前)',
-  worldInfoAfter:     'World Info (↓ 角色描述后)',
-  charDescription:    '角色卡 — 描述',
-  charPersonality:    '角色卡 — 性格',
-  scenario:           '角色卡 — 情景',
+  worldInfoBefore: 'World Info (↑ 角色描述前)',
+  worldInfoAfter: 'World Info (↓ 角色描述后)',
+  charDescription: '角色卡 — 描述',
+  charPersonality: '角色卡 — 性格',
+  scenario: '角色卡 — 情景',
   personaDescription: '用户 — 角色描述',
-  dialogueExamples:   '角色卡 — 对话示例',
-  chatHistory:        '当前聊天记录',
+  dialogueExamples: '角色卡 — 对话示例',
+  chatHistory: '当前聊天记录',
 };
 
 function getMarkerSource(identifier: string): string {
@@ -259,7 +376,10 @@ function onDragEnd() {
   background: var(--ew-bg-elevated, rgba(255, 255, 255, 0.03));
   border: 1px solid var(--ew-border, rgba(255, 255, 255, 0.08));
   border-radius: 8px;
-  transition: opacity 0.2s, background 0.2s, border-color 0.2s;
+  transition:
+    opacity 0.2s,
+    background 0.2s,
+    border-color 0.2s;
   cursor: grab;
 }
 
@@ -401,7 +521,9 @@ function onDragEnd() {
   color: var(--ew-text-muted, #888);
   font-size: 14px;
   cursor: pointer;
-  transition: color 0.15s, background 0.15s;
+  transition:
+    color 0.15s,
+    background 0.15s;
   line-height: 1;
 }
 
@@ -505,7 +627,9 @@ function onDragEnd() {
   color: var(--ew-text-muted, #aaa);
   cursor: pointer;
   font-size: 13px;
-  transition: border-color 0.15s, color 0.15s;
+  transition:
+    border-color 0.15s,
+    color 0.15s;
 }
 
 .ew-prompt-order__add:hover {
@@ -520,7 +644,9 @@ function onDragEnd() {
   align-items: center;
   cursor: pointer;
 }
-.ew-switch input { display: none; }
+.ew-switch input {
+  display: none;
+}
 .ew-switch__slider {
   width: 32px;
   height: 18px;
@@ -538,7 +664,9 @@ function onDragEnd() {
   background: #888;
   top: 2px;
   left: 2px;
-  transition: transform 0.2s, background 0.2s;
+  transition:
+    transform 0.2s,
+    background 0.2s;
 }
 .ew-switch input:checked + .ew-switch__slider {
   background: var(--ew-accent, #80a0ff);
@@ -551,7 +679,9 @@ function onDragEnd() {
 /* ew-expand transition */
 .ew-expand-enter-active,
 .ew-expand-leave-active {
-  transition: max-height 0.2s ease, opacity 0.2s ease;
+  transition:
+    max-height 0.2s ease,
+    opacity 0.2s ease;
   overflow: hidden;
 }
 .ew-expand-enter-from,

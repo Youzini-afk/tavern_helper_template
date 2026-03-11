@@ -25,42 +25,53 @@
     subtitle="预览工作流 AI 实际接收的完整 messages 数组。"
     collapsible
   >
-    <div class="dbg-toolbar">
-      <select v-model="store.previewFlowId" class="dbg-flow-select">
-        <option value="">自动选择</option>
-        <option v-for="flow in allFlows" :key="flow.id" :value="flow.id">
-          {{ flow.name || flow.id }}
-        </option>
-      </select>
-      <button type="button" class="ew-btn" :disabled="store.busy" @click="store.loadPromptPreview">📝 生成预览</button>
-    </div>
+    <template v-if="promptSectionOpen">
+      <div class="dbg-toolbar">
+        <select v-model="store.previewFlowId" class="dbg-flow-select">
+          <option value="">自动选择</option>
+          <option v-for="flow in allFlows" :key="flow.id" :value="flow.id">
+            {{ flow.name || flow.id }}
+          </option>
+        </select>
+        <button type="button" class="ew-btn" :disabled="store.busy" @click="store.loadPromptPreview">
+          📝 生成预览
+        </button>
+      </div>
 
-    <div v-if="store.promptPreview && store.promptPreview.length > 0" class="dbg-messages">
-      <div class="dbg-msg-count">共 {{ store.promptPreview.length }} 条消息</div>
-      <div
-        v-for="(msg, idx) in store.promptPreview"
-        :key="idx"
-        class="dbg-msg-card"
-        :data-role="msg.role"
-        :data-debug-only="msg.debugOnly ? '1' : '0'"
-      >
-        <div class="dbg-msg-header" @click="toggleMsgExpand(idx)">
-          <span class="dbg-role-badge" :data-role="msg.role">{{ msg.role }}</span>
-          <span v-if="msg.previewTitle" class="dbg-marker-title">{{ msg.previewTitle }}</span>
-          <span v-if="msg.name" class="dbg-msg-name">{{ msg.name }}</span>
-          <span class="dbg-msg-idx">#{{ idx }}</span>
-          <span class="dbg-msg-len">{{ msg.content.length }} chars</span>
-          <span class="dbg-expand-icon">{{ expandedMsgs.has(idx) ? '▼' : '▶' }}</span>
+      <div v-if="store.promptPreview && store.promptPreview.length > 0" class="dbg-messages">
+        <div class="dbg-msg-count">
+          共 {{ store.promptPreview.length }} 条消息，当前渲染 {{ visiblePromptMessages.length }} 条
         </div>
-        <div v-if="expandedMsgs.has(idx)" class="dbg-msg-body">
-          <pre v-html="highlightEwTags(msg.content)"></pre>
+        <div
+          v-for="(msg, idx) in visiblePromptMessages"
+          :key="idx"
+          class="dbg-msg-card"
+          :data-role="msg.role"
+          :data-debug-only="msg.debugOnly ? '1' : '0'"
+        >
+          <div class="dbg-msg-header" @click="toggleMsgExpand(idx)">
+            <span class="dbg-role-badge" :data-role="msg.role">{{ msg.role }}</span>
+            <span v-if="msg.previewTitle" class="dbg-marker-title">{{ msg.previewTitle }}</span>
+            <span v-if="msg.name" class="dbg-msg-name">{{ msg.name }}</span>
+            <span class="dbg-msg-idx">#{{ idx }}</span>
+            <span class="dbg-msg-len">{{ msg.content.length }} chars</span>
+            <span class="dbg-expand-icon">{{ expandedMsgs.has(idx) ? '▼' : '▶' }}</span>
+          </div>
+          <div v-if="expandedMsgs.has(idx)" class="dbg-msg-body">
+            <pre v-html="highlightEwTags(msg.content)"></pre>
+          </div>
+          <div v-else class="dbg-msg-preview">
+            <span v-html="msg.previewHtml"></span>
+          </div>
         </div>
-        <div v-else class="dbg-msg-preview">
-          <span v-html="highlightEwTags(truncate(msg.content, 120))"></span>
+        <div v-if="hasMorePromptMessages" class="dbg-actions">
+          <button type="button" class="ew-btn" @click="showAllPromptMessages">
+            显示剩余 {{ store.promptPreview.length - visiblePromptMessages.length }} 条
+          </button>
         </div>
       </div>
-    </div>
-    <div v-else-if="store.promptPreview" class="dbg-empty">没有生成任何消息。请检查工作流配置。</div>
+      <div v-else-if="store.promptPreview" class="dbg-empty">没有生成任何消息。请检查工作流配置。</div>
+    </template>
   </EwSectionCard>
 
   <!-- ── C. 快照检视区 ── -->
@@ -70,96 +81,105 @@
     subtitle="当前聊天的最新 EW 快照（Controller + Dyn 条目）。"
     collapsible
   >
-    <div class="dbg-toolbar">
-      <button type="button" class="ew-btn" :disabled="store.busy" @click="store.loadSnapshotPreview">
-        📸 读取快照
-      </button>
-    </div>
-
-    <div v-if="store.snapshotPreview" class="dbg-snapshot">
-      <!-- Controller -->
-      <div class="dbg-snap-section">
-        <h4 class="dbg-snap-label">
-          Controller
-          <span class="dbg-snap-status" :data-ok="store.snapshotPreview.controller ? '1' : '0'">
-            {{ store.snapshotPreview.controller ? '✅ 有内容' : '❌ 空' }}
-          </span>
-        </h4>
-        <div v-if="store.snapshotPreview.controller" class="dbg-snap-content">
-          <pre>{{ truncate(store.snapshotPreview.controller, 500) }}</pre>
-        </div>
+    <template v-if="snapshotSectionOpen">
+      <div class="dbg-toolbar">
+        <button type="button" class="ew-btn" :disabled="store.busy" @click="store.loadSnapshotPreview">
+          📸 读取快照
+        </button>
       </div>
 
-      <!-- Dyn Entries -->
-      <div class="dbg-snap-section">
-        <h4 class="dbg-snap-label">Dyn 条目 ({{ dynEntries.length }})</h4>
-        <div v-if="dynEntries.length > 0" class="dbg-snap-table-wrap">
-          <table class="dbg-snap-table">
-            <thead>
-              <tr>
-                <th>状态</th>
-                <th>名称</th>
-                <th>内容摘要</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="snap in dynEntries" :key="snap.name">
-                <td><span class="dbg-enabled-dot" :data-enabled="snap.enabled ? '1' : '0'" /></td>
-                <td class="dbg-snap-name">{{ snap.name }}</td>
-                <td class="dbg-snap-excerpt">{{ truncate(snap.content, 80) }}</td>
-              </tr>
-            </tbody>
-          </table>
+      <div v-if="store.snapshotPreview" class="dbg-snapshot">
+        <!-- Controller -->
+        <div class="dbg-snap-section">
+          <h4 class="dbg-snap-label">
+            Controller
+            <span class="dbg-snap-status" :data-ok="store.snapshotPreview.controller ? '1' : '0'">
+              {{ store.snapshotPreview.controller ? '✅ 有内容' : '❌ 空' }}
+            </span>
+          </h4>
+          <div v-if="store.snapshotPreview.controller" class="dbg-snap-content">
+            <pre>{{ truncate(store.snapshotPreview.controller, 500) }}</pre>
+          </div>
         </div>
-        <div v-else class="dbg-empty">没有 Dyn 条目。</div>
+
+        <!-- Dyn Entries -->
+        <div class="dbg-snap-section">
+          <h4 class="dbg-snap-label">Dyn 条目 ({{ dynEntries.length }})</h4>
+          <div v-if="dynEntries.length > 0" class="dbg-snap-table-wrap">
+            <table class="dbg-snap-table">
+              <thead>
+                <tr>
+                  <th>状态</th>
+                  <th>名称</th>
+                  <th>内容摘要</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="snap in dynEntries" :key="snap.name">
+                  <td><span class="dbg-enabled-dot" :data-enabled="snap.enabled ? '1' : '0'" /></td>
+                  <td class="dbg-snap-name">{{ snap.name }}</td>
+                  <td class="dbg-snap-excerpt">{{ truncate(snap.content, 80) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-else class="dbg-empty">没有 Dyn 条目。</div>
+        </div>
       </div>
-    </div>
+    </template>
   </EwSectionCard>
 
   <!-- ── D. 运行日志区 ── -->
   <EwSectionCard v-model="logSectionOpen" title="运行记录" subtitle="最近一次执行的结构化摘要。" collapsible>
-    <!-- Run Summary -->
-    <div v-if="store.lastRun" class="dbg-run-summary">
-      <div class="dbg-run-header">
-        <span class="dbg-status-badge" :data-ok="store.lastRun.ok ? '1' : '0'">
-          {{ store.lastRun.ok ? '✅ 成功' : '❌ 失败' }}
-        </span>
-        <span class="dbg-run-meta">
-          {{ store.lastRun.mode === 'manual' ? '手动' : '自动' }}
-          · {{ store.lastRun.flow_count }} 工作流 · {{ store.lastRun.elapsed_ms }}ms
-        </span>
-        <span class="dbg-run-time">{{ formatTime(store.lastRun.at) }}</span>
-      </div>
-      <div v-if="!store.lastRun.ok && store.lastRun.reason" class="dbg-run-error">
-        {{ store.lastRun.reason }}
-      </div>
-    </div>
-    <div v-else class="dbg-empty">暂无运行记录。</div>
-
-    <!-- Flow IO Summary -->
-    <template v-if="store.lastIo && store.lastIo.flows.length > 0">
-      <h4 class="dbg-io-title">请求 / 响应详情</h4>
-      <div v-for="(flowIo, idx) in store.lastIo.flows" :key="idx" class="dbg-io-card" :data-ok="flowIo.ok ? '1' : '0'">
-        <div class="dbg-io-header" @click="toggleIoExpand(idx)">
-          <span class="dbg-status-dot" :data-ok="flowIo.ok ? '1' : '0'" />
-          <strong>{{ flowIo.flow_name || flowIo.flow_id }}</strong>
-          <span class="dbg-io-meta"> {{ flowIo.api_preset_name }} · {{ flowIo.elapsed_ms }}ms </span>
-          <span class="dbg-expand-icon">{{ expandedIos.has(idx) ? '▼' : '▶' }}</span>
+    <template v-if="logSectionOpen">
+      <!-- Run Summary -->
+      <div v-if="store.lastRun" class="dbg-run-summary">
+        <div class="dbg-run-header">
+          <span class="dbg-status-badge" :data-ok="store.lastRun.ok ? '1' : '0'">
+            {{ store.lastRun.ok ? '✅ 成功' : '❌ 失败' }}
+          </span>
+          <span class="dbg-run-meta">
+            {{ store.lastRun.mode === 'manual' ? '手动' : '自动' }}
+            · {{ store.lastRun.flow_count }} 工作流 · {{ store.lastRun.elapsed_ms }}ms
+          </span>
+          <span class="dbg-run-time">{{ formatTime(store.lastRun.at) }}</span>
         </div>
-        <div v-if="flowIo.error" class="dbg-io-error">{{ flowIo.error }}</div>
-        <div v-if="expandedIos.has(idx)" class="dbg-io-body">
-          <div class="dbg-io-pair">
-            <div class="dbg-io-block">
-              <strong>Request</strong>
-              <pre>{{ flowIo.request_preview || '(空)' }}</pre>
-            </div>
-            <div class="dbg-io-block">
-              <strong>Response</strong>
-              <pre>{{ flowIo.response_preview || '(空)' }}</pre>
+        <div v-if="!store.lastRun.ok && store.lastRun.reason" class="dbg-run-error">
+          {{ store.lastRun.reason }}
+        </div>
+      </div>
+      <div v-else class="dbg-empty">暂无运行记录。</div>
+
+      <!-- Flow IO Summary -->
+      <template v-if="store.lastIo && store.lastIo.flows.length > 0">
+        <h4 class="dbg-io-title">请求 / 响应详情</h4>
+        <div
+          v-for="(flowIo, idx) in store.lastIo.flows"
+          :key="idx"
+          class="dbg-io-card"
+          :data-ok="flowIo.ok ? '1' : '0'"
+        >
+          <div class="dbg-io-header" @click="toggleIoExpand(idx)">
+            <span class="dbg-status-dot" :data-ok="flowIo.ok ? '1' : '0'" />
+            <strong>{{ flowIo.flow_name || flowIo.flow_id }}</strong>
+            <span class="dbg-io-meta"> {{ flowIo.api_preset_name }} · {{ flowIo.elapsed_ms }}ms </span>
+            <span class="dbg-expand-icon">{{ expandedIos.has(idx) ? '▼' : '▶' }}</span>
+          </div>
+          <div v-if="flowIo.error" class="dbg-io-error">{{ flowIo.error }}</div>
+          <div v-if="expandedIos.has(idx)" class="dbg-io-body">
+            <div class="dbg-io-pair">
+              <div class="dbg-io-block">
+                <strong>Request</strong>
+                <pre>{{ flowIo.request_preview || '(空)' }}</pre>
+              </div>
+              <div class="dbg-io-block">
+                <strong>Response</strong>
+                <pre>{{ flowIo.response_preview || '(空)' }}</pre>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </template>
     </template>
   </EwSectionCard>
 </template>
@@ -181,12 +201,42 @@ const logSectionOpen = ref(true);
 // 消息展开状态
 const expandedMsgs = ref(new Set<number>());
 const expandedIos = ref(new Set<number>());
+const promptRenderCount = ref(24);
+
+type DisplayPromptMessage = (typeof store.promptPreview extends Ref<infer T> ? NonNullable<T>[number] : never) & {
+  previewHtml: string;
+};
 
 const allFlows = computed(() => [...store.settings.flows, ...store.charFlows]);
+const displayPromptMessages = computed<DisplayPromptMessage[]>(() => {
+  return (store.promptPreview ?? []).map(msg => ({
+    ...msg,
+    previewHtml: highlightEwTags(truncate(msg.content, msg.debugOnly ? 200 : 120)),
+  }));
+});
+const visiblePromptMessages = computed(() => displayPromptMessages.value.slice(0, promptRenderCount.value));
+const hasMorePromptMessages = computed(() => (store.promptPreview?.length ?? 0) > visiblePromptMessages.value.length);
 
 const dynEntries = computed(() => {
   if (!store.snapshotPreview) return [];
   return [...store.snapshotPreview.dyn.values()];
+});
+
+watch(
+  () => store.promptPreview,
+  preview => {
+    expandedMsgs.value = new Set<number>();
+    promptRenderCount.value = Math.min(preview?.length ?? 0, 24);
+  },
+);
+
+watch(promptSectionOpen, open => {
+  if (!open) {
+    return;
+  }
+  if (store.promptPreview?.length) {
+    promptRenderCount.value = Math.min(store.promptPreview.length, Math.max(promptRenderCount.value, 24));
+  }
 });
 
 function help(key: string) {
@@ -205,6 +255,10 @@ function toggleIoExpand(idx: number) {
   if (next.has(idx)) next.delete(idx);
   else next.add(idx);
   expandedIos.value = next;
+}
+
+function showAllPromptMessages() {
+  promptRenderCount.value = store.promptPreview?.length ?? promptRenderCount.value;
 }
 
 function truncate(str: string, maxLen: number): string {

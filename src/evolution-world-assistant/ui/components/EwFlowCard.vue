@@ -91,7 +91,7 @@
             <h4>生成参数</h4>
           </div>
 
-          <div class="ew-grid ew-grid--two">
+          <div v-if="deferredAdvancedReady" class="ew-grid ew-grid--two">
             <EwFieldRow label="解锁上下文长度">
               <label class="ew-switch ew-switch--field">
                 <input
@@ -236,122 +236,132 @@
               </div>
             </EwFieldRow>
           </div>
+          <div v-else class="ew-flow-card__deferred-placeholder">正在加载生成参数编辑器…</div>
         </section>
         <section class="ew-flow-card__section">
           <div class="ew-flow-card__section-head">
             <h4>行为参数</h4>
           </div>
 
-          <!-- Selects row -->
-          <div class="ew-grid ew-grid--two">
-            <EwFieldRow label="角色名称行为">
-              <select
-                :value="flow.behavior_options.name_behavior"
-                @change="setBehaviorSelectByEvent('name_behavior', $event)"
-              >
-                <option value="none">无</option>
-                <option value="default">默认</option>
-                <option value="complete_target">补全对象</option>
-                <option value="message_content">消息内容</option>
-              </select>
-            </EwFieldRow>
-            <EwFieldRow label="推理强度">
-              <select
-                :value="flow.behavior_options.reasoning_effort"
-                @change="setBehaviorSelectByEvent('reasoning_effort', $event)"
-              >
-                <option value="auto">自动</option>
-                <option value="low">低</option>
-                <option value="medium">中</option>
-                <option value="high">高</option>
-              </select>
-            </EwFieldRow>
-            <EwFieldRow label="详细程度">
-              <select :value="flow.behavior_options.verbosity" @change="setBehaviorSelectByEvent('verbosity', $event)">
-                <option value="auto">自动</option>
-                <option value="low">低</option>
-                <option value="medium">中</option>
-                <option value="high">高</option>
-              </select>
-            </EwFieldRow>
-          </div>
-
-          <!-- Toggle switches grid -->
-          <div class="ew-toggle-grid">
-            <div class="ew-toggle-item">
-              <button
-                type="button"
-                class="ew-switch"
-                role="switch"
-                :aria-checked="flow.behavior_options.continue_prefill ? 'true' : 'false'"
-                @click="setBehaviorToggle('continue_prefill')"
-              >
-                <span class="ew-switch__track" :data-enabled="flow.behavior_options.continue_prefill ? '1' : '0'">
-                  <span class="ew-switch__thumb" />
-                </span>
-              </button>
-              <span class="ew-toggle-item__label">继续预填充</span>
-            </div>
-            <div class="ew-toggle-item">
-              <button
-                type="button"
-                class="ew-switch"
-                role="switch"
-                :aria-checked="flow.behavior_options.squash_system_messages ? 'true' : 'false'"
-                @click="setBehaviorToggle('squash_system_messages')"
-              >
-                <span class="ew-switch__track" :data-enabled="flow.behavior_options.squash_system_messages ? '1' : '0'">
-                  <span class="ew-switch__thumb" />
-                </span>
-              </button>
-              <span class="ew-toggle-item__label">压缩系统消息</span>
-            </div>
-            <div class="ew-toggle-item">
-              <button
-                type="button"
-                class="ew-switch"
-                role="switch"
-                :aria-checked="flow.behavior_options.enable_function_calling ? 'true' : 'false'"
-                @click="setBehaviorToggle('enable_function_calling')"
-              >
-                <span
-                  class="ew-switch__track"
-                  :data-enabled="flow.behavior_options.enable_function_calling ? '1' : '0'"
+          <div v-if="deferredAdvancedReady">
+            <!-- Selects row -->
+            <div class="ew-grid ew-grid--two">
+              <EwFieldRow label="角色名称行为">
+                <select
+                  :value="flow.behavior_options.name_behavior"
+                  @change="setBehaviorSelectByEvent('name_behavior', $event)"
                 >
-                  <span class="ew-switch__thumb" />
-                </span>
-              </button>
-              <span class="ew-toggle-item__label">启用函数调用</span>
+                  <option value="none">无</option>
+                  <option value="default">默认</option>
+                  <option value="complete_target">补全对象</option>
+                  <option value="message_content">消息内容</option>
+                </select>
+              </EwFieldRow>
+              <EwFieldRow label="推理强度">
+                <select
+                  :value="flow.behavior_options.reasoning_effort"
+                  @change="setBehaviorSelectByEvent('reasoning_effort', $event)"
+                >
+                  <option value="auto">自动</option>
+                  <option value="low">低</option>
+                  <option value="medium">中</option>
+                  <option value="high">高</option>
+                </select>
+              </EwFieldRow>
+              <EwFieldRow label="详细程度">
+                <select
+                  :value="flow.behavior_options.verbosity"
+                  @change="setBehaviorSelectByEvent('verbosity', $event)"
+                >
+                  <option value="auto">自动</option>
+                  <option value="low">低</option>
+                  <option value="medium">中</option>
+                  <option value="high">高</option>
+                </select>
+              </EwFieldRow>
             </div>
-            <div class="ew-toggle-item">
-              <button
-                type="button"
-                class="ew-switch"
-                role="switch"
-                :aria-checked="flow.behavior_options.send_inline_media ? 'true' : 'false'"
-                @click="setBehaviorToggle('send_inline_media')"
-              >
-                <span class="ew-switch__track" :data-enabled="flow.behavior_options.send_inline_media ? '1' : '0'">
-                  <span class="ew-switch__thumb" />
-                </span>
-              </button>
-              <span class="ew-toggle-item__label">发送内联媒体</span>
-            </div>
-            <div class="ew-toggle-item">
-              <button
-                type="button"
-                class="ew-switch"
-                role="switch"
-                :aria-checked="flow.behavior_options.request_thinking ? 'true' : 'false'"
-                @click="setBehaviorToggle('request_thinking')"
-              >
-                <span class="ew-switch__track" :data-enabled="flow.behavior_options.request_thinking ? '1' : '0'">
-                  <span class="ew-switch__thumb" />
-                </span>
-              </button>
-              <span class="ew-toggle-item__label">请求思维链</span>
+
+            <!-- Toggle switches grid -->
+            <div class="ew-toggle-grid">
+              <div class="ew-toggle-item">
+                <button
+                  type="button"
+                  class="ew-switch"
+                  role="switch"
+                  :aria-checked="flow.behavior_options.continue_prefill ? 'true' : 'false'"
+                  @click="setBehaviorToggle('continue_prefill')"
+                >
+                  <span class="ew-switch__track" :data-enabled="flow.behavior_options.continue_prefill ? '1' : '0'">
+                    <span class="ew-switch__thumb" />
+                  </span>
+                </button>
+                <span class="ew-toggle-item__label">继续预填充</span>
+              </div>
+              <div class="ew-toggle-item">
+                <button
+                  type="button"
+                  class="ew-switch"
+                  role="switch"
+                  :aria-checked="flow.behavior_options.squash_system_messages ? 'true' : 'false'"
+                  @click="setBehaviorToggle('squash_system_messages')"
+                >
+                  <span
+                    class="ew-switch__track"
+                    :data-enabled="flow.behavior_options.squash_system_messages ? '1' : '0'"
+                  >
+                    <span class="ew-switch__thumb" />
+                  </span>
+                </button>
+                <span class="ew-toggle-item__label">压缩系统消息</span>
+              </div>
+              <div class="ew-toggle-item">
+                <button
+                  type="button"
+                  class="ew-switch"
+                  role="switch"
+                  :aria-checked="flow.behavior_options.enable_function_calling ? 'true' : 'false'"
+                  @click="setBehaviorToggle('enable_function_calling')"
+                >
+                  <span
+                    class="ew-switch__track"
+                    :data-enabled="flow.behavior_options.enable_function_calling ? '1' : '0'"
+                  >
+                    <span class="ew-switch__thumb" />
+                  </span>
+                </button>
+                <span class="ew-toggle-item__label">启用函数调用</span>
+              </div>
+              <div class="ew-toggle-item">
+                <button
+                  type="button"
+                  class="ew-switch"
+                  role="switch"
+                  :aria-checked="flow.behavior_options.send_inline_media ? 'true' : 'false'"
+                  @click="setBehaviorToggle('send_inline_media')"
+                >
+                  <span class="ew-switch__track" :data-enabled="flow.behavior_options.send_inline_media ? '1' : '0'">
+                    <span class="ew-switch__thumb" />
+                  </span>
+                </button>
+                <span class="ew-toggle-item__label">发送内联媒体</span>
+              </div>
+              <div class="ew-toggle-item">
+                <button
+                  type="button"
+                  class="ew-switch"
+                  role="switch"
+                  :aria-checked="flow.behavior_options.request_thinking ? 'true' : 'false'"
+                  @click="setBehaviorToggle('request_thinking')"
+                >
+                  <span class="ew-switch__track" :data-enabled="flow.behavior_options.request_thinking ? '1' : '0'">
+                    <span class="ew-switch__thumb" />
+                  </span>
+                </button>
+                <span class="ew-toggle-item__label">请求思维链</span>
+              </div>
             </div>
           </div>
+          <div v-else class="ew-flow-card__deferred-placeholder">正在加载行为参数编辑器…</div>
         </section>
 
         <section class="ew-flow-card__section">
@@ -460,14 +470,15 @@
           <div v-else class="ew-flow-card__deferred-placeholder">正在加载提示词编排编辑器…</div>
         </section>
 
-        <EwFieldRow label="请求模板(JSON merge)" :help="help('flow.request_template')">
+        <EwFieldRow v-if="deferredAdvancedReady" label="请求模板(JSON merge)" :help="help('flow.request_template')">
           <textarea
-            :value="flow.request_template"
+            :value="requestTemplateDraft"
             rows="4"
             :placeholder="help('flow.request_template')?.placeholder"
-            @input="setText('request_template', $event)"
+            @input="setRequestTemplateDraft"
           />
         </EwFieldRow>
+        <div v-else class="ew-flow-card__deferred-placeholder">正在加载请求模板编辑器…</div>
       </div>
     </transition>
 
@@ -557,9 +568,13 @@ const flow = computed(() => props.modelValue);
 // "已展开过"模式：首次展开后保持 DOM 存活（v-show）
 // 避免后续切换时重新挂载的开销。
 const hasBeenExpanded = ref(props.expanded);
+const deferredAdvancedReady = ref(props.expanded);
 const deferredEditorsReady = ref(props.expanded);
+const requestTemplateDraft = ref(props.modelValue.request_template);
 let deferredMountFrameA: number | null = null;
 let deferredMountFrameB: number | null = null;
+let deferredMountFrameC: number | null = null;
+let requestTemplateTimer: number | null = null;
 
 function clearDeferredMountFrames() {
   if (deferredMountFrameA !== null) {
@@ -570,19 +585,33 @@ function clearDeferredMountFrames() {
     cancelAnimationFrame(deferredMountFrameB);
     deferredMountFrameB = null;
   }
+  if (deferredMountFrameC !== null) {
+    cancelAnimationFrame(deferredMountFrameC);
+    deferredMountFrameC = null;
+  }
+  if (requestTemplateTimer !== null) {
+    window.clearTimeout(requestTemplateTimer);
+    requestTemplateTimer = null;
+  }
 }
 
 function scheduleDeferredEditorsMount() {
-  if (deferredEditorsReady.value) return;
+  if (deferredAdvancedReady.value && deferredEditorsReady.value) return;
 
   clearDeferredMountFrames();
   deferredMountFrameA = requestAnimationFrame(() => {
     deferredMountFrameA = null;
+    if (props.expanded) {
+      deferredAdvancedReady.value = true;
+    }
     deferredMountFrameB = requestAnimationFrame(() => {
       deferredMountFrameB = null;
-      if (props.expanded) {
-        deferredEditorsReady.value = true;
-      }
+      deferredMountFrameC = requestAnimationFrame(() => {
+        deferredMountFrameC = null;
+        if (props.expanded) {
+          deferredEditorsReady.value = true;
+        }
+      });
     });
   });
 }
@@ -593,6 +622,15 @@ watch(
     if (!val) return;
     hasBeenExpanded.value = true;
     scheduleDeferredEditorsMount();
+  },
+);
+
+watch(
+  () => flow.value.request_template,
+  value => {
+    if (value !== requestTemplateDraft.value) {
+      requestTemplateDraft.value = value;
+    }
   },
 );
 
@@ -649,6 +687,16 @@ function setEnabled(event: Event) {
 }
 function setText(key: 'name' | 'id' | 'request_template', event: Event) {
   patch({ [key]: (event.target as HTMLInputElement | HTMLTextAreaElement).value } as Partial<EwFlowConfig>);
+}
+function setRequestTemplateDraft(event: Event) {
+  requestTemplateDraft.value = (event.target as HTMLTextAreaElement).value;
+  if (requestTemplateTimer !== null) {
+    window.clearTimeout(requestTemplateTimer);
+  }
+  requestTemplateTimer = window.setTimeout(() => {
+    requestTemplateTimer = null;
+    patch({ request_template: requestTemplateDraft.value });
+  }, 160);
 }
 function setFlowNumber(key: FlowNumberKey, event: Event) {
   patch({

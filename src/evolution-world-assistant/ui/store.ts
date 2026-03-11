@@ -57,11 +57,56 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   const floorSnapshots = ref<FloorSnapshot[]>([]);
   const selectedFloorId = ref<number | null>(null);
   const compareFloorId = ref<number | null>(null);
+  let suppressPersist = false;
+  let persistTimeoutId: number | null = null;
+  let persistIdleId: number | null = null;
+
+  function clearScheduledPersist() {
+    if (persistTimeoutId !== null) {
+      window.clearTimeout(persistTimeoutId);
+      persistTimeoutId = null;
+    }
+    if (persistIdleId !== null && typeof window.cancelIdleCallback === 'function') {
+      window.cancelIdleCallback(persistIdleId);
+      persistIdleId = null;
+    }
+  }
+
+  function flushSettingsPersist() {
+    clearScheduledPersist();
+    suppressPersist = true;
+    const persisted = replaceSettings(settings.value);
+    settings.value = persisted;
+    queueMicrotask(() => {
+      suppressPersist = false;
+    });
+  }
+
+  function scheduleSettingsPersist() {
+    clearScheduledPersist();
+
+    const runPersist = () => {
+      persistTimeoutId = null;
+      persistIdleId = null;
+      flushSettingsPersist();
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+      persistIdleId = window.requestIdleCallback(runPersist, { timeout: 320 });
+      return;
+    }
+
+    persistTimeoutId = window.setTimeout(runPersist, 180);
+  }
 
   const syncFromRuntime = subscribeSettings(next => {
+    suppressPersist = true;
     if (!_.isEqual(settings.value, next)) {
       settings.value = next;
     }
+    queueMicrotask(() => {
+      suppressPersist = false;
+    });
   });
 
   const syncRun = subscribeLastRun(next => {
@@ -76,18 +121,18 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     syncFromRuntime.stop();
     syncRun.stop();
     syncIo.stop();
+    clearScheduledPersist();
   });
-
-  const persistDebounced = _.debounce((next: EwSettings) => {
-    replaceSettings(next);
-  }, 200);
 
   watch(
     settings,
-    next => {
-      persistDebounced(klona(next));
+    () => {
+      if (suppressPersist) {
+        return;
+      }
+      scheduleSettingsPersist();
     },
-    { deep: true },
+    { deep: true, flush: 'post' },
   );
 
   watch(
