@@ -227,7 +227,7 @@ async function buildOrderedPromptsForFlow(
   components: PromptComponents,
   body: Record<string, any>,
 ): Promise<Array<{ role: 'system' | 'assistant' | 'user'; content: string }>> {
-  const orderedPrompts = await assembleOrderedPrompts(flow.prompt_order, components);
+  const orderedPrompts = await assembleOrderedPrompts(flow.prompt_order, components, { templateContext: body });
   const systemPrompt = flow.system_prompt?.trim() || '';
   if (systemPrompt) {
     orderedPrompts.push({ role: 'system', content: systemPrompt });

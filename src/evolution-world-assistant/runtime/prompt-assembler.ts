@@ -608,6 +608,7 @@ export type PromptPreviewMessage = AssembledMessage & {
 
 type AssemblePreviewOptions = {
   includeMarkerPlaceholders?: boolean;
+  templateContext?: Record<string, any>;
 };
 
 /**
@@ -806,6 +807,7 @@ function createMarkerPreviewMessage(title: string, content: string): PromptPrevi
 async function buildMarkerPreviewMessage(
   entry: EwPromptOrderEntry,
   components: PromptComponents,
+  options: AssemblePreviewOptions = {},
 ): Promise<PromptPreviewMessage> {
   const markerTitle = entry.name?.trim() || entry.identifier;
   const diagnostic = components.diagnostics[entry.identifier as PromptDiagnosticKey];
@@ -823,7 +825,7 @@ async function buildMarkerPreviewMessage(
   }
 
   const rawContent = resolveMarkerContent(entry.identifier, components);
-  const renderedContent = rawContent.trim() ? await renderEjsContent(rawContent) : '';
+  const renderedContent = rawContent.trim() ? await renderEjsContent(rawContent, options.templateContext) : '';
   const rawLength = rawContent.trim().length;
   const renderedLength = renderedContent.trim().length;
   const summary =
@@ -871,7 +873,7 @@ export async function assembleOrderedPrompts(
     if (!entry.enabled) continue;
 
     if (options.includeMarkerPlaceholders && entry.type === 'marker') {
-      result.push(await buildMarkerPreviewMessage(entry, components));
+      result.push(await buildMarkerPreviewMessage(entry, components, options));
     }
 
     if (previewMarkerOnly && entry.type === 'marker') {
@@ -881,10 +883,13 @@ export async function assembleOrderedPrompts(
     // Defer in_chat injections — they'll be inserted after chat history is placed
     if (entry.injection_position === 'in_chat' && entry.identifier !== 'chatHistory') {
       if (entry.type === 'prompt' && entry.content.trim()) {
-        const rendered = await renderEjsContent(entry.content);
+        const rendered = await renderEjsContent(entry.content, options.templateContext);
         deferredInjections.push({ content: rendered, role: entry.role, depth: entry.injection_depth });
       } else if (entry.type === 'marker') {
-        const content = await renderEjsContent(resolveMarkerContent(entry.identifier, components));
+        const content = await renderEjsContent(
+          resolveMarkerContent(entry.identifier, components),
+          options.templateContext,
+        );
         if (content.trim()) {
           deferredInjections.push({ content, role: entry.role, depth: entry.injection_depth });
         }
@@ -917,7 +922,10 @@ export async function assembleOrderedPrompts(
         continue;
       }
 
-      const content = await renderEjsContent(resolveMarkerContent(entry.identifier, components));
+      const content = await renderEjsContent(
+        resolveMarkerContent(entry.identifier, components),
+        options.templateContext,
+      );
       if (content.trim()) {
         result.push({ role: entry.role, content });
       }
@@ -925,7 +933,7 @@ export async function assembleOrderedPrompts(
       // User-editable prompt — use entry.content, fallback to marker for 'main'
       const raw = entry.content.trim() || (entry.identifier === 'main' ? components.main : '');
       if (raw.trim()) {
-        const content = await renderEjsContent(raw);
+        const content = await renderEjsContent(raw, options.templateContext);
         result.push({ role: entry.role, content });
       }
     }

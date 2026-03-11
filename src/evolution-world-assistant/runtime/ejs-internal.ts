@@ -12,6 +12,7 @@
 // The EJS library is a UMD bundle that self-registers on globalThis.
 // We side-import it so webpack bundles it, then access the global it creates.
 import '../libs/ejs';
+import { getRuntimeState } from './state';
 
 const ejs = (globalThis as any).ejs as {
   compile(template: string, opts?: Record<string, any>): (...args: any[]) => any;
@@ -90,6 +91,33 @@ function getCurrentMessageVariables(): Record<string, any> {
   }
 }
 
+function getCurrentWorkflowUserInput(): string {
+  try {
+    const runtimeState = getRuntimeState();
+    const candidates = [
+      runtimeState.last_send_intent?.user_input,
+      runtimeState.last_send?.user_input,
+      runtimeState.after_reply.pending_user_input,
+    ];
+
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate;
+      }
+    }
+  } catch {
+    // ignore runtime-state lookup failures and fall back below
+  }
+
+  try {
+    const chat = getStChat();
+    const lastUserMessage = chat.findLast((msg: any) => msg.is_user)?.mes;
+    return typeof lastUserMessage === 'string' ? lastUserMessage : '';
+  } catch {
+    return '';
+  }
+}
+
 function createVariableState(): EjsRenderContext['variableState'] {
   const globalVars = _.cloneDeep(getGlobalVariables());
   const localVars = _.cloneDeep(getChatMetadataVariables());
@@ -122,24 +150,46 @@ function rebuildVariableCache(state: EjsRenderContext['variableState']): void {
  * Replace common ST macros in text before rendering.
  * Mirrors SillyTavern's `substituteParams()` for the most common macros.
  */
-function substituteParams(text: string): string {
-  if (!text || !text.includes('{{')) return text;
-
+function buildPromptTemplateContext(templateContext: Record<string, any> = {}): Record<string, any> {
   const ctx = getStContext();
   const userName = ctx.name1 ?? '';
   const charName = ctx.name2 ?? '';
   const personaDescription = ctx.persona ?? '';
+  const providedUserInput = typeof templateContext.user_input === 'string' ? templateContext.user_input : undefined;
+  const workflowUserInput = providedUserInput ?? getCurrentWorkflowUserInput();
 
-  return text
-    .replace(/\{\{user\}\}/gi, userName)
-    .replace(/\{\{char\}\}/gi, charName)
-    .replace(/\{\{persona\}\}/gi, personaDescription)
-    .replace(/\{\{original\}\}/gi, '')
-    .replace(/\{\{input\}\}/gi, '')
-    .replace(/\{\{lastMessage\}\}/gi, '')
-    .replace(/\{\{lastMessageId\}\}/gi, '')
-    .replace(/\{\{newline\}\}/gi, '\n')
-    .replace(/\{\{trim\}\}/gi, '');
+  return _.merge(
+    {
+      user: userName,
+      char: charName,
+      persona: personaDescription,
+      lastUserMessage: workflowUserInput,
+      last_user_message: workflowUserInput,
+      userInput: workflowUserInput,
+      user_input: workflowUserInput,
+      original: '',
+      input: '',
+      lastMessage: '',
+      lastMessageId: '',
+      newline: '\n',
+      trim: '',
+    },
+    templateContext,
+  );
+}
+
+function substituteParams(text: string, templateContext: Record<string, any> = {}): string {
+  if (!text || !text.includes('{{')) return text;
+
+  const context = buildPromptTemplateContext(templateContext);
+
+  return text.replace(/\{\{\s*([a-zA-Z0-9_.$]+)\s*\}\}/g, (_match, path) => {
+    const value = _.get(context, path);
+    if (_.isPlainObject(value) || Array.isArray(value)) {
+      return JSON.stringify(value);
+    }
+    return value === undefined ? '' : String(value);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -418,6 +468,7 @@ export async function evalEjsTemplate(
 
   const stCtx = getStContext();
   const chat = getStChat();
+  const workflowUserInput = getCurrentWorkflowUserInput();
 
   // Build the evaluation context
   const context: Record<string, any> = {
@@ -447,7 +498,19 @@ export async function evalEjsTemplate(
     },
 
     get lastUserMessage() {
-      return chat.findLast((msg: any) => msg.is_user)?.mes ?? '';
+      return workflowUserInput || (chat.findLast((msg: any) => msg.is_user)?.mes ?? '');
+    },
+
+    get last_user_message() {
+      return workflowUserInput || (chat.findLast((msg: any) => msg.is_user)?.mes ?? '');
+    },
+
+    get userInput() {
+      return workflowUserInput;
+    },
+
+    get user_input() {
+      return workflowUserInput;
     },
 
     get lastCharMessageId() {
@@ -769,14 +832,15 @@ export function createRenderContext(
  * Used for user-defined prompt entries that may contain EJS tags
  * but don't need worldbook getwi access.
  */
-export async function renderEjsContent(content: string): Promise<string> {
-  if (!content.includes('<%')) return content;
+export async function renderEjsContent(content: string, templateContext: Record<string, any> = {}): Promise<string> {
+  const processed = substituteParams(content, templateContext);
+  if (!processed.includes('<%')) return processed;
   const ctx = createRenderContext([]);
   try {
-    return await evalEjsTemplate(content, ctx);
+    return await evalEjsTemplate(processed, ctx);
   } catch (e) {
     console.warn('[EW EJS Internal] renderEjsContent failed:', e);
-    return content;
+    return processed;
   }
 }
 
