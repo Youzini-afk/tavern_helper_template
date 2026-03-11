@@ -272,6 +272,8 @@ function buildGenerateRawCustomApi(
 }
 
 function parseJsonFromText(rawText: string, flowId: string): Record<string, any> {
+  const preview = rawText.slice(0, 300);
+
   // CR-10: Try direct parse first — handles clean JSON output without regex issues
   try {
     const direct = JSON.parse(rawText.trim());
@@ -305,10 +307,21 @@ function parseJsonFromText(rawText: string, flowId: string): Record<string, any>
         }
         return parsed as Record<string, any>;
       } catch (error) {
-        throw new Error(`[${flowId}] model output invalid JSON: ${toErrorMessage(error)}`);
+        throw new Error(
+          `[${flowId}] JSON 解析失败: ${toErrorMessage(error)}\n` +
+          `原始响应前300字: ${preview}`,
+        );
       }
     }
-    throw new Error(`[${flowId}] model output does not contain JSON object`);
+    if (!trimmed) {
+      throw new Error(
+        `[${flowId}] 模型返回了空响应（可能被响应后处理正则清空）`,
+      );
+    }
+    throw new Error(
+      `[${flowId}] 模型输出中找不到 JSON 对象\n` +
+      `原始响应前300字: ${preview}`,
+    );
   }
 }
 
@@ -328,9 +341,17 @@ function applyResponseRegex(rawText: string, flow: EwFlowConfig): string {
   const removePattern = flow.response_remove_regex?.trim();
   if (removePattern) {
     try {
+      const before = text;
       text = text.replace(new RegExp(removePattern, 'gis'), '');
+      if (text.trim() !== before.trim()) {
+        console.debug(
+          `[${flow.id}] response_remove_regex matched: removed ${before.length - text.length} chars`,
+        );
+      }
     } catch (e) {
-      console.warn(`[${flow.id}] response_remove_regex invalid:`, e);
+      console.warn(
+        `[${flow.id}] response_remove_regex "${removePattern}" is invalid (ignored): ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
   }
 
@@ -342,13 +363,29 @@ function applyResponseRegex(rawText: string, flow: EwFlowConfig): string {
       if (match) {
         // Use first capture group if available, else full match
         text = match[1] ?? match[0];
+        console.debug(`[${flow.id}] response_extract_regex matched: extracted ${text.length} chars`);
+      } else {
+        console.warn(
+          `[${flow.id}] response_extract_regex "${extractPattern}" did not match anything, using full text`,
+        );
       }
     } catch (e) {
-      console.warn(`[${flow.id}] response_extract_regex invalid:`, e);
+      console.warn(
+        `[${flow.id}] response_extract_regex "${extractPattern}" is invalid (ignored): ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
   }
 
-  return text.trim();
+  const result = text.trim();
+
+  // Early warning: if post-processing emptied the response
+  if (!result && rawText.trim()) {
+    console.warn(
+      `[${flow.id}] 响应后处理正则将整个响应清空了！原始长度=${rawText.length}, 请检查 remove/extract 正则配置。原始内容前200字: ${rawText.slice(0, 200)}`,
+    );
+  }
+
+  return result;
 }
 
 /**
