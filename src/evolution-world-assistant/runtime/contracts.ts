@@ -93,20 +93,22 @@ export const ControllerModelSchema = z.object({
 });
 
 export const FlowResponseSchema = z.object({
-  version: z.literal('ew-flow/v1'),
-  flow_id: z.string().min(1),
-  status: z.literal('ok'),
+  version: z.string().default('ew-flow/v1'),
+  flow_id: z.string().default('unknown'),
+  status: z.string().default('ok'),
   priority: z.number().default(100),
   reply_instruction: z.string().default(''),
-  operations: z.object({
-    worldbook: z
-      .object({
-        desired_entries: z.array(WorldbookDesiredEntrySchema).default([]),
-        remove_entries: z.array(WorldbookRemoveEntrySchema).default([]),
-      })
-      .default({ desired_entries: [], remove_entries: [] }),
-    controller_model: ControllerModelSchema.optional(),
-  }),
+  operations: z
+    .object({
+      worldbook: z
+        .object({
+          desired_entries: z.array(WorldbookDesiredEntrySchema).default([]),
+          remove_entries: z.array(WorldbookRemoveEntrySchema).default([]),
+        })
+        .default({ desired_entries: [], remove_entries: [] }),
+      controller_model: ControllerModelSchema.optional(),
+    })
+    .default({ worldbook: { desired_entries: [], remove_entries: [] } }),
   diagnostics: z
     .object({
       trace_id: z.string().optional(),
