@@ -880,6 +880,7 @@ export async function assembleOrderedPrompts(
   options: AssemblePreviewOptions = {},
 ): Promise<PromptPreviewMessage[]> {
   const result: PromptPreviewMessage[] = [];
+  const previewMarkerOnly = Boolean(options.includeMarkerPlaceholders);
   // Deferred injections: prompts with in_chat position that go inside chat history
   const deferredInjections: Array<{ content: string; role: 'system' | 'user' | 'assistant'; depth: number }> = [];
   let chatHistoryStartIdx = -1;
@@ -889,6 +890,10 @@ export async function assembleOrderedPrompts(
 
     if (options.includeMarkerPlaceholders && entry.type === 'marker') {
       result.push(await buildMarkerPreviewMessage(entry, components));
+    }
+
+    if (previewMarkerOnly && entry.type === 'marker') {
+      continue;
     }
 
     // Defer in_chat injections — they'll be inserted after chat history is placed
