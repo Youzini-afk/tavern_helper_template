@@ -103,6 +103,12 @@ export const ControllerCharDetectionSchema = z.object({
   entry_patterns: z.array(z.string().min(1)).default(['{name}']),
 });
 
+export const ControllerForEachSchema = z.object({
+  list_var: z.string().min(1),
+  entry_prefix: z.string().default(''),
+  entry_suffix: z.string().default(''),
+});
+
 export const ControllerModelSchema = z.object({
   template_id: z.literal('entry_selector_v1'),
   // 现有字段
@@ -116,6 +122,7 @@ export const ControllerModelSchema = z.object({
   activate_entries: z.array(ControllerActivateSchema).default([]),
   inject_text: z.array(z.string()).default([]),
   char_detection: ControllerCharDetectionSchema.optional(),
+  for_each: z.array(ControllerForEachSchema).default([]),
 });
 
 export const FlowResponseSchema = z.object({

@@ -79,12 +79,15 @@ function renderCharDetection(model: ControllerModel, dynPrefix: string): string 
     code += `}\n`;
   }
 
-  // 从消息文本扫描
+  // 从消息文本扫描（分别获取用户和AI最后消息，与原始脚本一致）
   if (scanDepth > 0) {
-    code += `var _ewMsgs = getChatMessages(-${scanDepth});\n`;
-    code += `var _ewText = _ewMsgs.map(function(m){return m.message}).join('\\n');\n`;
+    code += `var _ewUserMsgs = getChatMessages(-${scanDepth}, -1, 'user');\n`;
+    code += `var _ewUserText = _ewUserMsgs.length > 0 ? _ewUserMsgs[_ewUserMsgs.length - 1].message : '';\n`;
+    code += `var _ewCharMsgs = getChatMessages(-${scanDepth}, -1, 'assistant');\n`;
+    code += `var _ewCharText = _ewCharMsgs.length > 0 ? _ewCharMsgs[_ewCharMsgs.length - 1].message : '';\n`;
+    code += `var _ewScanText = _ewUserText + '\\n' + _ewCharText;\n`;
     code += `for (var _alias of Object.keys(_ewAliasMap)) {\n`;
-    code += `  if (_ewText.includes(_alias)) _ewDetected.add(_ewAliasMap[_alias]);\n`;
+    code += `  if (_ewScanText.includes(_alias)) _ewDetected.add(_ewAliasMap[_alias]);\n`;
     code += `}\n`;
   }
 
@@ -110,6 +113,26 @@ function renderCharDetection(model: ControllerModel, dynPrefix: string): string 
     }
   }
   code += `<% } %>\n`;
+
+  return code;
+}
+
+/** for_each — 通用列表循环加载 */
+function renderForEach(model: ControllerModel, dynPrefix: string): string {
+  if (model.for_each.length === 0) return '';
+
+  let code = '';
+  model.for_each.forEach((fe, idx) => {
+    const listVar = `_ewList${idx}`;
+    code += `<%\nvar ${listVar} = getvar(${quoteSingle(fe.list_var)}, { defaults: [] });\n`;
+    code += `for (var _feI = 0; _feI < ${listVar}.length; _feI++) {\n%>\n`;
+
+    const prefix = quoteSingle(dynPrefix + fe.entry_prefix);
+    const suffix = fe.entry_suffix ? ` + ${quoteSingle(fe.entry_suffix)}` : '';
+    code += `<%- await getwi(null, ${prefix} + ${listVar}[_feI]${suffix}) %>\n`;
+
+    code += `<% } %>\n`;
+  });
 
   return code;
 }
@@ -200,6 +223,7 @@ export async function renderControllerTemplate(
   body += renderInjectText(model);
   body += renderActivateEntries(model);
   body += renderCharDetection(model, dynPrefix);
+  body += renderForEach(model, dynPrefix);
   body += renderRulesAndFallback(model);
 
   // skip_floor_zero 包裹
