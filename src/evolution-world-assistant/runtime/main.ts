@@ -1,26 +1,39 @@
-import { loadSettings, loadLastRun, loadLastIo } from './settings';
-import { initRuntimeEvents, disposeRuntimeEvents } from './events';
-import { initGlobalApi, disposeGlobalApi } from './api';
+import { disposeGlobalApi, initGlobalApi } from './api';
+import { disposeRuntimeEvents, initRuntimeEvents } from './events';
+import { hydrateSharedSettings, loadLastIo, loadLastRun, loadSettings } from './settings';
 
 let initialized = false;
+let initPromise: Promise<void> | null = null;
 
-export function initRuntime() {
+export async function initRuntime() {
   if (initialized) {
     return;
   }
-
-  loadSettings();
-  loadLastRun();
-  loadLastIo();
-  initGlobalApi();
-  initRuntimeEvents();
-
-  if (_.isFunction(initializeGlobal)) {
-    initializeGlobal('EvolutionWorldAPI', window.EvolutionWorldAPI ?? {});
+  if (initPromise) {
+    return initPromise;
   }
 
-  initialized = true;
-  console.info('[Evolution World] runtime initialized');
+  initPromise = (async () => {
+    loadSettings();
+    loadLastRun();
+    loadLastIo();
+    await hydrateSharedSettings();
+    initGlobalApi();
+    initRuntimeEvents();
+
+    if (_.isFunction(initializeGlobal)) {
+      initializeGlobal('EvolutionWorldAPI', window.EvolutionWorldAPI ?? {});
+    }
+
+    initialized = true;
+    console.info('[Evolution World] runtime initialized');
+  })();
+
+  try {
+    await initPromise;
+  } finally {
+    initPromise = null;
+  }
 }
 
 export function disposeRuntime() {

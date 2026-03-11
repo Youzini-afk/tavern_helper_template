@@ -1,16 +1,11 @@
-import { initRuntime, disposeRuntime } from './runtime/main';
-import { mountUi, unmountUi, mountFabEarly } from './ui';
+import { disposeRuntime, initRuntime } from './runtime/main';
+import { mountFabEarly, mountUi, unmountUi } from './ui';
 import { showEwNotice } from './ui/notice';
 
 const BOOTSTRAP_TIMEOUT_MS = 12_000;
 const BOOTSTRAP_POLL_MS = 100;
 
-const REQUIRED_GLOBALS = [
-  'getScriptId',
-  'getVariables',
-  'eventOn',
-  'tavern_events',
-] as const;
+const REQUIRED_GLOBALS = ['getScriptId', 'getVariables', 'eventOn', 'tavern_events'] as const;
 
 function getMissingGlobals(): string[] {
   const runtime = globalThis as Record<string, unknown>;
@@ -55,7 +50,7 @@ function reportBootstrapError(error: unknown) {
 
 async function bootstrap() {
   await waitForRuntimeGlobals();
-  initRuntime();
+  await initRuntime();
   mountUi();
   showEwNotice({
     title: '脚本已加载',

@@ -1,5 +1,6 @@
 ﻿import { createDefaultApiPreset, createDefaultFlow } from './factory';
 import { simpleHash } from './helpers';
+import { readSharedSettings, writeSharedSettings } from './shared-settings-storage';
 import {
   DEFAULT_PROMPT_ORDER,
   EwApiPreset,
@@ -31,10 +32,15 @@ const SCRIPT_STORAGE_KEY = 'evolution_world_assistant';
 const settingsListeners = new Set<SettingsListener>();
 const runListeners = new Set<RunListener>();
 const ioListeners = new Set<IoListener>();
+const SHARED_SETTINGS_WRITE_DELAY_MS = 240;
 
 let cachedSettings: EwSettings | null = null;
 let cachedLastRun: RunSummary | null | undefined = undefined;
 let cachedLastIo: LastIoSummary | null | undefined = undefined;
+let sharedSettingsHydrationPromise: Promise<EwSettings> | null = null;
+let sharedSettingsWriteTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingSharedSettings: EwSettings | null = null;
+let sharedSettingsWritePromise: Promise<void> = Promise.resolve();
 
 // M-3: 使用 factory.ts 中的共享工厂函数。
 const makeDefaultApiPreset = createDefaultApiPreset;
@@ -77,6 +83,36 @@ function writeScriptStorage(updater: (storage: ScriptStorageShape) => ScriptStor
   }
 
   throw new Error('script storage API unavailable: updateVariablesWith/insertOrAssignVariables');
+}
+
+function persistLocalSettings(settings: EwSettings) {
+  writeScriptStorage(previous => ({ ...previous, settings }));
+}
+
+function queueSharedSettingsPersist(settings: EwSettings) {
+  pendingSharedSettings = klona(settings);
+
+  if (sharedSettingsWriteTimer !== null) {
+    clearTimeout(sharedSettingsWriteTimer);
+  }
+
+  sharedSettingsWriteTimer = setTimeout(() => {
+    sharedSettingsWriteTimer = null;
+    const nextSettings = pendingSharedSettings;
+    pendingSharedSettings = null;
+    if (!nextSettings) {
+      return;
+    }
+
+    sharedSettingsWritePromise = sharedSettingsWritePromise
+      .catch(() => undefined)
+      .then(async () => {
+        await writeSharedSettings(nextSettings);
+      })
+      .catch(error => {
+        console.warn('[Evolution World] Failed to persist shared settings:', error);
+      });
+  }, SHARED_SETTINGS_WRITE_DELAY_MS);
 }
 
 function ensurePresetId(rawId: string, index: number, usedIds: Set<string>): string {
@@ -264,8 +300,51 @@ export function loadSettings(): EwSettings {
   const normalized = normalizeSettings(storage.settings);
   cachedSettings = normalized;
 
-  writeScriptStorage(previous => ({ ...previous, settings: normalized }));
+  persistLocalSettings(normalized);
   return normalized;
+}
+
+export async function hydrateSharedSettings(): Promise<EwSettings> {
+  if (sharedSettingsHydrationPromise) {
+    return sharedSettingsHydrationPromise;
+  }
+
+  sharedSettingsHydrationPromise = (async () => {
+    const localStorage = readScriptStorage();
+    const localNormalized = cachedSettings ?? normalizeSettings(localStorage.settings);
+
+    try {
+      const shared = await readSharedSettings();
+      if (shared?.settings) {
+        const normalized = normalizeSettings(shared.settings);
+        const changed = !_.isEqual(cachedSettings, normalized);
+        cachedSettings = normalized;
+        persistLocalSettings(normalized);
+        if (changed) {
+          emitSettings(klona(normalized));
+        }
+        console.info('[Evolution World] Shared settings loaded from server file');
+        return klona(normalized);
+      }
+
+      cachedSettings = localNormalized;
+      await writeSharedSettings(localNormalized);
+      persistLocalSettings(localNormalized);
+      console.info(
+        localStorage.settings
+          ? '[Evolution World] Migrated legacy local settings to shared server file'
+          : '[Evolution World] Initialized shared server settings file',
+      );
+      return klona(localNormalized);
+    } catch (error) {
+      console.warn('[Evolution World] Shared settings hydration failed, using local cache:', error);
+      cachedSettings = localNormalized;
+      persistLocalSettings(localNormalized);
+      return klona(localNormalized);
+    }
+  })();
+
+  return sharedSettingsHydrationPromise;
 }
 
 export function getSettings(): EwSettings {
@@ -278,7 +357,8 @@ export function getSettings(): EwSettings {
 export function replaceSettings(nextSettings: EwSettings): EwSettings {
   const normalized = normalizeSettings(nextSettings);
   cachedSettings = normalized;
-  writeScriptStorage(previous => ({ ...previous, settings: normalized }));
+  persistLocalSettings(normalized);
+  queueSharedSettingsPersist(normalized);
   emitSettings(klona(normalized));
   return klona(normalized);
 }
@@ -286,7 +366,8 @@ export function replaceSettings(nextSettings: EwSettings): EwSettings {
 export function persistSettingsDraft(nextSettings: EwSettings) {
   const draft = klona(nextSettings);
   cachedSettings = draft;
-  writeScriptStorage(previous => ({ ...previous, settings: draft }));
+  persistLocalSettings(draft);
+  queueSharedSettingsPersist(draft);
 }
 
 export function patchSettings(partial: Partial<EwSettings>): EwSettings {
