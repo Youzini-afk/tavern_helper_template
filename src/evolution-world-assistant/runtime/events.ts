@@ -23,6 +23,7 @@ let warnedEventMakeFirstFallback = false;
 const HOOK_RETRY_DELAY_MS = 1200;
 let sendIntentRetryTimer: ReturnType<typeof setTimeout> | null = null;
 let tavernHelperRetryTimer: ReturnType<typeof setTimeout> | null = null;
+const NON_SEND_GENERATION_TYPES = new Set(['continue', 'regenerate', 'swipe']);
 
 function getHostWindow(): Window & typeof globalThis {
   try {
@@ -83,6 +84,67 @@ function registerGenerationAfterCommands(
 function getSendTextareaValue(): string {
   const textarea = getChatDocument().getElementById('send_textarea') as HTMLTextAreaElement | null;
   return String(textarea?.value ?? '');
+}
+
+function firstNonEmptyText(...values: unknown[]): string {
+  for (const value of values) {
+    const text = String(value ?? '');
+    if (text.trim()) {
+      return text;
+    }
+  }
+
+  return '';
+}
+
+function getLatestUserMessageText(): string {
+  try {
+    const msgs = getChatMessages(`0-${getLastMessageId()}`, { hide_state: 'unhidden' });
+    const lastUserMsg = [...msgs].reverse().find((message: any) => message.role === 'user');
+    return String(lastUserMsg?.message ?? '');
+  } catch {
+    return '';
+  }
+}
+
+function getInterceptedUserInput(options: Record<string, any>): string {
+  const runtimeState = getRuntimeState();
+  return firstNonEmptyText(
+    options.user_input,
+    options.prompt,
+    runtimeState.last_send_intent?.user_input,
+    options.injects?.[0]?.content,
+  );
+}
+
+function resolveWorkflowUserInput(options: Record<string, any>, generationType: string): string {
+  const interceptedInput = getInterceptedUserInput(options);
+  if (interceptedInput) {
+    return interceptedInput;
+  }
+
+  if (NON_SEND_GENERATION_TYPES.has(generationType)) {
+    return getLatestUserMessageText();
+  }
+
+  return '';
+}
+
+function resolveFallbackWorkflowUserInput(generationType: string): string {
+  const runtimeState = getRuntimeState();
+  const interceptedInput = firstNonEmptyText(
+    runtimeState.last_send?.user_input,
+    runtimeState.last_send_intent?.user_input,
+  );
+  if (interceptedInput) {
+    return interceptedInput;
+  }
+
+  if (NON_SEND_GENERATION_TYPES.has(generationType)) {
+    return getLatestUserMessageText();
+  }
+
+  return '';
 }
 
 function installSendIntentHooks() {
@@ -350,22 +412,7 @@ function installTavernHelperHook() {
       return win._ew_originalGenerate.apply(this, args);
     }
 
-    // Extract user input without modifying it
-    let userInput = String(options.user_input || options.prompt || '');
-    if (options.injects?.[0]?.content) {
-      userInput = String(options.injects[0].content);
-    }
-
-    // CR-4: For continue/regenerate/swipe, fall back to the last user message
-    if (!userInput.trim()) {
-      try {
-        const msgs = getChatMessages(`0-${getLastMessageId()}`, { hide_state: 'unhidden' });
-        const lastUserMsg = [...msgs].reverse().find((m: any) => m.role === 'user');
-        userInput = lastUserMsg?.message ?? '';
-      } catch {
-        /* ignore */
-      }
-    }
+    const userInput = resolveWorkflowUserInput(options, genType);
 
     if (!userInput.trim()) {
       return win._ew_originalGenerate.apply(this, args);
@@ -439,21 +486,9 @@ async function onGenerationAfterCommands(
   }
 
   const messageId = getRuntimeState().last_send?.message_id ?? getLastMessageId();
-  let userInput = getRuntimeState().last_send?.user_input ?? getRuntimeState().last_send_intent?.user_input ?? '';
-
-  // CR-4: For continue/regenerate/swipe, the user hasn't typed new input.
-  // Fall back to the last user message so the workflow has context.
   const genType = getRuntimeState().last_generation?.type ?? '';
-  const isNonSendType = ['continue', 'regenerate', 'swipe'].includes(genType);
-  if (!userInput.trim() && isNonSendType) {
-    try {
-      const msgs = getChatMessages(`0-${getLastMessageId()}`, { hide_state: 'unhidden' });
-      const lastUserMsg = [...msgs].reverse().find((m: any) => m.role === 'user');
-      userInput = lastUserMsg?.message ?? '';
-    } catch {
-      /* ignore */
-    }
-  }
+  const userInput = resolveFallbackWorkflowUserInput(genType);
+  const isNonSendType = NON_SEND_GENERATION_TYPES.has(genType);
 
   // Only block on empty input for normal send — continue/regen/swipe can proceed without it
   if (!userInput.trim() && !isNonSendType) {
