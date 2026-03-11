@@ -23,6 +23,38 @@ declare const characters: SillyTavern.v1CharData[] | undefined;
 declare const this_chid: number | string | undefined;
 declare const power_user: Record<string, any> | undefined;
 
+type PromptDiagnosticKey =
+  | 'main'
+  | 'charDescription'
+  | 'charPersonality'
+  | 'scenario'
+  | 'personaDescription'
+  | 'worldInfoBefore'
+  | 'worldInfoAfter'
+  | 'dialogueExamples'
+  | 'postHistoryInstructions'
+  | 'chatHistory';
+
+type PromptDiagnosticAttempt = {
+  label: string;
+  hasValue: boolean;
+  length: number;
+  detail?: string;
+};
+
+type PromptMarkerDiagnostic = {
+  selectedSource?: string;
+  attempts: PromptDiagnosticAttempt[];
+  note?: string;
+};
+
+type PromptDiagnosticMap = Partial<Record<PromptDiagnosticKey, PromptMarkerDiagnostic>>;
+
+type TextCandidate = {
+  label: string;
+  value: unknown;
+};
+
 function getHostRuntime(): Record<string, any> {
   try {
     if (window.parent && window.parent !== window) {
@@ -154,18 +186,124 @@ function getPreferredText(...values: unknown[]): string {
   return '';
 }
 
-function getRuntimePersonaDescription(): string {
+function describeAttempt(label: string, value: unknown, detail?: string): PromptDiagnosticAttempt {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return {
+      label,
+      hasValue: trimmed.length > 0,
+      length: trimmed.length,
+      detail,
+    };
+  }
+
+  if (Array.isArray(value)) {
+    return {
+      label,
+      hasValue: value.length > 0,
+      length: value.length,
+      detail: detail ?? `array(${value.length})`,
+    };
+  }
+
+  if (value && typeof value === 'object') {
+    const size = Object.keys(value as Record<string, unknown>).length;
+    return {
+      label,
+      hasValue: size > 0,
+      length: size,
+      detail: detail ?? `object(${size})`,
+    };
+  }
+
+  return {
+    label,
+    hasValue: Boolean(value),
+    length: 0,
+    detail: detail ?? (value == null ? 'nullish' : String(value)),
+  };
+}
+
+function resolveTextCandidate(
+  candidates: TextCandidate[],
+  note?: string,
+): { value: string; diagnostic: PromptMarkerDiagnostic } {
+  const attempts = candidates.map(candidate => describeAttempt(candidate.label, candidate.value));
+  const selected = candidates.find(candidate => typeof candidate.value === 'string' && candidate.value.trim());
+
+  return {
+    value: typeof selected?.value === 'string' ? selected.value : '',
+    diagnostic: {
+      selectedSource: selected?.label,
+      attempts,
+      note,
+    },
+  };
+}
+
+function appendDiagnosticNote(
+  diagnostic: PromptMarkerDiagnostic | undefined,
+  note: string,
+): PromptMarkerDiagnostic | undefined {
+  if (!diagnostic) {
+    return diagnostic;
+  }
+
+  return {
+    ...diagnostic,
+    note: diagnostic.note ? `${diagnostic.note}; ${note}` : note,
+  };
+}
+
+function formatAttempt(attempt: PromptDiagnosticAttempt): string {
+  const base = `${attempt.label}: ${attempt.hasValue ? `hit (${attempt.length})` : 'miss (0)'}`;
+  return attempt.detail ? `${base} [${attempt.detail}]` : base;
+}
+
+function formatDiagnosticBlock(
+  diagnostic: PromptMarkerDiagnostic | undefined,
+  rawLength: number,
+  renderedLength?: number,
+): string {
+  if (!diagnostic) {
+    return [`原始长度: ${rawLength}`, renderedLength === undefined ? '' : `渲染长度: ${renderedLength}`]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  const lines = [
+    `原始长度: ${rawLength}`,
+    renderedLength === undefined ? '' : `渲染长度: ${renderedLength}`,
+    `命中来源: ${diagnostic.selectedSource ?? '无'}`,
+    diagnostic.note ? `附加信息: ${diagnostic.note}` : '',
+    '来源尝试:',
+    ...diagnostic.attempts.map(attempt => `- ${formatAttempt(attempt)}`),
+  ].filter(Boolean);
+
+  return lines.join('\n');
+}
+
+function getRuntimePersonaDescription(): { value: string; diagnostic: PromptMarkerDiagnostic } {
   const hostRuntime = getHostRuntime();
   const ctx = getRuntimeContext();
 
-  return getPreferredText(
-    ctx?.powerUserSettings?.persona_description,
-    ctx?.persona_description,
-    hostRuntime.power_user?.persona_description,
-    hostRuntime.SillyTavern?.powerUserSettings?.persona_description,
-    (globalThis as any).power_user?.persona_description,
-    power_user?.persona_description,
-    getRuntimeCharacterCardFields()?.persona,
+  return resolveTextCandidate(
+    [
+      { label: 'ctx.powerUserSettings.persona_description', value: ctx?.powerUserSettings?.persona_description },
+      { label: 'ctx.persona_description', value: ctx?.persona_description },
+      { label: 'hostRuntime.power_user.persona_description', value: hostRuntime.power_user?.persona_description },
+      {
+        label: 'hostRuntime.SillyTavern.powerUserSettings.persona_description',
+        value: hostRuntime.SillyTavern?.powerUserSettings?.persona_description,
+      },
+      {
+        label: 'globalThis.power_user.persona_description',
+        value: (globalThis as any).power_user?.persona_description,
+      },
+      { label: 'power_user.persona_description', value: power_user?.persona_description },
+      { label: 'getCharacterCardFields().persona', value: getRuntimeCharacterCardFields()?.persona },
+    ],
+    '按 persona_description 的多路径回退顺序选取',
   );
 }
 
@@ -177,66 +315,162 @@ function getRuntimeCharacterFields(): {
   scenario: string;
   personaDescription: string;
   dialogueExamples: string;
+  diagnostics: PromptDiagnosticMap;
 } {
   const helperFields = getRuntimeCharacterCardFields();
   const charData = getRuntimeCharData();
   const ctx = getRuntimeContext();
 
-  const charDescription = getPreferredText(
-    helperFields?.description,
-    charData?.description,
-    charData?.data?.description,
-    ctx?.name2_description,
+  const main = resolveTextCandidate(
+    [
+      { label: 'getCharacterCardFields().system', value: helperFields?.system },
+      { label: 'charData.data.system_prompt', value: charData?.data?.system_prompt },
+    ],
+    '主系统提示词来源',
   );
 
-  const charPersonality = getPreferredText(
-    helperFields?.personality,
-    charData?.personality,
-    charData?.data?.personality,
-    ctx?.name2_personality,
+  const jailbreak = resolveTextCandidate(
+    [
+      { label: 'getCharacterCardFields().jailbreak', value: helperFields?.jailbreak },
+      { label: 'charData.data.post_history_instructions', value: charData?.data?.post_history_instructions },
+    ],
+    '后历史指令来源',
   );
 
-  const scenario = getPreferredText(helperFields?.scenario, charData?.scenario, charData?.data?.scenario);
-  const dialogueExamples = getPreferredText(
-    helperFields?.mesExamples,
-    charData?.mes_example,
-    charData?.data?.mes_example,
+  const charDescription = resolveTextCandidate(
+    [
+      { label: 'getCharacterCardFields().description', value: helperFields?.description },
+      { label: 'charData.description', value: charData?.description },
+      { label: 'charData.data.description', value: charData?.data?.description },
+      { label: 'ctx.name2_description', value: ctx?.name2_description },
+    ],
+    '角色描述多路径回退',
   );
-  const main = getPreferredText(helperFields?.system, charData?.data?.system_prompt);
-  const jailbreak = getPreferredText(helperFields?.jailbreak, charData?.data?.post_history_instructions);
+
+  const charPersonality = resolveTextCandidate(
+    [
+      { label: 'getCharacterCardFields().personality', value: helperFields?.personality },
+      { label: 'charData.personality', value: charData?.personality },
+      { label: 'charData.data.personality', value: charData?.data?.personality },
+      { label: 'ctx.name2_personality', value: ctx?.name2_personality },
+    ],
+    '角色性格多路径回退',
+  );
+
+  const scenario = resolveTextCandidate(
+    [
+      { label: 'getCharacterCardFields().scenario', value: helperFields?.scenario },
+      { label: 'charData.scenario', value: charData?.scenario },
+      { label: 'charData.data.scenario', value: charData?.data?.scenario },
+    ],
+    '场景字段回退',
+  );
+
+  const dialogueExamples = resolveTextCandidate(
+    [
+      { label: 'getCharacterCardFields().mesExamples', value: helperFields?.mesExamples },
+      { label: 'charData.mes_example', value: charData?.mes_example },
+      { label: 'charData.data.mes_example', value: charData?.data?.mes_example },
+    ],
+    '示例对话字段回退',
+  );
+
+  const personaDescription = getRuntimePersonaDescription();
 
   return {
-    main,
-    jailbreak,
-    charDescription,
-    charPersonality,
-    scenario,
-    personaDescription: getRuntimePersonaDescription(),
-    dialogueExamples,
+    main: main.value,
+    jailbreak: jailbreak.value,
+    charDescription: charDescription.value,
+    charPersonality: charPersonality.value,
+    scenario: scenario.value,
+    personaDescription: personaDescription.value,
+    dialogueExamples: dialogueExamples.value,
+    diagnostics: {
+      main: main.diagnostic,
+      postHistoryInstructions: jailbreak.diagnostic,
+      charDescription: charDescription.diagnostic,
+      charPersonality: charPersonality.diagnostic,
+      scenario: scenario.diagnostic,
+      personaDescription: personaDescription.diagnostic,
+      dialogueExamples: dialogueExamples.diagnostic,
+    },
   };
 }
 
 async function populateWorldInfoComponents(components: PromptComponents): Promise<void> {
+  const beforeAttempts: PromptDiagnosticAttempt[] = [];
+  const afterAttempts: PromptDiagnosticAttempt[] = [];
+
   try {
     const ctx = getRuntimeContext();
     const hostRuntime = getHostRuntime();
 
     const cachedBefore = getPreferredText(ctx?.worldInfoBefore);
     const cachedAfter = getPreferredText(ctx?.worldInfoAfter);
+    beforeAttempts.push(describeAttempt('ctx.worldInfoBefore', ctx?.worldInfoBefore));
+    afterAttempts.push(describeAttempt('ctx.worldInfoAfter', ctx?.worldInfoAfter));
 
     if (typeof hostRuntime.SillyTavern?.getWorldInfoPrompt === 'function') {
       const chat = components.chatMessages.map(msg => msg.content).filter(Boolean);
       const maxContext = Number(ctx?.maxContext ?? hostRuntime.SillyTavern?.maxContext ?? 0);
       const result = await hostRuntime.SillyTavern.getWorldInfoPrompt(chat, maxContext, true);
 
-      components.worldInfoBefore = getPreferredText(result?.worldInfoBefore, result?.worldInfoString, cachedBefore);
-      components.worldInfoAfter = getPreferredText(result?.worldInfoAfter, cachedAfter);
+      const before = resolveTextCandidate(
+        [
+          { label: 'getWorldInfoPrompt().worldInfoBefore', value: result?.worldInfoBefore },
+          { label: 'getWorldInfoPrompt().worldInfoString', value: result?.worldInfoString },
+          { label: 'ctx.worldInfoBefore', value: cachedBefore },
+        ],
+        `chat=${chat.length}; maxContext=${maxContext}; dryRun=true`,
+      );
+      const after = resolveTextCandidate(
+        [
+          { label: 'getWorldInfoPrompt().worldInfoAfter', value: result?.worldInfoAfter },
+          { label: 'ctx.worldInfoAfter', value: cachedAfter },
+        ],
+        `chat=${chat.length}; maxContext=${maxContext}; dryRun=true`,
+      );
+
+      components.worldInfoBefore = before.value;
+      components.worldInfoAfter = after.value;
+      components.diagnostics.worldInfoBefore = {
+        ...before.diagnostic,
+        attempts: [
+          ...beforeAttempts,
+          ...before.diagnostic.attempts.filter(attempt => attempt.label !== 'ctx.worldInfoBefore'),
+        ],
+      };
+      components.diagnostics.worldInfoAfter = {
+        ...after.diagnostic,
+        attempts: [
+          ...afterAttempts,
+          ...after.diagnostic.attempts.filter(attempt => attempt.label !== 'ctx.worldInfoAfter'),
+        ],
+      };
       return;
     }
 
     components.worldInfoBefore = cachedBefore;
     components.worldInfoAfter = cachedAfter;
+    components.diagnostics.worldInfoBefore = {
+      selectedSource: cachedBefore ? 'ctx.worldInfoBefore' : undefined,
+      attempts: beforeAttempts,
+      note: '未检测到 SillyTavern.getWorldInfoPrompt，回退到上下文缓存',
+    };
+    components.diagnostics.worldInfoAfter = {
+      selectedSource: cachedAfter ? 'ctx.worldInfoAfter' : undefined,
+      attempts: afterAttempts,
+      note: '未检测到 SillyTavern.getWorldInfoPrompt，回退到上下文缓存',
+    };
   } catch (e) {
+    components.diagnostics.worldInfoBefore = appendDiagnosticNote(
+      components.diagnostics.worldInfoBefore,
+      `world info 读取异常: ${String(e)}`,
+    );
+    components.diagnostics.worldInfoAfter = appendDiagnosticNote(
+      components.diagnostics.worldInfoAfter,
+      `world info 读取异常: ${String(e)}`,
+    );
     console.debug('[Evolution World] world info prompt read failed:', e);
   }
 }
@@ -260,6 +494,7 @@ export type PromptComponents = {
   depthInjections: Array<{ content: string; depth: number; role: 'system' | 'user' | 'assistant' }>;
   /** Extension prompts that go before all other prompts (ST position=BEFORE_PROMPT) */
   beforePromptInjections: string[];
+  diagnostics: PromptDiagnosticMap;
 };
 
 export type PromptPreviewMessage = AssembledMessage & {
@@ -291,6 +526,7 @@ export async function collectPromptComponents(flow: EwFlowConfig): Promise<Promp
     chatMessages: [],
     depthInjections: [],
     beforePromptInjections: [],
+    diagnostics: {},
   };
 
   // ── 1. Character card fields ──────────────────────────────────────────
@@ -303,6 +539,7 @@ export async function collectPromptComponents(flow: EwFlowConfig): Promise<Promp
     components.dialogueExamples = fields.dialogueExamples;
     components.main = fields.main;
     components.jailbreak = fields.jailbreak;
+    Object.assign(components.diagnostics, fields.diagnostics);
   } catch (e) {
     console.debug('[Evolution World] getCharacterCardFields failed:', e);
   }
@@ -310,8 +547,23 @@ export async function collectPromptComponents(flow: EwFlowConfig): Promise<Promp
   // ── 2. Chat messages ──────────────────────────────────────────────────
   try {
     const lastId = getRuntimeLastMessageId();
+    const chatHistoryAttempts: PromptDiagnosticAttempt[] = [
+      {
+        label: 'getLastMessageId()',
+        hasValue: Number.isFinite(lastId) && lastId >= 0,
+        length: Number.isFinite(lastId) ? lastId + 1 : 0,
+        detail: `lastId=${lastId}`,
+      },
+    ];
+
     if (lastId >= 0) {
       const msgs = getRuntimeChatMessages(`0-${lastId}`, { hide_state: 'unhidden' });
+      chatHistoryAttempts.push({
+        label: 'getChatMessages()',
+        hasValue: Array.isArray(msgs) && msgs.length > 0,
+        length: Array.isArray(msgs) ? msgs.length : 0,
+        detail: `range=0-${lastId}`,
+      });
       components.chatMessages = msgs
         .slice(-flow.context_turns)
         .map((msg: any) => ({
@@ -321,8 +573,18 @@ export async function collectPromptComponents(flow: EwFlowConfig): Promise<Promp
         }))
         .filter((msg: any) => Boolean(msg.content.trim()));
     }
+
+    components.diagnostics.chatHistory = {
+      selectedSource: components.chatMessages.length > 0 ? 'getChatMessages()' : undefined,
+      attempts: chatHistoryAttempts,
+      note: `context_turns=${flow.context_turns}; 实际纳入=${components.chatMessages.length}`,
+    };
   } catch (e) {
     console.debug('[Evolution World] getChatMessages failed:', e);
+    components.diagnostics.chatHistory = appendDiagnosticNote(
+      components.diagnostics.chatHistory,
+      `聊天记录读取异常: ${String(e)}`,
+    );
   }
 
   // ── 3. World Info (before/after) ───────────────────────────────────────
@@ -374,6 +636,22 @@ export async function collectPromptComponents(flow: EwFlowConfig): Promise<Promp
       // (only if we didn't already get WI from context)
       if (inPromptEntries.length) {
         components.worldInfoBefore = [components.worldInfoBefore, ...inPromptEntries].filter(s => s).join('\n');
+        components.diagnostics.worldInfoBefore = {
+          ...(components.diagnostics.worldInfoBefore ?? { attempts: [] }),
+          selectedSource: components.diagnostics.worldInfoBefore?.selectedSource ?? 'extensionPrompts(IN_PROMPT)',
+          attempts: [
+            ...(components.diagnostics.worldInfoBefore?.attempts ?? []),
+            {
+              label: 'extensionPrompts(IN_PROMPT)',
+              hasValue: true,
+              length: inPromptEntries.length,
+              detail: `entries=${inPromptEntries.length}`,
+            },
+          ],
+          note: components.diagnostics.worldInfoBefore?.note
+            ? `${components.diagnostics.worldInfoBefore.note}; 追加了 ${inPromptEntries.length} 条 IN_PROMPT 扩展提示词`
+            : `追加了 ${inPromptEntries.length} 条 IN_PROMPT 扩展提示词`,
+        };
       }
     }
   } catch (e) {
@@ -406,6 +684,7 @@ async function buildMarkerPreviewMessage(
   components: PromptComponents,
 ): Promise<PromptPreviewMessage> {
   const markerTitle = entry.name?.trim() || entry.identifier;
+  const diagnostic = components.diagnostics[entry.identifier as PromptDiagnosticKey];
 
   if (entry.identifier === 'chatHistory') {
     const count = components.chatMessages.length;
@@ -413,16 +692,27 @@ async function buildMarkerPreviewMessage(
       count > 0
         ? `已读取 ${count} 条聊天消息。触发工作流时，这里会展开为多条 user/assistant 消息。`
         : '当前没有可用的聊天消息，因此这里不会发送任何历史消息。';
-    return createMarkerPreviewMessage(`📌 ${markerTitle}`, summary);
+    return createMarkerPreviewMessage(
+      `📌 ${markerTitle}`,
+      [summary, formatDiagnosticBlock(diagnostic, count, count)].filter(Boolean).join('\n\n'),
+    );
   }
 
   const rawContent = resolveMarkerContent(entry.identifier, components);
   const renderedContent = rawContent.trim() ? await renderEjsContent(rawContent) : '';
-  const summary = renderedContent.trim()
-    ? `已读取该段内容（${renderedContent.length} chars）。触发工作流时会发送。`
-    : '当前为空，因此这里不会发送任何内容。';
+  const rawLength = rawContent.trim().length;
+  const renderedLength = renderedContent.trim().length;
+  const summary =
+    renderedLength > 0
+      ? `已读取该段内容（渲染后 ${renderedLength} chars）。触发工作流时会发送。`
+      : rawLength > 0
+        ? '已读取原始内容，但 EJS 渲染后为空。触发工作流时这里不会发送正文。'
+        : '当前为空，因此这里不会发送任何内容。';
 
-  return createMarkerPreviewMessage(`📌 ${markerTitle}`, summary);
+  return createMarkerPreviewMessage(
+    `📌 ${markerTitle}`,
+    [summary, formatDiagnosticBlock(diagnostic, rawLength, renderedLength)].filter(Boolean).join('\n\n'),
+  );
 }
 
 /**
