@@ -709,7 +709,7 @@ export async function collectPromptComponents(flow: EwFlowConfig, settings?: EwS
         1: 'user',
         2: 'assistant',
       };
-      const inPromptEntries: string[] = [];
+      const promptAreaEntries: Array<{ content: string; label: string }> = [];
 
       for (const [, prompt] of Object.entries(extPrompts)) {
         const p = prompt as any;
@@ -720,7 +720,7 @@ export async function collectPromptComponents(flow: EwFlowConfig, settings?: EwS
 
         switch (p.position) {
           case 0: // IN_PROMPT — in the prompt area (near character definitions)
-            inPromptEntries.push(p.value.trim());
+            promptAreaEntries.push({ content: p.value.trim(), label: 'ExtPrompt(IN_PROMPT)' });
             break;
           case 1: // IN_CHAT — depth-based injection into chat history
             components.depthInjections.push({
@@ -730,19 +730,22 @@ export async function collectPromptComponents(flow: EwFlowConfig, settings?: EwS
             });
             break;
           case 2: // BEFORE_PROMPT — before all other prompts
-            components.beforePromptInjections.push(p.value.trim());
+            // Keep host-side BEFORE_PROMPT content inside EW's prompt order instead of
+            // prepending it out-of-band, otherwise worldbook-derived content can appear
+            // earlier than the user-configured marker position.
+            promptAreaEntries.push({ content: p.value.trim(), label: 'ExtPrompt(BEFORE_PROMPT)' });
             break;
           // NONE (-1) is intentionally ignored
         }
       }
 
-      // IN_PROMPT entries: append to worldInfoBefore as fallback
-      // (only if we didn't already get WI from context)
-      if (inPromptEntries.length) {
-        for (const extContent of inPromptEntries) {
+      // Host prompt injections that belong to the prompt area are folded into
+      // worldInfoBefore so they respect the user's prompt_order placement.
+      if (promptAreaEntries.length) {
+        for (const promptEntry of promptAreaEntries) {
           components.worldInfoBefore.push({
-            name: 'ExtPrompt',
-            content: extContent,
+            name: promptEntry.label,
+            content: promptEntry.content,
             role: 'system',
             position: 0,
             depth: 0,
@@ -755,15 +758,15 @@ export async function collectPromptComponents(flow: EwFlowConfig, settings?: EwS
           attempts: [
             ...(components.diagnostics.worldInfoBefore?.attempts ?? []),
             {
-              label: 'extensionPrompts(IN_PROMPT)',
+              label: 'extensionPrompts(prompt-area)',
               hasValue: true,
-              length: inPromptEntries.length,
-              detail: `entries=${inPromptEntries.length}`,
+              length: promptAreaEntries.length,
+              detail: `entries=${promptAreaEntries.length}`,
             },
           ],
           note: components.diagnostics.worldInfoBefore?.note
-            ? `${components.diagnostics.worldInfoBefore.note}; 追加了 ${inPromptEntries.length} 条 IN_PROMPT 扩展提示词`
-            : `追加了 ${inPromptEntries.length} 条 IN_PROMPT 扩展提示词`,
+            ? `${components.diagnostics.worldInfoBefore.note}; 追加了 ${promptAreaEntries.length} 条 prompt-area 扩展提示词`
+            : `追加了 ${promptAreaEntries.length} 条 prompt-area 扩展提示词`,
         };
       }
     }
@@ -941,11 +944,6 @@ export async function assembleOrderedPrompts(
     for (const { role, content } of deferredInjections) {
       result.push({ role, content });
     }
-  }
-
-  // ── Prepend BEFORE_PROMPT extension injections ──
-  for (let i = components.beforePromptInjections.length - 1; i >= 0; i--) {
-    result.unshift({ role: 'system', content: components.beforePromptInjections[i] });
   }
 
   return result;
