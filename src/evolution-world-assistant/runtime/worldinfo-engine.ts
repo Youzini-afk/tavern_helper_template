@@ -262,13 +262,23 @@ function normalizeEntry(raw: RawWbEntry, worldbookName: string): NormalizedEntry
   // Map position.type string to numeric position
   let position = WI_POSITION.atDepth;
   const posType = raw.position?.type ?? 'at_depth';
-  if (posType === 'before_char' || posType === 'before') position = WI_POSITION.before;
-  else if (posType === 'after_char' || posType === 'after') position = WI_POSITION.after;
-  else if (posType === 'em_top') position = WI_POSITION.EMTop;
-  else if (posType === 'em_bottom') position = WI_POSITION.EMBottom;
-  else if (posType === 'an_top') position = WI_POSITION.ANTop;
-  else if (posType === 'an_bottom') position = WI_POSITION.ANBottom;
-  else if (posType === 'at_depth') position = WI_POSITION.atDepth;
+  let resolvedRole = raw.position?.role ?? 'system';
+  if (posType === 'before_char' || posType === 'before' || posType === 'before_character_definition')
+    position = WI_POSITION.before;
+  else if (posType === 'after_char' || posType === 'after' || posType === 'after_character_definition')
+    position = WI_POSITION.after;
+  else if (posType === 'em_top' || posType === 'before_example_messages') position = WI_POSITION.EMTop;
+  else if (posType === 'em_bottom' || posType === 'after_example_messages') position = WI_POSITION.EMBottom;
+  else if (posType === 'an_top' || posType === 'before_author_note') position = WI_POSITION.ANTop;
+  else if (posType === 'an_bottom' || posType === 'after_author_note') position = WI_POSITION.ANBottom;
+  else if (posType === 'at_depth' || posType === 'at_depth_as_system') position = WI_POSITION.atDepth;
+  else if (posType === 'at_depth_as_assistant') {
+    position = WI_POSITION.atDepth;
+    resolvedRole = 'assistant';
+  } else if (posType === 'at_depth_as_user') {
+    position = WI_POSITION.atDepth;
+    resolvedRole = 'user';
+  }
   // numeric position from extensions (legacy support)
   else if (typeof raw.extensions?.position === 'number') {
     position = raw.extensions.position;
@@ -324,7 +334,7 @@ function normalizeEntry(raw: RawWbEntry, worldbookName: string): NormalizedEntry
     position,
     depth: raw.position?.depth ?? 0,
     order: raw.position?.order ?? 100,
-    role: raw.position?.role ?? 'system',
+    role: resolvedRole,
   };
 }
 
