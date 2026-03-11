@@ -1,7 +1,8 @@
-﻿import { renderEjsContent } from './ejs-bridge';
+import { renderEjsContent } from './ejs-bridge';
 import { collectLatestSnapshotFast } from './floor-binding';
 import { applyTavernRegex } from './regex-engine';
-import type { EwFlowConfig, EwPromptOrderEntry } from './types';
+import type { EwFlowConfig, EwPromptOrderEntry, EwSettings } from './types';
+import { resolveWorldInfo } from './worldinfo-engine';
 
 // SillyTavern 运行时全局变量，在扩展上下文中可用
 declare function getCharacterCardFields():
@@ -545,70 +546,26 @@ function getRuntimeCharacterFields(): {
   };
 }
 
-async function populateWorldInfoComponents(components: PromptComponents): Promise<void> {
-  const beforeAttempts: PromptDiagnosticAttempt[] = [];
-  const afterAttempts: PromptDiagnosticAttempt[] = [];
-
+async function populateWorldInfoComponents(components: PromptComponents, settings: EwSettings): Promise<void> {
   try {
-    const ctx = getRuntimeContext();
-    const { getter: worldInfoGetter, source: worldInfoSource } = resolveWorldInfoPromptGetter();
+    const chatTexts = components.chatMessages.map(msg => msg.content).filter(Boolean);
+    const resolved = await resolveWorldInfo(settings, chatTexts);
 
-    const cachedBefore = getPreferredText(ctx?.worldInfoBefore);
-    const cachedAfter = getPreferredText(ctx?.worldInfoAfter);
-    beforeAttempts.push(describeAttempt('ctx.worldInfoBefore', ctx?.worldInfoBefore));
-    afterAttempts.push(describeAttempt('ctx.worldInfoAfter', ctx?.worldInfoAfter));
+    const formatEntries = (entries: Array<{ name: string; content: string }>) =>
+      entries.map(e => `【${e.name}】\n${e.content}`).join('\n\n');
 
-    if (typeof worldInfoGetter === 'function') {
-      const chat = components.chatMessages.map(msg => msg.content).filter(Boolean);
-      const maxContext = Number(ctx?.maxContext ?? getHostRuntime().SillyTavern?.maxContext ?? 0);
-      const result = await worldInfoGetter(chat, maxContext, true);
+    components.worldInfoBefore = formatEntries(resolved.before);
+    components.worldInfoAfter = formatEntries(resolved.after);
 
-      const before = resolveTextCandidate(
-        [
-          { label: 'getWorldInfoPrompt().worldInfoBefore', value: result?.worldInfoBefore },
-          { label: 'getWorldInfoPrompt().worldInfoString', value: result?.worldInfoString },
-          { label: 'ctx.worldInfoBefore', value: cachedBefore },
-        ],
-        `getter=${worldInfoSource ?? 'unknown'}; chat=${chat.length}; maxContext=${maxContext}; dryRun=true`,
-      );
-      const after = resolveTextCandidate(
-        [
-          { label: 'getWorldInfoPrompt().worldInfoAfter', value: result?.worldInfoAfter },
-          { label: 'ctx.worldInfoAfter', value: cachedAfter },
-        ],
-        `getter=${worldInfoSource ?? 'unknown'}; chat=${chat.length}; maxContext=${maxContext}; dryRun=true`,
-      );
-
-      components.worldInfoBefore = before.value;
-      components.worldInfoAfter = after.value;
-      components.diagnostics.worldInfoBefore = {
-        ...before.diagnostic,
-        attempts: [
-          ...beforeAttempts,
-          ...before.diagnostic.attempts.filter(attempt => attempt.label !== 'ctx.worldInfoBefore'),
-        ],
-      };
-      components.diagnostics.worldInfoAfter = {
-        ...after.diagnostic,
-        attempts: [
-          ...afterAttempts,
-          ...after.diagnostic.attempts.filter(attempt => attempt.label !== 'ctx.worldInfoAfter'),
-        ],
-      };
-      return;
-    }
-
-    components.worldInfoBefore = cachedBefore;
-    components.worldInfoAfter = cachedAfter;
     components.diagnostics.worldInfoBefore = {
-      selectedSource: cachedBefore ? 'ctx.worldInfoBefore' : undefined,
-      attempts: beforeAttempts,
-      note: '未检测到 getWorldInfoPrompt（ctx / host / global），回退到上下文缓存',
+      selectedSource: 'ew-worldinfo-engine',
+      attempts: [{ label: 'resolveWorldInfo().before', hasValue: resolved.before.length > 0, length: resolved.before.length, detail: `${resolved.before.length} entries` }],
+      note: `内置世界书引擎: ${resolved.before.length} 条 before 条目`,
     };
     components.diagnostics.worldInfoAfter = {
-      selectedSource: cachedAfter ? 'ctx.worldInfoAfter' : undefined,
-      attempts: afterAttempts,
-      note: '未检测到 getWorldInfoPrompt（ctx / host / global），回退到上下文缓存',
+      selectedSource: 'ew-worldinfo-engine',
+      attempts: [{ label: 'resolveWorldInfo().after', hasValue: resolved.after.length > 0, length: resolved.after.length, detail: `${resolved.after.length} entries` }],
+      note: `内置世界书引擎: ${resolved.after.length} 条 after 条目`,
     };
   } catch (e) {
     components.diagnostics.worldInfoBefore = appendDiagnosticNote(
@@ -619,7 +576,7 @@ async function populateWorldInfoComponents(components: PromptComponents): Promis
       components.diagnostics.worldInfoAfter,
       `world info 读取异常: ${String(e)}`,
     );
-    console.debug('[Evolution World] world info prompt read failed:', e);
+    console.debug('[Evolution World] world info engine failed:', e);
   }
 }
 
@@ -660,7 +617,7 @@ type AssemblePreviewOptions = {
  * Gathers raw content for every system marker that can appear in a flow's
  * prompt_order: character card fields, world info, jailbreak, and chat messages.
  */
-export async function collectPromptComponents(flow: EwFlowConfig): Promise<PromptComponents> {
+export async function collectPromptComponents(flow: EwFlowConfig, settings?: EwSettings): Promise<PromptComponents> {
   const components: PromptComponents = {
     main: '',
     jailbreak: '',
@@ -736,7 +693,7 @@ export async function collectPromptComponents(flow: EwFlowConfig): Promise<Promp
   }
 
   // ── 3. World Info (before/after) ───────────────────────────────────────
-  await populateWorldInfoComponents(components);
+  await populateWorldInfoComponents(components, settings ?? ({} as EwSettings));
 
   // ── 4. Extension prompts (depth injections, before-prompt, etc.) ────────
   // SillyTavern stores computed extension prompts in `extension_prompts`.
