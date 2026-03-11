@@ -133,12 +133,28 @@ export function mergeFlowResults(results: MergeInput, settings: EwSettings): Mer
     }
   }
 
+  // Normalize entry names inside controller_model (add EW/Dyn/ prefix).
+  // Without this, getwi() would look for '小雪' but the entry is 'EW/Dyn/小雪'.
+  const rawControllerModel = controllerModel ? controllerModel.value : fallbackController;
+  const normalizedController: ControllerModel = {
+    ...rawControllerModel,
+    fallback_entries: rawControllerModel.fallback_entries.map(name =>
+      normalizeEntryName(name, settings.dynamic_entry_prefix, settings.controller_entry_name),
+    ),
+    rules: rawControllerModel.rules.map(rule => ({
+      ...rule,
+      include_entries: rule.include_entries.map(name =>
+        normalizeEntryName(name, settings.dynamic_entry_prefix, settings.controller_entry_name),
+      ),
+    })),
+  };
+
   return {
     worldbook: {
       desired_entries: desiredEntries,
       remove_entries: [...removeMap.keys()].map(name => ({ name })),
     },
-    controller_model: controllerModel ? controllerModel.value : fallbackController,
+    controller_model: normalizedController,
     reply_instruction: replyParts.join('\n\n'),
     diagnostics,
   };
