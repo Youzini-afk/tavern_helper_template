@@ -83,6 +83,14 @@ const FIELD_HELP_LIST: FieldHelpMeta[] = [
     isAdvanced: true,
   },
   {
+    key: 'workflow_timing',
+    label: '执行时机',
+    shortHelp: '选择在 AI 回复前执行工作流，还是在 AI 回复后再更新动态世界。',
+    detailHelp:
+      '回复后更新：默认模式，先让主回复返回，再根据最新 assistant 消息执行 EW 工作流，不阻塞对话。回复前拦截：沿用旧链路，在发给 AI 前先执行工作流，并结合原消息放行策略决定是否继续发送原始用户消息。',
+    isAdvanced: true,
+  },
+  {
     key: 'intercept_release_policy',
     label: '原消息放行策略',
     shortHelp: '被 EW 拦截的原始用户消息，在工作流结束后是否自动继续发送。',

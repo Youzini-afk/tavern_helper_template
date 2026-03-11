@@ -167,6 +167,12 @@
 
             <EwSectionCard v-model="store.globalAdvancedOpen" title="高级配置" subtitle="" collapsible>
               <div class="ew-grid two">
+                <EwFieldRow label="执行时机" :help="help('workflow_timing')">
+                  <select v-model="store.settings.workflow_timing">
+                    <option value="after_reply">回复后更新（默认）</option>
+                    <option value="before_reply">回复前拦截</option>
+                  </select>
+                </EwFieldRow>
                 <EwFieldRow label="失败策略" :help="help('failure_policy')">
                   <select v-model="store.settings.failure_policy">
                     <option value="stop_generation">失败即中止发送</option>

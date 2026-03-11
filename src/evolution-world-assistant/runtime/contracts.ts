@@ -12,7 +12,16 @@ export const FlowRequestSchema = z.object({
   request_id: z.string().min(1),
   chat_id: z.string().min(1),
   message_id: z.number(),
-  user_input: z.string().default(''),
+  user_input: z.string().optional(),
+  trigger: z
+    .object({
+      timing: z.enum(['before_reply', 'after_reply', 'manual']).default('before_reply'),
+      source: z.string().default('unknown'),
+      generation_type: z.string().default('normal'),
+      user_message_id: z.number().optional(),
+      assistant_message_id: z.number().optional(),
+    })
+    .optional(),
   flow: z.object({
     id: z.string().min(1),
     name: z.string().default(''),
@@ -30,7 +39,7 @@ export const FlowRequestSchema = z.object({
         presence_penalty: z.number().min(0).max(2).default(0.5),
         top_p: z.number().min(0).max(1).default(0.92),
       })
-      .default({}),
+      .prefault({}),
     behavior_options: z
       .object({
         name_behavior: z.enum(['none', 'default', 'complete_target', 'message_content']).default('default'),
@@ -42,7 +51,7 @@ export const FlowRequestSchema = z.object({
         reasoning_effort: z.enum(['auto', 'low', 'medium', 'high']).default('auto'),
         verbosity: z.enum(['auto', 'low', 'medium', 'high']).default('auto'),
       })
-      .default({}),
+      .prefault({}),
   }),
   context: z.object({
     turns: z.number().int().min(1).default(8),
@@ -107,5 +116,6 @@ export const FlowResponseSchema = z.object({
 
 export type TextSliceRule = z.infer<typeof TextSliceRuleSchema>;
 export type FlowRequestV1 = z.infer<typeof FlowRequestSchema>;
+export type FlowTriggerV1 = NonNullable<FlowRequestV1['trigger']>;
 export type FlowResponseV1 = z.infer<typeof FlowResponseSchema>;
 export type ControllerModel = z.infer<typeof ControllerModelSchema>;

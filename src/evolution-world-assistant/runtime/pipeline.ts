@@ -10,7 +10,8 @@ import { DispatchFlowAttempt, RunSummarySchema } from './types';
 
 type RunWorkflowInput = {
   message_id: number;
-  user_input: string;
+  user_input?: string;
+  trigger?: Record<string, any>;
   mode: 'auto' | 'manual';
   inject_reply?: boolean;
   abortSignal?: AbortSignal;
@@ -119,6 +120,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
         flows: enabledFlows,
         message_id: input.message_id,
         user_input: input.user_input,
+        trigger: input.trigger,
         request_id: requestId,
         abortSignal: input.abortSignal,
         isCancelled: input.isCancelled,

@@ -1,4 +1,4 @@
-import { FlowRequestSchema, FlowRequestV1 } from './contracts';
+import { FlowRequestSchema, FlowRequestV1, FlowTriggerV1 } from './contracts';
 import { uuidv4 } from './helpers';
 import { EwFlowConfig, EwSettings } from './types';
 import { resolveTargetWorldbook } from './worldbook-runtime';
@@ -7,7 +7,8 @@ export type BuildRequestInput = {
   settings: EwSettings;
   flow: EwFlowConfig;
   message_id: number;
-  user_input: string;
+  user_input?: string;
+  trigger?: FlowTriggerV1;
   request_id?: string;
   serial_results?: Record<string, any>[];
 };
@@ -33,7 +34,8 @@ export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRe
     request_id: requestId,
     chat_id: chatId,
     message_id: input.message_id,
-    user_input: input.user_input,
+    ...(input.user_input ? { user_input: input.user_input } : {}),
+    ...(input.trigger ? { trigger: input.trigger } : {}),
     flow: {
       id: input.flow.id,
       name: input.flow.name,

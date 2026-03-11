@@ -5,15 +5,19 @@ import { markIntercepted, resetInterceptGuard, wasRecentlyIntercepted } from './
 import { runWorkflow } from './pipeline';
 import { getSettings } from './settings';
 import {
+  clearAfterReplyPending,
   clearSendContext,
   getRuntimeState,
   isQuietLike,
+  markAfterReplyHandled,
   recordGeneration,
   recordUserSend,
   recordUserSendIntent,
   resetRuntimeState,
   setProcessing,
+  shouldHandleAfterReply,
   shouldHandleGenerationAfter,
+  wasAfterReplyHandled,
 } from './state';
 import { EwSettings } from './types';
 
@@ -230,6 +234,21 @@ type WorkflowExecutionOutcome = {
   abortedByUser: boolean;
 };
 
+type ExecuteWorkflowOptions = {
+  messageId: number;
+  userInput?: string;
+  injectReply: boolean;
+  trigger: {
+    timing: 'before_reply' | 'after_reply' | 'manual';
+    source: string;
+    generation_type: string;
+    user_message_id?: number;
+    assistant_message_id?: number;
+  };
+  reminderMessage: string;
+  successMessage: string;
+};
+
 function setSendTextareaValue(text: string): void {
   const textarea = getChatDocument().getElementById('send_textarea') as HTMLTextAreaElement | null;
   if (!textarea) {
@@ -277,8 +296,7 @@ function shouldReleaseInterceptedMessage(settings: EwSettings, outcome: Workflow
 
 async function executeWorkflowWithPolicy(
   settings: EwSettings,
-  messageId: number,
-  userInput: string,
+  options: ExecuteWorkflowOptions,
 ): Promise<WorkflowExecutionOutcome> {
   // Returns the workflow outcome so the primary interception path can decide
   // whether the original user message should be released after EW processing.
@@ -309,6 +327,13 @@ async function executeWorkflowWithPolicy(
   };
 
   const processingReminder = createProcessingReminder(cancelWorkflow);
+  processingReminder.update({
+    title: 'Evolution World',
+    message: options.reminderMessage,
+    level: 'info',
+    persist: true,
+    busy: true,
+  });
 
   const finalizeUserAbort = () => {
     processingReminder.update({
@@ -327,10 +352,11 @@ async function executeWorkflowWithPolicy(
   let result;
   try {
     result = await runWorkflow({
-      message_id: messageId,
-      user_input: userInput,
+      message_id: options.messageId,
+      user_input: options.userInput,
+      trigger: options.trigger,
       mode: 'auto',
-      inject_reply: true,
+      inject_reply: options.injectReply,
       abortSignal: workflowAbortController.signal,
       isCancelled: () => abortedByUser,
     });
@@ -362,10 +388,11 @@ async function executeWorkflowWithPolicy(
       toastr.warning(`工作流首次失败，正在重试… (${retryReason})`, 'Evolution World');
       try {
         result = await runWorkflow({
-          message_id: messageId,
-          user_input: userInput,
+          message_id: options.messageId,
+          user_input: options.userInput,
+          trigger: options.trigger,
           mode: 'auto',
-          inject_reply: true,
+          inject_reply: options.injectReply,
           abortSignal: workflowAbortController.signal,
           isCancelled: () => abortedByUser,
         });
@@ -432,7 +459,7 @@ async function executeWorkflowWithPolicy(
 
   processingReminder.update({
     title: 'Evolution World',
-    message: '动态世界流程处理完成，已更新本轮上下文。',
+    message: options.successMessage,
     level: 'success',
     duration_ms: 2200,
   });
@@ -469,7 +496,7 @@ function installTavernHelperHook() {
     }
 
     const settings = getSettings();
-    if (!settings.enabled || getRuntimeState().is_processing) {
+    if (!settings.enabled || settings.workflow_timing !== 'before_reply' || getRuntimeState().is_processing) {
       return win._ew_originalGenerate.apply(this, args);
     }
 
@@ -498,7 +525,19 @@ function installTavernHelperHook() {
     };
     setProcessing(true);
     try {
-      workflowOutcome = await executeWorkflowWithPolicy(settings, messageId, userInput);
+      workflowOutcome = await executeWorkflowWithPolicy(settings, {
+        messageId,
+        userInput,
+        injectReply: true,
+        trigger: {
+          timing: 'before_reply',
+          source: 'tavernhelper',
+          generation_type: genType,
+          user_message_id: getRuntimeState().last_send?.message_id,
+        },
+        reminderMessage: '正在读取上下文并处理本轮工作流，请稍后…',
+        successMessage: '动态世界流程处理完成，已更新本轮上下文。',
+      });
     } catch (e) {
       console.error('[Evolution World] Error in TavernHelper.generate hook:', e);
     } finally {
@@ -562,6 +601,9 @@ async function onGenerationAfterCommands(
   }
 
   const settings = getSettings();
+  if (settings.workflow_timing !== 'before_reply') {
+    return;
+  }
   const decision = shouldHandleGenerationAfter(type, params, dryRun, settings);
   if (!decision.ok) {
     return;
@@ -594,8 +636,84 @@ async function onGenerationAfterCommands(
     // Return value (shouldAbort) is only relevant for the primary path;
     // in the fallback path, stopGenerationNow() inside executeWorkflowWithPolicy
     // handles abort directly since generation is already in progress.
-    await executeWorkflowWithPolicy(settings, messageId, userInput);
+    await executeWorkflowWithPolicy(settings, {
+      messageId,
+      userInput,
+      injectReply: true,
+      trigger: {
+        timing: 'before_reply',
+        source: 'generation_after_commands',
+        generation_type: genType || type,
+        user_message_id: getRuntimeState().last_send?.message_id,
+      },
+      reminderMessage: '正在读取上下文并处理本轮工作流，请稍后…',
+      successMessage: '动态世界流程处理完成，已更新本轮上下文。',
+    });
   } finally {
+    setProcessing(false);
+  }
+}
+
+function getMessageText(messageId: number): string {
+  try {
+    const message = getChatMessages(messageId)[0];
+    return String(message?.message ?? '');
+  } catch {
+    return '';
+  }
+}
+
+function isAssistantMessage(messageId: number): boolean {
+  try {
+    const message = getChatMessages(messageId)[0];
+    return message?.role === 'assistant';
+  } catch {
+    return false;
+  }
+}
+
+async function onAfterReplyMessage(messageId: number, type: string, source: 'message_received' | 'generation_ended') {
+  const settings = getSettings();
+  if (settings.workflow_timing !== 'after_reply') {
+    return;
+  }
+
+  const decision = shouldHandleAfterReply(messageId, type, settings);
+  if (!decision.ok) {
+    return;
+  }
+
+  if (!isAssistantMessage(messageId)) {
+    return;
+  }
+
+  const messageText = getMessageText(messageId);
+  if (!messageText.trim() || wasAfterReplyHandled(messageId, messageText)) {
+    return;
+  }
+
+  const runtimeState = getRuntimeState();
+  const generationType = runtimeState.after_reply.pending_generation_type || runtimeState.last_generation?.type || type;
+
+  setProcessing(true);
+  try {
+    await executeWorkflowWithPolicy(settings, {
+      messageId,
+      injectReply: false,
+      trigger: {
+        timing: 'after_reply',
+        source,
+        generation_type: generationType,
+        user_message_id: runtimeState.after_reply.pending_user_message_id ?? runtimeState.last_send?.message_id,
+        assistant_message_id: messageId,
+      },
+      reminderMessage: '正在根据最新回复更新动态世界，请稍后…',
+      successMessage: '动态世界已根据最新回复完成更新。',
+    });
+    markAfterReplyHandled(messageId, messageText);
+  } finally {
+    clearAfterReplyPending();
+    clearSendContext();
     setProcessing(false);
   }
 }
@@ -620,6 +738,19 @@ export function initRuntimeEvents() {
   listenerStops.push(
     eventOn(tavern_events.GENERATION_STARTED, (type, params, dryRun) => {
       recordGeneration(type, params ?? {}, dryRun);
+    }),
+  );
+
+  listenerStops.push(
+    eventOn(tavern_events.MESSAGE_RECEIVED, async (messageId, type) => {
+      await onAfterReplyMessage(messageId, type, 'message_received');
+    }),
+  );
+
+  listenerStops.push(
+    eventOn(tavern_events.GENERATION_ENDED, async messageId => {
+      const type = getRuntimeState().last_generation?.type ?? 'normal';
+      await onAfterReplyMessage(messageId, type, 'generation_ended');
     }),
   );
 

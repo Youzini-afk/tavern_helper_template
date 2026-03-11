@@ -1,17 +1,14 @@
 import { buildFlowRequest } from './context-builder';
-import { FlowResponseSchema } from './contracts';
-import {
-  assembleOrderedPrompts,
-  collectPromptComponents,
-  PromptComponents,
-} from './prompt-assembler';
+import { FlowResponseSchema, FlowTriggerV1 } from './contracts';
+import { assembleOrderedPrompts, collectPromptComponents, PromptComponents } from './prompt-assembler';
 import { DispatchFlowAttempt, DispatchFlowResult, EwApiPreset, EwFlowConfig, EwSettings } from './types';
 
 type DispatchInput = {
   settings: EwSettings;
   flows: EwFlowConfig[];
   message_id: number;
-  user_input: string;
+  user_input?: string;
+  trigger?: FlowTriggerV1;
   request_id: string;
   abortSignal?: AbortSignal;
   isCancelled?: () => boolean;
@@ -307,21 +304,13 @@ function parseJsonFromText(rawText: string, flowId: string): Record<string, any>
         }
         return parsed as Record<string, any>;
       } catch (error) {
-        throw new Error(
-          `[${flowId}] JSON 解析失败: ${toErrorMessage(error)}\n` +
-          `原始响应前300字: ${preview}`,
-        );
+        throw new Error(`[${flowId}] JSON 解析失败: ${toErrorMessage(error)}\n` + `原始响应前300字: ${preview}`);
       }
     }
     if (!trimmed) {
-      throw new Error(
-        `[${flowId}] 模型返回了空响应（可能被响应后处理正则清空）`,
-      );
+      throw new Error(`[${flowId}] 模型返回了空响应（可能被响应后处理正则清空）`);
     }
-    throw new Error(
-      `[${flowId}] 模型输出中找不到 JSON 对象\n` +
-      `原始响应前300字: ${preview}`,
-    );
+    throw new Error(`[${flowId}] 模型输出中找不到 JSON 对象\n` + `原始响应前300字: ${preview}`);
   }
 }
 
@@ -344,9 +333,7 @@ function applyResponseRegex(rawText: string, flow: EwFlowConfig): string {
       const before = text;
       text = text.replace(new RegExp(removePattern, 'gis'), '');
       if (text.trim() !== before.trim()) {
-        console.debug(
-          `[${flow.id}] response_remove_regex matched: removed ${before.length - text.length} chars`,
-        );
+        console.debug(`[${flow.id}] response_remove_regex matched: removed ${before.length - text.length} chars`);
       }
     } catch (e) {
       console.warn(
@@ -365,9 +352,7 @@ function applyResponseRegex(rawText: string, flow: EwFlowConfig): string {
         text = match[1] ?? match[0];
         console.debug(`[${flow.id}] response_extract_regex matched: extracted ${text.length} chars`);
       } else {
-        console.warn(
-          `[${flow.id}] response_extract_regex "${extractPattern}" did not match anything, using full text`,
-        );
+        console.warn(`[${flow.id}] response_extract_regex "${extractPattern}" did not match anything, using full text`);
       }
     } catch (e) {
       console.warn(
@@ -393,11 +378,7 @@ function applyResponseRegex(rawText: string, flow: EwFlowConfig): string {
  * AI 可以省略 version / flow_id / status / priority / diagnostics，
  * 脚本在 Schema 校验前注入默认值。若 AI 已输出则不覆盖（向后兼容）。
  */
-function normalizeAiResponse(
-  raw: Record<string, any>,
-  flowId: string,
-  flowPriority: number,
-): Record<string, any> {
+function normalizeAiResponse(raw: Record<string, any>, flowId: string, flowPriority: number): Record<string, any> {
   if (!raw.version) raw.version = 'ew-flow/v1';
   if (!raw.flow_id) raw.flow_id = flowId;
   if (!raw.status) raw.status = 'ok';
@@ -664,7 +645,8 @@ async function executeFlow(
   flow: EwFlowConfig,
   flowOrder: number,
   messageId: number,
-  userInput: string,
+  userInput: string | undefined,
+  trigger: FlowTriggerV1 | undefined,
   requestId: string,
   serialResults: Record<string, any>[],
   abortSignal?: AbortSignal,
@@ -685,6 +667,7 @@ async function executeFlow(
     flow,
     message_id: messageId,
     user_input: userInput,
+    trigger,
     request_id: requestId,
     serial_results: serialResults,
   });
@@ -693,11 +676,7 @@ async function executeFlow(
     throwIfDispatchAborted(abortSignal, isCancelled);
     const body = applyTemplate(request as unknown as Record<string, any>, flow.request_template);
     const promptComponents = await promptComponentsPromise;
-    const orderedPrompts = await buildOrderedPromptsForFlow(
-      flow,
-      promptComponents,
-      body,
-    );
+    const orderedPrompts = await buildOrderedPromptsForFlow(flow, promptComponents, body);
     const requestDebugBase = {
       route: usesTavernMain
         ? 'generateRaw(main_api)'
@@ -855,6 +834,7 @@ export async function dispatchFlows(input: DispatchInput): Promise<DispatchFlows
         index,
         input.message_id,
         input.user_input,
+        input.trigger,
         input.request_id,
         serialResults,
         input.abortSignal,
@@ -892,6 +872,7 @@ export async function dispatchFlows(input: DispatchInput): Promise<DispatchFlows
         index,
         input.message_id,
         input.user_input,
+        input.trigger,
         input.request_id,
         [],
         input.abortSignal,

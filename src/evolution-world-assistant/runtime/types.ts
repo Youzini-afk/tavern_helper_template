@@ -266,6 +266,7 @@ export const EwSettingsSchema = z.object({
   enabled: z.boolean().default(false),
   total_timeout_ms: z.coerce.number().int().positive().default(300000),
   dispatch_mode: z.enum(['parallel', 'serial']).default('parallel'),
+  workflow_timing: z.enum(['after_reply', 'before_reply']).default('after_reply'),
   failure_policy: z
     .enum(['stop_generation', 'continue_generation', 'retry_once', 'notify_only', 'allow_partial_success'])
     .default('stop_generation'),
