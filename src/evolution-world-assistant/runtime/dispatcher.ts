@@ -83,6 +83,21 @@ function getStRequestHeaders(): Record<string, string> {
   return headers;
 }
 
+function getSillyTavernContext(): Record<string, any> | undefined {
+  const hostRuntime = getHostRuntime();
+  const localRuntime = globalThis as Record<string, any>;
+
+  if (typeof hostRuntime.SillyTavern?.getContext === 'function') {
+    return hostRuntime.SillyTavern.getContext();
+  }
+
+  if (typeof localRuntime.SillyTavern?.getContext === 'function') {
+    return localRuntime.SillyTavern.getContext();
+  }
+
+  return undefined;
+}
+
 function isDispatchAborted(signal?: AbortSignal, isCancelled?: () => boolean): boolean {
   return Boolean(signal?.aborted || isCancelled?.());
 }
@@ -229,6 +244,128 @@ function buildCustomIncludeHeaders(apiPreset: EwApiPreset): string {
 
 function shouldUseGenerateRawCustomApi(apiPreset: EwApiPreset): boolean {
   return !apiPreset.headers_json.trim();
+}
+
+function resolveCurrentChatCompletionModel(context: Record<string, any> | undefined): string {
+  const getChatCompletionModel = context?.getChatCompletionModel;
+  if (typeof getChatCompletionModel === 'function') {
+    const resolved = getChatCompletionModel(context?.chatCompletionSettings);
+    if (typeof resolved === 'string' && resolved.trim()) {
+      return resolved.trim();
+    }
+  }
+
+  const settings = context?.chatCompletionSettings;
+  const source = String(settings?.chat_completion_source ?? '').trim();
+  const modelBySource: Record<string, string | undefined> = {
+    claude: settings?.claude_model,
+    openai: settings?.openai_model,
+    makersuite: settings?.google_model,
+    vertexai: settings?.vertexai_model,
+    openrouter: settings?.openrouter_model,
+    ai21: settings?.ai21_model,
+    mistralai: settings?.mistralai_model,
+    custom: settings?.custom_model,
+    cohere: settings?.cohere_model,
+    perplexity: settings?.perplexity_model,
+    groq: settings?.groq_model,
+    siliconflow: settings?.siliconflow_model,
+    electronhub: settings?.electronhub_model,
+    chutes: settings?.chutes_model,
+    nanogpt: settings?.nanogpt_model,
+    deepseek: settings?.deepseek_model,
+    aimlapi: settings?.aimlapi_model,
+    xai: settings?.xai_model,
+    pollinations: settings?.pollinations_model,
+    cometapi: settings?.cometapi_model,
+    moonshot: settings?.moonshot_model,
+    fireworks: settings?.fireworks_model,
+    azure_openai: settings?.azure_openai_model,
+    zai: settings?.zai_model,
+  };
+
+  return String(modelBySource[source] ?? '').trim();
+}
+
+function buildMainApiStBackendRequestBody(
+  flow: EwFlowConfig,
+  orderedPrompts: Array<{ role: 'system' | 'assistant' | 'user'; content: string }>,
+): Record<string, any> | null {
+  const context = getSillyTavernContext();
+  const mainApi = String(context?.mainApi ?? context?.main_api ?? '')
+    .trim()
+    .toLowerCase();
+  if (mainApi !== 'openai') {
+    return null;
+  }
+
+  const chatSettings = context?.chatCompletionSettings;
+  if (!chatSettings || typeof chatSettings !== 'object') {
+    return null;
+  }
+
+  const model = resolveCurrentChatCompletionModel(context).replace(/^models\//, '');
+  if (!model) {
+    return null;
+  }
+
+  return {
+    messages: orderedPrompts,
+    model,
+    max_tokens: flow.generation_options.max_reply_tokens,
+    temperature: flow.generation_options.temperature,
+    top_p: flow.generation_options.top_p,
+    frequency_penalty: flow.generation_options.frequency_penalty,
+    presence_penalty: flow.generation_options.presence_penalty,
+    stream: flow.generation_options.stream,
+    chat_completion_source: String(chatSettings.chat_completion_source ?? 'openai'),
+    group_names: [],
+    include_reasoning: flow.behavior_options.request_thinking,
+    reasoning_effort: flow.behavior_options.reasoning_effort,
+    verbosity: flow.behavior_options.verbosity,
+    enable_web_search: false,
+    request_images: flow.behavior_options.send_inline_media,
+    reverse_proxy: String(chatSettings.reverse_proxy ?? ''),
+    proxy_password: String(chatSettings.proxy_password ?? ''),
+    custom_url: String(chatSettings.custom_url ?? ''),
+    custom_include_headers: String(chatSettings.custom_include_headers ?? ''),
+    custom_include_body: String(chatSettings.custom_include_body ?? ''),
+    custom_exclude_body: String(chatSettings.custom_exclude_body ?? ''),
+    custom_prompt_post_processing: String(chatSettings.custom_prompt_post_processing ?? 'strict'),
+    use_sysprompt: Boolean(chatSettings.use_sysprompt),
+    assistant_prefill: String(chatSettings.assistant_prefill ?? ''),
+    assistant_impersonation: String(chatSettings.assistant_impersonation ?? ''),
+    continue_prefill: flow.behavior_options.continue_prefill || Boolean(chatSettings.continue_prefill),
+    squash_system_messages: flow.behavior_options.squash_system_messages,
+  };
+}
+
+function buildCustomStBackendRequestBody(
+  flow: EwFlowConfig,
+  apiPreset: EwApiPreset,
+  orderedPrompts: Array<{ role: 'system' | 'assistant' | 'user'; content: string }>,
+): Record<string, any> {
+  return {
+    messages: orderedPrompts,
+    model: apiPreset.model.trim().replace(/^models\//, ''),
+    max_tokens: flow.generation_options.max_reply_tokens,
+    temperature: flow.generation_options.temperature,
+    top_p: flow.generation_options.top_p,
+    frequency_penalty: flow.generation_options.frequency_penalty,
+    presence_penalty: flow.generation_options.presence_penalty,
+    stream: flow.generation_options.stream,
+    chat_completion_source: 'custom',
+    group_names: [],
+    include_reasoning: flow.behavior_options.request_thinking,
+    reasoning_effort: flow.behavior_options.reasoning_effort,
+    enable_web_search: false,
+    request_images: flow.behavior_options.send_inline_media,
+    reverse_proxy: apiPreset.api_url.trim(),
+    proxy_password: '',
+    custom_url: apiPreset.api_url.trim(),
+    custom_include_headers: buildCustomIncludeHeaders(apiPreset),
+    custom_prompt_post_processing: 'strict',
+  };
 }
 
 function extractLatestJsonStringField(source: string, fieldName: string): { raw: string; index: number } | null {
@@ -793,44 +930,18 @@ async function executeFlowViaGenerateRawCustomApi(
  * 自定义 API 路径：通过 ST 后端代理 /api/backends/chat-completions/generate 转发请求。
  * 直接控制 model / temperature / max_tokens 等参数，不依赖 TavernHelper。
  */
-async function executeFlowViaStBackend(
+async function executeFlowViaChatCompletionsBackend(
   flow: EwFlowConfig,
-  apiPreset: EwApiPreset,
-  orderedPrompts: Array<{ role: 'system' | 'assistant' | 'user'; content: string }>,
+  requestBody: Record<string, any>,
+  requestTargetLabel: string,
   onStreamText?: (fullText: string) => void,
   abortSignal?: AbortSignal,
   isCancelled?: () => boolean,
 ): Promise<NonNullable<DispatchFlowAttempt['response']>> {
   throwIfDispatchAborted(abortSignal, isCancelled);
-  if (!apiPreset.api_url.trim()) {
-    throw new Error(`[${flow.id}] custom api_url is empty`);
-  }
-  if (!apiPreset.model.trim()) {
+  if (!String(requestBody.model ?? '').trim()) {
     throw new Error(`[${flow.id}] model is empty`);
   }
-  const genOpts = flow.generation_options;
-  const customIncludeHeaders = buildCustomIncludeHeaders(apiPreset);
-  const requestBody = {
-    messages: orderedPrompts,
-    model: apiPreset.model.trim().replace(/^models\//, ''),
-    max_tokens: genOpts.max_reply_tokens,
-    temperature: genOpts.temperature,
-    top_p: genOpts.top_p,
-    frequency_penalty: genOpts.frequency_penalty,
-    presence_penalty: genOpts.presence_penalty,
-    stream: genOpts.stream,
-    chat_completion_source: 'custom',
-    group_names: [],
-    include_reasoning: flow.behavior_options.request_thinking,
-    reasoning_effort: flow.behavior_options.reasoning_effort,
-    enable_web_search: false,
-    request_images: flow.behavior_options.send_inline_media,
-    reverse_proxy: apiPreset.api_url.trim(),
-    proxy_password: '',
-    custom_url: apiPreset.api_url.trim(),
-    custom_include_headers: customIncludeHeaders,
-    custom_prompt_post_processing: 'strict',
-  };
 
   const stHeaders = getStRequestHeaders();
 
@@ -856,12 +967,12 @@ async function executeFlowViaStBackend(
 
     if (!response.ok) {
       const errTxt = await response.text();
-      throw new Error(summarizeStBackendError(flow.id, response.status, apiPreset.api_url.trim(), errTxt));
+      throw new Error(summarizeStBackendError(flow.id, response.status, requestTargetLabel, errTxt));
     }
 
     throwIfDispatchAborted(abortSignal, isCancelled);
 
-    const rawText = genOpts.stream
+    const rawText = requestBody.stream
       ? await readStreamingSseText(response, onStreamText)
       : await response.json().then(data => data?.choices?.[0]?.message?.content?.trim() ?? data?.content?.trim() ?? '');
 
@@ -895,6 +1006,47 @@ async function executeFlowViaStBackend(
       abortSignal.removeEventListener('abort', abortFromOuter);
     }
   }
+}
+
+async function executeFlowViaStBackend(
+  flow: EwFlowConfig,
+  apiPreset: EwApiPreset,
+  orderedPrompts: Array<{ role: 'system' | 'assistant' | 'user'; content: string }>,
+  onStreamText?: (fullText: string) => void,
+  abortSignal?: AbortSignal,
+  isCancelled?: () => boolean,
+): Promise<NonNullable<DispatchFlowAttempt['response']>> {
+  if (!apiPreset.api_url.trim()) {
+    throw new Error(`[${flow.id}] custom api_url is empty`);
+  }
+  if (!apiPreset.model.trim()) {
+    throw new Error(`[${flow.id}] model is empty`);
+  }
+
+  return executeFlowViaChatCompletionsBackend(
+    flow,
+    buildCustomStBackendRequestBody(flow, apiPreset, orderedPrompts),
+    apiPreset.api_url.trim(),
+    onStreamText,
+    abortSignal,
+    isCancelled,
+  );
+}
+
+async function executeFlowViaMainApiStBackend(
+  flow: EwFlowConfig,
+  orderedPrompts: Array<{ role: 'system' | 'assistant' | 'user'; content: string }>,
+  onStreamText?: (fullText: string) => void,
+  abortSignal?: AbortSignal,
+  isCancelled?: () => boolean,
+): Promise<NonNullable<DispatchFlowAttempt['response']>> {
+  const requestBody = buildMainApiStBackendRequestBody(flow, orderedPrompts);
+  if (!requestBody) {
+    throw new Error(`[${flow.id}] 当前主 API 不支持工作流静默流式桥接`);
+  }
+
+  const targetLabel = String(requestBody.custom_url || requestBody.reverse_proxy || 'tavern://main_api');
+  return executeFlowViaChatCompletionsBackend(flow, requestBody, targetLabel, onStreamText, abortSignal, isCancelled);
 }
 
 async function executeFlow(
@@ -968,11 +1120,17 @@ async function executeFlow(
     const body = applyTemplate(request as unknown as Record<string, any>, flow.request_template);
     const promptComponents = await promptComponentsPromise;
     const orderedPrompts = await buildOrderedPromptsForFlow(flow, promptComponents, body);
+    const mainApiStreamBridgeRequest =
+      usesTavernMain && streamEnabled ? buildMainApiStBackendRequestBody(flow, orderedPrompts) : null;
     const requestDebugBase = {
       route: usesTavernMain
-        ? 'generateRaw(main_api)'
+        ? mainApiStreamBridgeRequest
+          ? '/api/backends/chat-completions/generate (main_api stream bridge)'
+          : 'generateRaw(main_api)'
         : shouldUseGenerateRawCustomApi(apiPreset)
-          ? 'generateRaw(custom_api)'
+          ? streamEnabled
+            ? '/api/backends/chat-completions/generate (custom_api stream bridge)'
+            : 'generateRaw(custom_api)'
           : '/api/backends/chat-completions/generate',
       flow_request: request,
       assembled_messages: orderedPrompts,
@@ -982,109 +1140,98 @@ async function executeFlow(
     let requestDebug = requestDebugBase as Record<string, any>;
 
     if (usesTavernMain) {
-      // 主 API：通过 TavernHelper.generateRaw，使用酒馆当前配置
-      requestDebug = {
-        ...requestDebugBase,
-        transport_request: {
-          generation_id: generationId,
-          should_stream: streamEnabled,
-          should_silence: true,
-          ordered_prompts: orderedPrompts,
-        },
-      };
-      response = await executeFlowViaLlmConnector(
-        flow,
-        orderedPrompts,
-        generationId,
-        streamEnabled ? emitStreamProgress : undefined,
-        abortSignal,
-        isCancelled,
-      );
-    } else if (shouldUseGenerateRawCustomApi(apiPreset)) {
-      // 自定义 API：优先走官方 generateRaw.custom_api；若需要自定义 headers 再回退到 ST backend
-      try {
+      if (mainApiStreamBridgeRequest) {
+        requestDebug = {
+          ...requestDebugBase,
+          transport_request: mainApiStreamBridgeRequest,
+        };
+        response = await executeFlowViaMainApiStBackend(
+          flow,
+          orderedPrompts,
+          emitStreamProgress,
+          abortSignal,
+          isCancelled,
+        );
+      } else {
         requestDebug = {
           ...requestDebugBase,
           transport_request: {
             generation_id: generationId,
             should_stream: streamEnabled,
             should_silence: true,
-            custom_api: buildGenerateRawCustomApi(apiPreset, flow),
             ordered_prompts: orderedPrompts,
           },
         };
-        response = await executeFlowViaGenerateRawCustomApi(
+        response = await executeFlowViaLlmConnector(
           flow,
-          apiPreset,
           orderedPrompts,
           generationId,
           streamEnabled ? emitStreamProgress : undefined,
           abortSignal,
           isCancelled,
         );
-      } catch (error) {
-        console.warn(
-          `[EW] Flow "${flow.id}": generateRaw.custom_api failed, fallback to ST backend — ${toErrorMessage(error)}`,
-        );
-        const fallbackRequestBody = {
-          messages: orderedPrompts,
-          model: apiPreset.model.trim().replace(/^models\//, ''),
-          max_tokens: flow.generation_options.max_reply_tokens,
-          temperature: flow.generation_options.temperature,
-          top_p: flow.generation_options.top_p,
-          frequency_penalty: flow.generation_options.frequency_penalty,
-          presence_penalty: flow.generation_options.presence_penalty,
-          stream: streamEnabled,
-          chat_completion_source: 'custom',
-          group_names: [],
-          include_reasoning: flow.behavior_options.request_thinking,
-          reasoning_effort: flow.behavior_options.reasoning_effort,
-          enable_web_search: false,
-          request_images: flow.behavior_options.send_inline_media,
-          reverse_proxy: apiPreset.api_url.trim(),
-          proxy_password: '',
-          custom_url: apiPreset.api_url.trim(),
-          custom_include_headers: buildCustomIncludeHeaders(apiPreset),
-          custom_prompt_post_processing: 'strict',
-        };
+      }
+    } else if (shouldUseGenerateRawCustomApi(apiPreset)) {
+      if (streamEnabled) {
+        const streamBridgeRequest = buildCustomStBackendRequestBody(flow, apiPreset, orderedPrompts);
         requestDebug = {
           ...requestDebugBase,
-          route: '/api/backends/chat-completions/generate (fallback)',
-          transport_request: fallbackRequestBody,
+          transport_request: streamBridgeRequest,
         };
         response = await executeFlowViaStBackend(
           flow,
           apiPreset,
           orderedPrompts,
-          streamEnabled ? emitStreamProgress : undefined,
+          emitStreamProgress,
           abortSignal,
           isCancelled,
         );
+      } else {
+        try {
+          requestDebug = {
+            ...requestDebugBase,
+            transport_request: {
+              generation_id: generationId,
+              should_stream: streamEnabled,
+              should_silence: true,
+              custom_api: buildGenerateRawCustomApi(apiPreset, flow),
+              ordered_prompts: orderedPrompts,
+            },
+          };
+          response = await executeFlowViaGenerateRawCustomApi(
+            flow,
+            apiPreset,
+            orderedPrompts,
+            generationId,
+            undefined,
+            abortSignal,
+            isCancelled,
+          );
+        } catch (error) {
+          console.warn(
+            `[EW] Flow "${flow.id}": generateRaw.custom_api failed, fallback to ST backend — ${toErrorMessage(error)}`,
+          );
+          const fallbackRequestBody = buildCustomStBackendRequestBody(flow, apiPreset, orderedPrompts);
+          requestDebug = {
+            ...requestDebugBase,
+            route: '/api/backends/chat-completions/generate (fallback)',
+            transport_request: fallbackRequestBody,
+          };
+          response = await executeFlowViaStBackend(
+            flow,
+            apiPreset,
+            orderedPrompts,
+            undefined,
+            abortSignal,
+            isCancelled,
+          );
+        }
       }
     } else {
+      const stBackendRequest = buildCustomStBackendRequestBody(flow, apiPreset, orderedPrompts);
       requestDebug = {
         ...requestDebugBase,
-        transport_request: {
-          messages: orderedPrompts,
-          model: apiPreset.model.trim().replace(/^models\//, ''),
-          max_tokens: flow.generation_options.max_reply_tokens,
-          temperature: flow.generation_options.temperature,
-          top_p: flow.generation_options.top_p,
-          frequency_penalty: flow.generation_options.frequency_penalty,
-          presence_penalty: flow.generation_options.presence_penalty,
-          stream: streamEnabled,
-          chat_completion_source: 'custom',
-          group_names: [],
-          include_reasoning: flow.behavior_options.request_thinking,
-          reasoning_effort: flow.behavior_options.reasoning_effort,
-          enable_web_search: false,
-          request_images: flow.behavior_options.send_inline_media,
-          reverse_proxy: apiPreset.api_url.trim(),
-          proxy_password: '',
-          custom_url: apiPreset.api_url.trim(),
-          custom_include_headers: buildCustomIncludeHeaders(apiPreset),
-          custom_prompt_post_processing: 'strict',
-        },
+        transport_request: stBackendRequest,
       };
       response = await executeFlowViaStBackend(
         flow,
