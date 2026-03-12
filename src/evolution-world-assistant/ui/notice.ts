@@ -1043,6 +1043,7 @@ function reconcileWorkflowNoticeStack(stack: HTMLElement, islands: EwWorkflowNot
     } else {
       current.style.display = '';
     }
+    console.warn(`[EW-NOTICE] row ${index}/${islands.length}: id=${island.id}, collapsed=${collapsed}, display=${current.style.display}, extra=${island.extra_count ?? 0}`);
 
     // JS-driven +N badge visibility: only on first row when collapsed
     const extraBadge = current.querySelector('.ew-workflow-notice__row-extra') as HTMLElement | null;
@@ -1074,6 +1075,8 @@ export function showManagedWorkflowNotice(input: EwWorkflowNoticeInput): EwWorkf
   ensureWorkflowStyle(doc);
   const host = ensureWorkflowHost(doc);
 
+  console.warn('[EW-NOTICE] showManagedWorkflowNotice called. doc:', doc === document ? 'window.document' : 'chat iframe');
+
   // Module-level singleton: dismiss previous notice (may be in a different document)
   if (_currentWorkflowHandle) {
     try { _currentWorkflowHandle.dismiss(); } catch { /* already removed */ }
@@ -1089,7 +1092,9 @@ export function showManagedWorkflowNotice(input: EwWorkflowNoticeInput): EwWorkf
   } catch { /* cross-origin */ }
   for (const d of docsToClean) {
     try {
-      d.querySelectorAll('.ew-workflow-notice').forEach(el => el.remove());
+      const found = d.querySelectorAll('.ew-workflow-notice');
+      console.warn('[EW-NOTICE] purging', found.length, 'articles from', d === document ? 'window.document' : 'other doc');
+      found.forEach(el => el.remove());
     } catch { /* */ }
   }
 
@@ -1255,6 +1260,7 @@ export function showManagedWorkflowNotice(input: EwWorkflowNoticeInput): EwWorkf
   });
 
   host.appendChild(item);
+  console.warn('[EW-NOTICE] new article appended. Total articles in host:', host.querySelectorAll('.ew-workflow-notice').length);
 
   const handle: EwWorkflowNoticeHandle = {
     update,
