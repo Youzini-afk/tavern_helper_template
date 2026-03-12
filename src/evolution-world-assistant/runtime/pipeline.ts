@@ -6,7 +6,13 @@ import { injectReplyInstructionOnce } from './injection';
 import { mergeFlowResults } from './merger';
 import { getSettings, setLastIo, setLastRun } from './settings';
 import { commitMergedPlan } from './transaction';
-import { ControllerTemplateSlot, DispatchFlowAttempt, RunSummarySchema, WorkflowProgressUpdate } from './types';
+import {
+  ControllerTemplateSlot,
+  DispatchFlowAttempt,
+  DispatchFlowResult,
+  RunSummarySchema,
+  WorkflowProgressUpdate,
+} from './types';
 
 type RunWorkflowInput = {
   message_id: number;
@@ -14,6 +20,8 @@ type RunWorkflowInput = {
   trigger?: Record<string, any>;
   mode: 'auto' | 'manual';
   inject_reply?: boolean;
+  flow_ids?: string[];
+  preserved_results?: DispatchFlowResult[];
   abortSignal?: AbortSignal;
   isCancelled?: () => boolean;
   onProgress?: (update: WorkflowProgressUpdate) => void;
@@ -24,6 +32,8 @@ export type RunWorkflowOutput = {
   reason?: string;
   request_id: string;
   diagnostics?: Record<string, any>;
+  attempts: DispatchFlowAttempt[];
+  results: DispatchFlowResult[];
 };
 
 function toPreview(value: unknown, maxLen = 3000): string {
@@ -99,6 +109,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
   const startedAt = Date.now();
   const settings = getSettings();
   const requestId = uuidv4();
+  const preservedResults = [...(input.preserved_results ?? [])];
   const currentChatId = String(
     (typeof SillyTavern !== 'undefined' ? (SillyTavern?.getCurrentChatId?.() ?? (SillyTavern as any).chatId) : null) ??
       'unknown',
@@ -113,7 +124,10 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
       message: '正在准备工作流上下文…',
     });
     // Merge global flows + per-character flows (from EW/Flows worldbook entry).
-    const enabledFlows = await getEffectiveFlows(settings);
+    const allEnabledFlows = await getEffectiveFlows(settings);
+    const selectedFlowIds = new Set((input.flow_ids ?? []).filter(Boolean));
+    const enabledFlows =
+      selectedFlowIds.size > 0 ? allEnabledFlows.filter(flow => selectedFlowIds.has(flow.id)) : allEnabledFlows;
     if (enabledFlows.length === 0) {
       throw new Error('no enabled flows');
     }
@@ -144,7 +158,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
 
     throwIfWorkflowCancelled(input);
 
-    const results = dispatchOutput.results;
+    const results = [...preservedResults, ...dispatchOutput.results];
 
     input.onProgress?.({
       phase: 'merging',
@@ -184,7 +198,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
       reason: '',
       request_id: requestId,
       chat_id: commitResult.chat_id,
-      flow_count: enabledFlows.length,
+      flow_count: results.length,
       elapsed_ms: Date.now() - startedAt,
       mode: input.mode,
       diagnostics: mergedPlan.diagnostics,
@@ -197,7 +211,13 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
       message: '工作流处理完成。',
     });
 
-    return { ok: true, request_id: requestId, diagnostics: mergedPlan.diagnostics };
+    return {
+      ok: true,
+      request_id: requestId,
+      diagnostics: mergedPlan.diagnostics,
+      attempts,
+      results,
+    };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     input.onProgress?.({
@@ -218,13 +238,16 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
       reason,
       request_id: requestId,
       chat_id: currentChatId,
-      flow_count: settings.flows.filter(flow => flow.enabled).length,
+      flow_count:
+        (input.flow_ids?.length ?? 0) > 0
+          ? (input.flow_ids?.length ?? 0)
+          : settings.flows.filter(flow => flow.enabled).length,
       elapsed_ms: Date.now() - startedAt,
       mode: input.mode,
       diagnostics: {},
     });
     setLastRun(summary);
 
-    return { ok: false, reason, request_id: requestId };
+    return { ok: false, reason, request_id: requestId, attempts, results: preservedResults };
   }
 }

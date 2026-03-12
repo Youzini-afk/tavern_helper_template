@@ -59,7 +59,8 @@ const FIELD_HELP_LIST: FieldHelpMeta[] = [
     key: 'controller_entry_prefix',
     label: '控制器条目前缀',
     shortHelp: '控制器 EJS 条目的命名前缀，每个工作流会生成前缀+工作流名称的条目。',
-    detailHelp: '例如前缀为"EW/Controller/"时，名为"环境检测"的工作流会写入"EW/Controller/环境检测"条目。多个工作流各自独立，互不覆盖。',
+    detailHelp:
+      '例如前缀为"EW/Controller/"时，名为"环境检测"的工作流会写入"EW/Controller/环境检测"条目。多个工作流各自独立，互不覆盖。',
     placeholder: 'EW/Controller/',
   },
   {
@@ -88,6 +89,14 @@ const FIELD_HELP_LIST: FieldHelpMeta[] = [
     shortHelp: '选择在 AI 回复前执行工作流，还是在 AI 回复后再更新动态世界。',
     detailHelp:
       '回复后更新：默认模式，先让主回复返回，再根据最新 assistant 消息执行 EW 工作流，不阻塞对话。回复前拦截：沿用旧链路，在发给 AI 前先执行工作流，并结合原消息放行策略决定是否继续发送原始用户消息。',
+    isAdvanced: true,
+  },
+  {
+    key: 'reroll_scope',
+    label: '重roll范围',
+    shortHelp: '控制“重roll当前楼”时，是重跑全部工作流，还是仅重跑上次失败的工作流。',
+    detailHelp:
+      '全部重roll会从头重跑当前楼关联的全部工作流，结果最完整也最稳。仅失败工作流会保留当前楼上次成功的结果，只重试失败的部分；如果该楼没有失败记录，按钮会直接提示无需重跑。旧楼层若还没有执行记录，会回退为全部重roll。',
     isAdvanced: true,
   },
   {

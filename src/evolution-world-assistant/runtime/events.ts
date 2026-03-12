@@ -1,4 +1,5 @@
 import { EwWorkflowNoticeInput, showManagedWorkflowNotice } from '../ui/notice';
+import { getEffectiveFlows } from './char-flows';
 import { disposeFloorBindingEvents, initFloorBindingEvents, rollbackBeforeFloor } from './floor-binding';
 import { runIncrementalHideCheck } from './hide-engine';
 import { markIntercepted, resetInterceptGuard, wasRecentlyIntercepted } from './intercept-guard';
@@ -19,7 +20,21 @@ import {
   shouldHandleGenerationAfter,
   wasAfterReplyHandled,
 } from './state';
-import { EwSettings, WorkflowProgressUpdate } from './types';
+import { DispatchFlowResult, EwSettings, WorkflowProgressUpdate } from './types';
+
+const EW_FLOOR_WORKFLOW_EXECUTION_KEY = 'ew_workflow_execution';
+
+type FloorWorkflowStoredResult = {
+  flow_id: string;
+  response: Record<string, any>;
+};
+
+type FloorWorkflowExecutionState = {
+  at: number;
+  request_id: string;
+  successful_results: FloorWorkflowStoredResult[];
+  failed_flow_ids: string[];
+};
 
 const listenerStops: EventOnReturn[] = [];
 const domCleanup: Array<() => void> = [];
@@ -224,6 +239,133 @@ function formatReasonForDisplay(reason: string | undefined, maxLen = 160): strin
   return `${text.slice(0, maxLen)}...`;
 }
 
+function normalizeFloorWorkflowExecutionState(raw: unknown): FloorWorkflowExecutionState | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null;
+  }
+
+  const obj = raw as Record<string, unknown>;
+  const successfulResults = Array.isArray(obj.successful_results)
+    ? obj.successful_results
+        .filter(item => item && typeof item === 'object' && !Array.isArray(item))
+        .map(item => {
+          const result = item as Record<string, unknown>;
+          return {
+            flow_id: String(result.flow_id ?? '').trim(),
+            response:
+              result.response && typeof result.response === 'object' ? (result.response as Record<string, any>) : {},
+          };
+        })
+        .filter(item => item.flow_id)
+    : [];
+
+  const failedFlowIds = Array.isArray(obj.failed_flow_ids)
+    ? obj.failed_flow_ids.map(value => String(value ?? '').trim()).filter(Boolean)
+    : [];
+
+  return {
+    at: Number(obj.at ?? 0),
+    request_id: String(obj.request_id ?? '').trim(),
+    successful_results: successfulResults,
+    failed_flow_ids: _.uniq(failedFlowIds),
+  };
+}
+
+function readFloorWorkflowExecution(messageId: number): FloorWorkflowExecutionState | null {
+  try {
+    const message = getChatMessages(messageId)[0];
+    return normalizeFloorWorkflowExecutionState(message?.data?.[EW_FLOOR_WORKFLOW_EXECUTION_KEY]);
+  } catch {
+    return null;
+  }
+}
+
+async function writeFloorWorkflowExecution(
+  messageId: number,
+  state: FloorWorkflowExecutionState | null,
+): Promise<void> {
+  const message = getChatMessages(messageId)[0];
+  if (!message) {
+    return;
+  }
+
+  const nextData: Record<string, unknown> = {
+    ...(message.data ?? {}),
+  };
+
+  if (state) {
+    nextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY] = state;
+  } else {
+    delete nextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY];
+  }
+
+  await setChatMessages([{ message_id: messageId, data: nextData }], { refresh: 'none' });
+}
+
+function buildFloorWorkflowExecutionState(
+  requestId: string,
+  attempts: Array<{ flow: { id: string }; ok: boolean; response?: Record<string, any> }>,
+  preservedResults: FloorWorkflowStoredResult[] = [],
+): FloorWorkflowExecutionState {
+  const successfulResults = new Map<string, FloorWorkflowStoredResult>(
+    preservedResults.map(result => [result.flow_id, result]),
+  );
+  const failedFlowIds = new Set<string>();
+
+  for (const attempt of attempts) {
+    const flowId = String(attempt.flow.id ?? '').trim();
+    if (!flowId) {
+      continue;
+    }
+
+    if (attempt.ok && attempt.response) {
+      successfulResults.set(flowId, {
+        flow_id: flowId,
+        response: klona(attempt.response),
+      });
+      failedFlowIds.delete(flowId);
+    } else {
+      successfulResults.delete(flowId);
+      failedFlowIds.add(flowId);
+    }
+  }
+
+  return {
+    at: Date.now(),
+    request_id: requestId,
+    successful_results: [...successfulResults.values()],
+    failed_flow_ids: [...failedFlowIds],
+  };
+}
+
+async function buildPreservedDispatchResults(
+  settings: EwSettings,
+  preservedResults: FloorWorkflowStoredResult[],
+): Promise<DispatchFlowResult[]> {
+  if (preservedResults.length === 0) {
+    return [];
+  }
+
+  const effectiveFlows = await getEffectiveFlows(settings);
+  const flowOrderById = new Map(effectiveFlows.map((flow, index) => [flow.id, index]));
+  const flowById = new Map(effectiveFlows.map(flow => [flow.id, flow]));
+
+  return preservedResults
+    .map(result => {
+      const flow = flowById.get(result.flow_id);
+      if (!flow) {
+        return null;
+      }
+
+      return {
+        flow,
+        flow_order: flowOrderById.get(result.flow_id) ?? 0,
+        response: result.response as any,
+      } satisfies DispatchFlowResult;
+    })
+    .filter((result): result is DispatchFlowResult => Boolean(result));
+}
+
 function createProcessingReminder(onAbort: () => void) {
   let state: EwWorkflowNoticeInput = {
     title: 'Evolution World',
@@ -272,6 +414,8 @@ type ExecuteWorkflowOptions = {
   messageId: number;
   userInput?: string;
   injectReply: boolean;
+  flowIds?: string[];
+  preservedResults?: FloorWorkflowStoredResult[];
   trigger: {
     timing: 'before_reply' | 'after_reply' | 'manual';
     source: string;
@@ -377,6 +521,8 @@ async function executeWorkflowWithPolicy(
   const processingReminder = createProcessingReminder(cancelWorkflow);
   processingReminder.update(buildAbortableReminder(options.reminderMessage));
   let reminderSettled = false;
+  let currentPreservedStoredResults = [...(options.preservedResults ?? [])];
+  let currentPreservedDispatchResults = await buildPreservedDispatchResults(settings, currentPreservedStoredResults);
 
   const trimPreview = (text: string | undefined, maxLength: number) => {
     const normalized = String(text ?? '')
@@ -465,6 +611,8 @@ async function executeWorkflowWithPolicy(
       trigger: options.trigger,
       mode: 'auto',
       inject_reply: options.injectReply,
+      flow_ids: options.flowIds,
+      preserved_results: currentPreservedDispatchResults,
       abortSignal: workflowAbortController.signal,
       isCancelled: () => abortedByUser,
       onProgress: handleWorkflowProgress,
@@ -479,6 +627,18 @@ async function executeWorkflowWithPolicy(
 
   if (abortedByUser) {
     return finalizeUserAbort();
+  }
+
+  if (options.trigger.timing === 'after_reply') {
+    const assistantMessageId = options.trigger.assistant_message_id ?? options.messageId;
+    const executionState = buildFloorWorkflowExecutionState(
+      result.request_id,
+      result.attempts,
+      currentPreservedStoredResults,
+    );
+    await writeFloorWorkflowExecution(assistantMessageId, executionState);
+    currentPreservedStoredResults = executionState.successful_results;
+    currentPreservedDispatchResults = await buildPreservedDispatchResults(settings, currentPreservedStoredResults);
   }
 
   if (!result.ok) {
@@ -496,6 +656,8 @@ async function executeWorkflowWithPolicy(
           trigger: options.trigger,
           mode: 'auto',
           inject_reply: options.injectReply,
+          flow_ids: options.flowIds,
+          preserved_results: currentPreservedDispatchResults,
           abortSignal: workflowAbortController.signal,
           isCancelled: () => abortedByUser,
           onProgress: handleWorkflowProgress,
@@ -510,6 +672,18 @@ async function executeWorkflowWithPolicy(
 
       if (abortedByUser) {
         return finalizeUserAbort();
+      }
+
+      if (options.trigger.timing === 'after_reply') {
+        const assistantMessageId = options.trigger.assistant_message_id ?? options.messageId;
+        const executionState = buildFloorWorkflowExecutionState(
+          result.request_id,
+          result.attempts,
+          currentPreservedStoredResults,
+        );
+        await writeFloorWorkflowExecution(assistantMessageId, executionState);
+        currentPreservedStoredResults = executionState.successful_results;
+        currentPreservedDispatchResults = await buildPreservedDispatchResults(settings, currentPreservedStoredResults);
       }
     }
 
@@ -868,6 +1042,29 @@ export async function rerollCurrentAfterReplyWorkflow(): Promise<{ ok: boolean; 
   const runtimeState = getRuntimeState();
   const generationType = runtimeState.last_generation?.type || 'manual';
   const userInput = resolveAfterReplyUserInput();
+  const rerollScope = settings.reroll_scope ?? 'all';
+
+  let flowIds: string[] | undefined;
+  let preservedResults: FloorWorkflowStoredResult[] = [];
+
+  if (rerollScope === 'failed_only') {
+    const executionState = readFloorWorkflowExecution(messageId);
+    if (executionState?.failed_flow_ids.length) {
+      const effectiveFlows = await getEffectiveFlows(settings);
+      const flowMap = new Map(effectiveFlows.map(flow => [flow.id, flow]));
+
+      flowIds = executionState.failed_flow_ids.filter(flowId => flowMap.has(flowId));
+      preservedResults = executionState.successful_results.filter(result => {
+        return flowMap.has(result.flow_id) && !flowIds?.includes(result.flow_id);
+      });
+
+      if (flowIds.length === 0) {
+        return { ok: false, reason: '当前楼记录中的失败工作流已被禁用或删除' };
+      }
+    } else if (executionState && executionState.failed_flow_ids.length === 0) {
+      return { ok: false, reason: '当前楼没有失败的工作流可供重跑' };
+    }
+  }
 
   setProcessing(true);
   try {
@@ -879,6 +1076,8 @@ export async function rerollCurrentAfterReplyWorkflow(): Promise<{ ok: boolean; 
       messageId,
       userInput,
       injectReply: false,
+      flowIds,
+      preservedResults,
       trigger: {
         timing: 'after_reply',
         source: 'fab_double_click',
@@ -886,8 +1085,14 @@ export async function rerollCurrentAfterReplyWorkflow(): Promise<{ ok: boolean; 
         user_message_id: runtimeState.after_reply.pending_user_message_id ?? runtimeState.last_send?.message_id,
         assistant_message_id: messageId,
       },
-      reminderMessage: '正在重跑当前楼的回复后工作流，请稍后…',
-      successMessage: '当前楼的动态世界工作流已重跑完成。',
+      reminderMessage:
+        rerollScope === 'failed_only' && flowIds?.length
+          ? `正在重跑当前楼失败的 ${flowIds.length} 条工作流，请稍后…`
+          : '正在重跑当前楼的回复后工作流，请稍后…',
+      successMessage:
+        rerollScope === 'failed_only' && flowIds?.length
+          ? '当前楼失败的工作流已重跑完成。'
+          : '当前楼的动态世界工作流已重跑完成。',
     });
 
     if (outcome.workflowSucceeded) {

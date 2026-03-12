@@ -207,6 +207,12 @@
                     <option value="notify_only">仅通知（不中止）</option>
                   </select>
                 </EwFieldRow>
+                <EwFieldRow label="重roll范围" :help="help('reroll_scope')">
+                  <select v-model="store.settings.reroll_scope">
+                    <option value="all">全部工作流</option>
+                    <option value="failed_only">仅失败工作流</option>
+                  </select>
+                </EwFieldRow>
                 <EwFieldRow label="原消息放行策略" :help="help('intercept_release_policy')">
                   <select v-model="store.settings.intercept_release_policy">
                     <option value="success_only">仅工作流成功时发送原消息</option>
@@ -580,7 +586,9 @@ const rerollButtonTitle = computed(() => {
   if (store.settings.workflow_timing !== 'after_reply') {
     return '仅在“回复后更新”模式下可用';
   }
-  return '重跑当前楼的回复后工作流';
+  return store.settings.reroll_scope === 'failed_only'
+    ? '仅重跑当前楼上次失败的回复后工作流'
+    : '重跑当前楼的全部回复后工作流';
 });
 const bindCountByPresetId = computed<Record<string, number>>(() => {
   const counts: Record<string, number> = {};
