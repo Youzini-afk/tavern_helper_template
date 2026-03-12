@@ -1,4 +1,4 @@
-﻿/**
+/**
  * File-based snapshot storage via ST's /api/files endpoint.
  *
  * Stores per-message worldbook snapshots (Dyn entries + Controller)
@@ -9,9 +9,36 @@
  */
 
 export type SnapshotData = {
-  controller: string;
+  controllers: Record<string, string>;
   dyn_entries: Array<{ name: string; content: string; enabled: boolean }>;
 };
+
+/**
+ * Upgrade legacy snapshot format (single `controller: string`) to the new
+ * multi-controller format (`controllers: Record<string, string>`).
+ */
+export function upgradeSnapshotData(raw: any): SnapshotData | null {
+  if (!raw || typeof raw !== 'object') return null;
+
+  // New format: { controllers: {...}, dyn_entries: [...] }
+  if (raw.controllers && typeof raw.controllers === 'object' && !Array.isArray(raw.controllers)) {
+    return {
+      controllers: raw.controllers,
+      dyn_entries: Array.isArray(raw.dyn_entries) ? raw.dyn_entries : [],
+    };
+  }
+
+  // Legacy format: { controller: "...", dyn_entries: [...] }
+  if (typeof raw.controller === 'string') {
+    return {
+      controllers: raw.controller ? { legacy: raw.controller } : {},
+      dyn_entries: Array.isArray(raw.dyn_entries) ? raw.dyn_entries : [],
+    };
+  }
+
+  // Unknown format
+  return null;
+}
 
 // ── 辅助函数 ──────────────────────────────────────────────────
 
@@ -78,11 +105,7 @@ export async function readSnapshot(fileName: string): Promise<SnapshotData | nul
       return null;
     }
     const data = await response.json();
-    if (data && typeof data.controller === 'string' && Array.isArray(data.dyn_entries)) {
-      return data as SnapshotData;
-    }
-    console.warn(`[Evolution World] Invalid snapshot format: ${fileName}`);
-    return null;
+    return upgradeSnapshotData(data);
   } catch (e) {
     console.warn(`[Evolution World] Failed to read snapshot: ${fileName}`, e);
     return null;

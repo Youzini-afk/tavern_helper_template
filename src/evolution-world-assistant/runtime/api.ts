@@ -25,12 +25,23 @@ async function validateControllerSyntax(): Promise<{ ok: boolean; reason?: strin
   try {
     const settings = getSettings();
     const target = await resolveTargetWorldbook(settings);
-    const controller = target.entries.find(entry => entry.name === settings.controller_entry_name);
-    if (!controller) {
-      return { ok: false, reason: `controller entry not found: ${settings.controller_entry_name}` };
+    const controllerEntries = target.entries.filter(entry => entry.name.startsWith(settings.controller_entry_prefix));
+    if (controllerEntries.length === 0) {
+      return { ok: false, reason: `no controller entries found with prefix: ${settings.controller_entry_prefix}` };
     }
 
-    await validateEjsTemplate(controller.content);
+    const errors: string[] = [];
+    for (const entry of controllerEntries) {
+      try {
+        await validateEjsTemplate(entry.content);
+      } catch (error) {
+        errors.push(`${entry.name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    if (errors.length > 0) {
+      return { ok: false, reason: errors.join('\n') };
+    }
     return { ok: true };
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : String(error) };
@@ -39,7 +50,6 @@ async function validateControllerSyntax(): Promise<{ ok: boolean; reason?: strin
 
 async function rollbackController(): Promise<{ ok: boolean; reason?: string }> {
   try {
-    const settings = getSettings();
     const chatId = String(SillyTavern.getCurrentChatId?.() ?? SillyTavern.chatId ?? 'unknown');
     const backup = readControllerBackup(chatId);
     if (!backup) {
@@ -47,34 +57,38 @@ async function rollbackController(): Promise<{ ok: boolean; reason?: string }> {
     }
 
     const entries = klona(await getWorldbook(backup.worldbook_name));
-    const controller = entries.find(entry => entry.name === settings.controller_entry_name);
-    if (controller) {
-      controller.content = backup.controller_content;
-      controller.enabled = true;
-    } else {
-      const uid = (_.max(entries.map(entry => entry.uid)) ?? 0) + 1;
-      entries.push({
-        uid,
-        name: settings.controller_entry_name,
-        enabled: true,
-        strategy: {
-          type: 'constant',
-          keys: [],
-          keys_secondary: { logic: 'and_any', keys: [] },
-          scan_depth: 'same_as_global',
-        },
-        position: {
-          type: 'at_depth',
-          role: 'system',
-          depth: 0,
-          order: 14720,
-        },
-        content: backup.controller_content,
-        probability: 100,
-        recursion: { prevent_incoming: true, prevent_outgoing: true, delay_until: null },
-        effect: { sticky: null, cooldown: null, delay: null },
-        extra: {},
-      });
+
+    // Restore each backed-up controller entry.
+    for (const [entryName, content] of Object.entries(backup.controller_content)) {
+      const controller = entries.find(entry => entry.name === entryName);
+      if (controller) {
+        controller.content = content;
+        controller.enabled = true;
+      } else {
+        const uid = (_.max(entries.map(entry => entry.uid)) ?? 0) + 1;
+        entries.push({
+          uid,
+          name: entryName,
+          enabled: true,
+          strategy: {
+            type: 'constant',
+            keys: [],
+            keys_secondary: { logic: 'and_any', keys: [] },
+            scan_depth: 'same_as_global',
+          },
+          position: {
+            type: 'at_depth',
+            role: 'system',
+            depth: 0,
+            order: 14720,
+          },
+          content,
+          probability: 100,
+          recursion: { prevent_incoming: true, prevent_outgoing: true, delay_until: null },
+          effect: { sticky: null, cooldown: null, delay: null },
+          extra: {},
+        });
+      }
     }
 
     await replaceWorldbook(backup.worldbook_name, entries, { render: 'debounced' });

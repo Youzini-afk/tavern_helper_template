@@ -56,11 +56,11 @@ const FIELD_HELP_LIST: FieldHelpMeta[] = [
     placeholder: 'EW/Dyn/',
   },
   {
-    key: 'controller_entry_name',
-    label: '控制器条目名',
-    shortHelp: '控制器 EJS 文本写入的目标条目名。',
-    detailHelp: '事务提交时会整条覆盖该条目，请确保该名称仅用于 Evolution World 控制器。',
-    placeholder: 'EW/Controller',
+    key: 'controller_entry_prefix',
+    label: '控制器条目前缀',
+    shortHelp: '控制器 EJS 条目的命名前缀，每个工作流会生成前缀+工作流名称的条目。',
+    detailHelp: '例如前缀为"EW/Controller/"时，名为"环境检测"的工作流会写入"EW/Controller/环境检测"条目。多个工作流各自独立，互不覆盖。',
+    placeholder: 'EW/Controller/',
   },
   {
     key: 'floor_binding_enabled',

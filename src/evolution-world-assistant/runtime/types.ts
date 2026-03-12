@@ -1,4 +1,4 @@
-﻿import { TextSliceRuleSchema } from './contracts';
+import { TextSliceRuleSchema } from './contracts';
 
 export const EwApiPresetSchema = z.object({
   id: z.string().min(1),
@@ -271,7 +271,7 @@ export const EwSettingsSchema = z.object({
     .enum(['stop_generation', 'continue_generation', 'retry_once', 'notify_only', 'allow_partial_success'])
     .default('stop_generation'),
   intercept_release_policy: z.enum(['success_only', 'always', 'never']).default('success_only'),
-  controller_entry_name: z.string().default('EW/Controller'),
+  controller_entry_prefix: z.string().default('EW/Controller/'),
   dynamic_entry_prefix: z.string().default('EW/Dyn/'),
   gate_ttl_ms: z.coerce.number().int().positive().default(12000),
   floor_binding_enabled: z.boolean().default(true),
@@ -418,7 +418,7 @@ export type MergedPlan = {
     desired_entries: Array<{ name: string; content: string; enabled: boolean }>;
     remove_entries: Array<{ name: string }>;
   };
-  controller_model: import('./contracts').ControllerModel;
+  controller_models: Record<string, import('./contracts').ControllerModel>;
   reply_instruction: string;
   diagnostics: Record<string, any>;
 };

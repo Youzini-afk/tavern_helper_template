@@ -846,7 +846,7 @@ export async function resolveWorldInfo(_settings: EwSettings, chatMessages: stri
       const bucket = classifyPosition(entry);
       const targetBucket = result[bucket];
 
-      if (entry.name === _settings.controller_entry_name) {
+      if (entry.name.startsWith(_settings.controller_entry_prefix)) {
         const rawControllerEntry: ResolvedWiEntry = {
           name: entry.name,
           content: contentToRender,

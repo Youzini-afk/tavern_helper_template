@@ -1,4 +1,4 @@
-﻿import { createDefaultApiPreset, createDefaultFlow } from './factory';
+import { createDefaultApiPreset, createDefaultFlow } from './factory';
 import { simpleHash } from './helpers';
 import { readSharedSettings, writeSharedSettings } from './shared-settings-storage';
 import {
@@ -24,7 +24,7 @@ type ScriptStorageShape = {
   settings?: EwSettings;
   last_run?: RunSummary | null;
   last_io?: LastIoSummary | null;
-  backups?: Record<string, { at: number; worldbook_name: string; controller_content: string }>;
+  backups?: Record<string, { at: number; worldbook_name: string; controller_content: string | Record<string, string> }>;
 };
 
 const SCRIPT_STORAGE_KEY = 'evolution_world_assistant';
@@ -223,6 +223,16 @@ function migratePromptItems(flow: EwFlowConfig): EwFlowConfig {
 }
 
 function normalizeSettings(raw: unknown): EwSettings {
+  // Migrate legacy controller_entry_name → controller_entry_prefix.
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const obj = raw as Record<string, unknown>;
+    if (typeof obj['controller_entry_name'] === 'string' && !obj['controller_entry_prefix']) {
+      const oldName = obj['controller_entry_name'] as string;
+      obj['controller_entry_prefix'] = oldName.endsWith('/') ? oldName : oldName + '/';
+      delete obj['controller_entry_name'];
+    }
+  }
+
   const parsed = EwSettingsSchema.safeParse(raw);
   const base = parsed.success ? parsed.data : EwSettingsSchema.parse({});
   const apiPresets = normalizeApiPresets(base.api_presets ?? []);
@@ -435,7 +445,7 @@ export function subscribeLastIo(listener: IoListener): { stop: () => void } {
   return { stop: () => ioListeners.delete(listener) };
 }
 
-export function saveControllerBackup(chatId: string, worldbookName: string, controllerContent: string) {
+export function saveControllerBackup(chatId: string, worldbookName: string, controllerContent: Record<string, string>) {
   const MAX_BACKUPS = 10;
   writeScriptStorage(previous => {
     const backups = { ...(previous.backups ?? {}) };
@@ -461,10 +471,19 @@ export function saveControllerBackup(chatId: string, worldbookName: string, cont
 
 export function readControllerBackup(
   chatId: string,
-): { at: number; worldbook_name: string; controller_content: string } | null {
+): { at: number; worldbook_name: string; controller_content: Record<string, string> } | null {
   const storage = readScriptStorage();
   const backup = storage.backups?.[chatId];
-  return backup ? klona(backup) : null;
+  if (!backup) return null;
+
+  // Legacy compat: old backups stored a single string.
+  const content = backup.controller_content;
+  const controllers: Record<string, string> =
+    typeof content === 'string'
+      ? content ? { legacy: content } : {}
+      : content ?? {};
+
+  return klona({ at: backup.at, worldbook_name: backup.worldbook_name, controller_content: controllers });
 }
 
 export function clearControllerBackup(chatId: string) {

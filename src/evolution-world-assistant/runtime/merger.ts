@@ -27,12 +27,27 @@ function shouldReplace<T>(current: Prioritized<T> | undefined, next: Prioritized
 
 /**
  * Normalize an entry name: bare names get the dynamic entry prefix.
- * Names that already have the prefix, or match the controller entry name, are untouched.
+ * Names that already have the prefix, or start with the controller prefix, are untouched.
  */
-function normalizeEntryName(name: string, prefix: string, controllerName: string): string {
-  if (name.startsWith(prefix)) return name;
-  if (name === controllerName) return name;
-  return prefix + name;
+function normalizeEntryName(name: string, dynPrefix: string, ctrlPrefix: string): string {
+  if (name.startsWith(dynPrefix)) return name;
+  if (name.startsWith(ctrlPrefix)) return name;
+  return dynPrefix + name;
+}
+
+function normalizeControllerModel(model: ControllerModel, dynPrefix: string, ctrlPrefix: string): ControllerModel {
+  return {
+    ...model,
+    fallback_entries: model.fallback_entries.map(name => normalizeEntryName(name, dynPrefix, ctrlPrefix)),
+    activate_entries: (model.activate_entries ?? []).map(entry => ({
+      ...entry,
+      entry: normalizeEntryName(entry.entry, dynPrefix, ctrlPrefix),
+    })),
+    rules: model.rules.map(rule => ({
+      ...rule,
+      include_entries: rule.include_entries.map(name => normalizeEntryName(name, dynPrefix, ctrlPrefix)),
+    })),
+  };
 }
 
 export function mergeFlowResults(results: MergeInput, settings: EwSettings): MergedPlan {
@@ -47,7 +62,8 @@ export function mergeFlowResults(results: MergeInput, settings: EwSettings): Mer
   const desiredMap = new Map<string, Prioritized<{ content: string; enabled: boolean }>>();
   const removeMap = new Map<string, Prioritized<null>>();
 
-  let controllerModel: Prioritized<ControllerModel> | undefined;
+  // Multi-controller: each flow keeps its own controller_model, keyed by flow.name.
+  const controllerModels = new Map<string, ControllerModel>();
   const replyParts: string[] = [];
   const diagnostics: Record<string, any> = {};
 
@@ -60,7 +76,7 @@ export function mergeFlowResults(results: MergeInput, settings: EwSettings): Mer
       const normalizedName = normalizeEntryName(
         desired.name,
         settings.dynamic_entry_prefix,
-        settings.controller_entry_name,
+        settings.controller_entry_prefix,
       );
       const next: Prioritized<{ content: string; enabled: boolean }> = {
         value: { content: desired.content, enabled: desired.enabled },
@@ -77,7 +93,7 @@ export function mergeFlowResults(results: MergeInput, settings: EwSettings): Mer
       const normalizedName = normalizeEntryName(
         removal.name,
         settings.dynamic_entry_prefix,
-        settings.controller_entry_name,
+        settings.controller_entry_prefix,
       );
       const next: Prioritized<null> = { value: null, priority, flow_order: flowOrder };
       const current = removeMap.get(normalizedName);
@@ -87,14 +103,9 @@ export function mergeFlowResults(results: MergeInput, settings: EwSettings): Mer
     }
 
     if (result.response.operations.controller_model) {
-      const next: Prioritized<ControllerModel> = {
-        value: result.response.operations.controller_model,
-        priority,
-        flow_order: flowOrder,
-      };
-      if (shouldReplace(controllerModel, next)) {
-        controllerModel = next;
-      }
+      // Each flow keeps its own controller_model, keyed by flow.name (or flow.id as fallback).
+      const flowKey = result.flow.name?.trim() || result.flow.id;
+      controllerModels.set(flowKey, result.response.operations.controller_model);
     }
 
     if (result.response.reply_instruction.trim()) {
@@ -118,15 +129,8 @@ export function mergeFlowResults(results: MergeInput, settings: EwSettings): Mer
     }
   }
 
-  const fallbackController: ControllerModel = {
-    template_id: 'entry_selector_v1',
-    variables: [],
-    rules: [],
-    fallback_entries: [],
-  };
-
-  if (!controllerModel) {
-    console.warn('[EW Merger] No flow returned controller_model — using empty fallback.');
+  if (controllerModels.size === 0) {
+    console.warn('[EW Merger] No flow returned controller_model — all controllers will be empty.');
   }
 
   const desiredEntries = [...desiredMap.entries()].map(([name, value]) => ({
@@ -148,32 +152,22 @@ export function mergeFlowResults(results: MergeInput, settings: EwSettings): Mer
     }
   }
 
-  // Normalize entry names inside controller_model (add EW/Dyn/ prefix).
-  // Without this, getwi() would look for '小雪' but the entry is 'EW/Dyn/小雪'.
-  const rawControllerModel = controllerModel ? controllerModel.value : fallbackController;
-  const normalizedController: ControllerModel = {
-    ...rawControllerModel,
-    fallback_entries: rawControllerModel.fallback_entries.map(name =>
-      normalizeEntryName(name, settings.dynamic_entry_prefix, settings.controller_entry_name),
-    ),
-    activate_entries: (rawControllerModel.activate_entries ?? []).map(entry => ({
-      ...entry,
-      entry: normalizeEntryName(entry.entry, settings.dynamic_entry_prefix, settings.controller_entry_name),
-    })),
-    rules: rawControllerModel.rules.map(rule => ({
-      ...rule,
-      include_entries: rule.include_entries.map(name =>
-        normalizeEntryName(name, settings.dynamic_entry_prefix, settings.controller_entry_name),
-      ),
-    })),
-  };
+  // Normalize entry names inside each controller_model (add EW/Dyn/ prefix).
+  const normalizedControllers: Record<string, ControllerModel> = {};
+  for (const [flowName, model] of controllerModels) {
+    normalizedControllers[flowName] = normalizeControllerModel(
+      model,
+      settings.dynamic_entry_prefix,
+      settings.controller_entry_prefix,
+    );
+  }
 
   return {
     worldbook: {
       desired_entries: desiredEntries,
       remove_entries: [...removeMap.keys()].map(name => ({ name })),
     },
-    controller_model: normalizedController,
+    controller_models: normalizedControllers,
     reply_instruction: replyParts.join('\n\n'),
     diagnostics,
   };

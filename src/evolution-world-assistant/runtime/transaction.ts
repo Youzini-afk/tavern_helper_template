@@ -9,12 +9,8 @@ type CommitResult = {
   changed_count: number;
 };
 
-function findEntry(entries: WorldbookEntry[], name: string): WorldbookEntry | undefined {
-  return entries.find(entry => entry.name === name);
-}
-
 function isManagedEntryName(settings: EwSettings, name: string): boolean {
-  if (name === settings.controller_entry_name) {
+  if (name.startsWith(settings.controller_entry_prefix)) {
     return true;
   }
   return name.startsWith(settings.dynamic_entry_prefix);
@@ -68,7 +64,7 @@ function applyDeclarativeDiff(
 export async function commitMergedPlan(
   settings: EwSettings,
   mergedPlan: MergedPlan,
-  controllerTemplate: string,
+  controllerTemplates: Record<string, string>,
   _requestId: string,
   messageId: number,
 ): Promise<CommitResult> {
@@ -76,9 +72,14 @@ export async function commitMergedPlan(
   const beforeEntries = target.entries;
   const chatId = String(SillyTavern.getCurrentChatId?.() ?? SillyTavern.chatId ?? 'unknown');
 
-  // 覆写前备份当前 controller 内容。
-  const previousController = findEntry(beforeEntries, settings.controller_entry_name)?.content ?? '';
-  saveControllerBackup(chatId, target.worldbook_name, previousController);
+  // 覆写前备份当前所有 controller 条目内容。
+  const previousControllers: Record<string, string> = {};
+  for (const entry of beforeEntries) {
+    if (entry.name.startsWith(settings.controller_entry_prefix)) {
+      previousControllers[entry.name] = entry.content;
+    }
+  }
+  saveControllerBackup(chatId, target.worldbook_name, previousControllers);
 
   // 校验所有操作目标都是受管理的条目名称。
   const allNames = [
@@ -98,14 +99,16 @@ export async function commitMergedPlan(
     settings,
   );
 
-  // 将 EJS controller 条目写入角色世界书。
-  const ctrlExisting = nextEntries.find(e => e.name === settings.controller_entry_name);
-  if (ctrlExisting) {
-    // CR-3: nextEntries 已经来自 applyDeclarativeDiff 的深拷贝 —— 直接就地修改。
-    ctrlExisting.content = controllerTemplate;
-    ctrlExisting.enabled = true;
-  } else {
-    nextEntries.push(ensureDefaultEntry(settings.controller_entry_name, controllerTemplate, true, nextEntries, true));
+  // 将多个 EJS controller 条目写入角色世界书。
+  for (const [flowName, template] of Object.entries(controllerTemplates)) {
+    const entryName = settings.controller_entry_prefix + flowName;
+    const ctrlExisting = nextEntries.find(e => e.name === entryName);
+    if (ctrlExisting) {
+      ctrlExisting.content = template;
+      ctrlExisting.enabled = true;
+    } else {
+      nextEntries.push(ensureDefaultEntry(entryName, template, true, nextEntries, true));
+    }
   }
 
   // 在一次原子操作中提交所有变更。
@@ -123,12 +126,12 @@ export async function commitMergedPlan(
       enabled: false,
     }));
 
-    if (dynSnapshots.length > 0 || controllerTemplate) {
+    if (dynSnapshots.length > 0 || Object.keys(controllerTemplates).length > 0) {
       await markFloorEntries(
         settings,
         messageId,
         dynDesired.map(e => e.name),
-        controllerTemplate,
+        controllerTemplates,
         dynSnapshots,
       );
     }

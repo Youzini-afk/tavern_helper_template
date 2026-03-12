@@ -153,10 +153,15 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
     });
     const mergedPlan = mergeFlowResults(results, settings);
     throwIfWorkflowCancelled(input);
-    const controllerTemplate = await renderControllerTemplate(
-      mergedPlan.controller_model,
-      settings.dynamic_entry_prefix,
-    );
+
+    // Render each flow's controller_model into an EJS template.
+    const controllerTemplates: Record<string, string> = {};
+    for (const [flowName, model] of Object.entries(mergedPlan.controller_models)) {
+      controllerTemplates[flowName] = await renderControllerTemplate(
+        model,
+        settings.dynamic_entry_prefix,
+      );
+    }
     throwIfWorkflowCancelled(input);
     input.onProgress?.({
       phase: 'committing',
@@ -164,7 +169,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
       message: '正在写回世界书与控制器…',
     });
 
-    const commitResult = await commitMergedPlan(settings, mergedPlan, controllerTemplate, requestId, input.message_id);
+    const commitResult = await commitMergedPlan(settings, mergedPlan, controllerTemplates, requestId, input.message_id);
     throwIfWorkflowCancelled(input);
 
     if (input.inject_reply !== false) {

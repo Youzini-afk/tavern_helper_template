@@ -150,11 +150,11 @@
                     :placeholder="help('dynamic_entry_prefix')?.placeholder"
                   />
                 </EwFieldRow>
-                <EwFieldRow label="控制器条目名" :help="help('controller_entry_name')">
+                <EwFieldRow label="控制器条目前缀" :help="help('controller_entry_prefix')">
                   <input
-                    v-model="store.settings.controller_entry_name"
+                    v-model="store.settings.controller_entry_prefix"
                     type="text"
-                    :placeholder="help('controller_entry_name')?.placeholder"
+                    :placeholder="help('controller_entry_prefix')?.placeholder"
                   />
                 </EwFieldRow>
                 <EwFieldRow label="楼层绑定" :help="help('floor_binding_enabled')">
@@ -643,19 +643,60 @@ function help(key: string) {
 }
 
 function updateFlow(index: number, nextFlow: EwFlowConfig) {
-  const previousId = store.settings.flows[index]?.id;
+  const previousFlow = store.settings.flows[index];
+  const previousId = previousFlow?.id;
+  const oldName = previousFlow?.name?.trim();
+  const newName = nextFlow.name?.trim();
+
   store.settings.flows.splice(index, 1, nextFlow);
   if (store.expandedFlowId === previousId && previousId !== nextFlow.id) {
     store.setExpandedFlow(nextFlow.id);
   }
+
+  if (oldName && newName && oldName !== newName) {
+    renameControllerEntry(oldName, newName);
+  }
 }
 
 function updateCharFlow(index: number, nextFlow: EwFlowConfig) {
-  const previousId = store.charFlows[index]?.id;
+  const previousFlow = store.charFlows[index];
+  const previousId = previousFlow?.id;
+  const oldName = previousFlow?.name?.trim();
+  const newName = nextFlow.name?.trim();
+
   store.charFlows.splice(index, 1, nextFlow);
   if (store.expandedFlowId === previousId && previousId !== nextFlow.id) {
     store.setExpandedFlow(nextFlow.id);
   }
+
+  if (oldName && newName && oldName !== newName) {
+    renameControllerEntry(oldName, newName);
+  }
+}
+
+let renameTimer: ReturnType<typeof setTimeout> | null = null;
+async function renameControllerEntry(oldName: string, newName: string) {
+  if (renameTimer) clearTimeout(renameTimer);
+  renameTimer = setTimeout(async () => {
+    renameTimer = null;
+    try {
+      const prefix = store.settings.controller_entry_prefix;
+      const oldEntryName = prefix + oldName;
+      const newEntryName = prefix + newName;
+
+      const { resolveTargetWorldbook } = await import('../runtime/worldbook-runtime');
+      const target = await resolveTargetWorldbook(store.settings);
+      const entries = klona(target.entries);
+      const ctrl = entries.find((e: any) => e.name === oldEntryName);
+      if (ctrl) {
+        ctrl.name = newEntryName;
+        await replaceWorldbook(target.worldbook_name, entries, { render: 'debounced' });
+        console.info(`[EW] Controller entry renamed: ${oldEntryName} → ${newEntryName}`);
+      }
+    } catch (e) {
+      console.warn('[EW] Controller rename failed:', e);
+    }
+  }, 800);
 }
 
 function updateApiPreset(index: number, nextPreset: EwApiPreset) {
