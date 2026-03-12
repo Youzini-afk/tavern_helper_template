@@ -569,43 +569,44 @@ function ensureWorkflowStyle(doc: Document) {
       position: relative;
       flex: 0 0 auto;
       overflow: hidden;
-      background: linear-gradient(145deg, rgba(10, 18, 34, 0.92), rgba(5, 13, 26, 0.98));
+      background: #163864;
+      border: 2px solid #4c7fbd;
       box-shadow:
-        0 0 18px color-mix(in srgb, var(--ew-notice-accent) 28%, transparent),
-        0 0 0 1px rgba(255, 255, 255, 0.16) inset,
-        inset 0 1px 2px rgba(255, 255, 255, 0.06);
+        0 10px 18px rgba(3, 8, 17, 0.28),
+        0 0 14px rgba(96, 159, 255, 0.22),
+        inset 0 1px 0 rgba(255, 255, 255, 0.12);
     }
 
     .ew-workflow-notice__island-orb::before {
       content: '';
       position: absolute;
-      inset: 3px;
+      inset: 4px;
       border-radius: 50%;
-      background:
-        radial-gradient(circle at 34% 30%, rgba(255, 255, 255, 0.98), rgba(252, 245, 216, 0.96) 28%, rgba(227, 213, 166, 0.94) 62%, rgba(185, 171, 130, 0.92) 100%);
+      background: #f5e7a3;
       box-shadow:
-        0 0 10px rgba(255, 239, 198, 0.28),
-        inset -2px -2px 4px rgba(116, 98, 55, 0.18),
-        inset 2px 2px 4px rgba(255, 255, 255, 0.26);
+        inset 2px 2px 0 rgba(255, 251, 229, 0.9),
+        inset -2px -2px 0 rgba(203, 178, 92, 0.5),
+        0 0 8px rgba(245, 231, 163, 0.18);
     }
 
     .ew-workflow-notice__island-orb::after {
       content: '';
       position: absolute;
-      top: 3px;
-      bottom: 3px;
+      top: 4px;
+      left: -8px;
       width: 24px;
-      right: -2px;
+      height: 24px;
       border-radius: inherit;
-      background:
-        radial-gradient(circle at 46% 50%, rgba(11, 19, 35, 0.18) 0%, rgba(8, 16, 30, 0.82) 54%, rgba(6, 12, 24, 0.98) 100%);
-      filter: blur(0.2px);
+      background: #102746;
+      box-shadow:
+        0 0 0 1px rgba(9, 22, 39, 0.05),
+        inset 1px 0 0 rgba(255, 255, 255, 0.05);
       transform: translateX(0);
-      animation: ewWorkflowMoonPhase 4.8s ease-in-out infinite;
+      animation: ewWorkflowMoonPhase 4.4s linear infinite;
     }
 
     .ew-workflow-notice[data-busy='false'] .ew-workflow-notice__island-orb::after {
-      animation-duration: 7.2s;
+      animation-duration: 6.8s;
     }
 
     .ew-workflow-notice--out {
@@ -621,19 +622,19 @@ function ensureWorkflowStyle(doc: Document) {
 
     @keyframes ewWorkflowMoonPhase {
       0% {
-        transform: translateX(12px) scaleX(1.02);
+        transform: translateX(-2px) scaleX(0.72);
       }
-      24% {
-        transform: translateX(4px) scaleX(0.96);
+      25% {
+        transform: translateX(4px) scaleX(0.9);
       }
       50% {
-        transform: translateX(-8px) scaleX(0.22);
+        transform: translateX(10px) scaleX(1.02);
       }
-      76% {
-        transform: translateX(4px) scaleX(0.96);
+      75% {
+        transform: translateX(16px) scaleX(0.9);
       }
       100% {
-        transform: translateX(12px) scaleX(1.02);
+        transform: translateX(22px) scaleX(0.72);
       }
     }
 
