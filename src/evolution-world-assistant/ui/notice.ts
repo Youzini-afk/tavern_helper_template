@@ -324,8 +324,9 @@ function ensureHost(doc: Document): HTMLElement {
 }
 
 function ensureWorkflowStyle(doc: Document) {
-  if (doc.getElementById(WORKFLOW_STYLE_ID)) {
-    return;
+  const existing = doc.getElementById(WORKFLOW_STYLE_ID);
+  if (existing) {
+    existing.remove();
   }
 
   const style = doc.createElement('style');
