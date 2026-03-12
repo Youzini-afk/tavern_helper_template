@@ -182,7 +182,7 @@ function ensureFabStyle(): void {
   50% { opacity: 0.8; transform: scale(1.08); }
 }
 `;
-  doc.head.appendChild(style);
+  (doc.head ?? doc.documentElement).appendChild(style);
 }
 
 function createFab(): void {
@@ -398,10 +398,12 @@ export function mountUi() {
     toastr.error(`魔法棒菜单挂载失败: ${error instanceof Error ? error.message : String(error)}`, 'Evolution World');
   }
 
-  // 悬浮球应该已经由 mountFabEarly() 创建。根据已加载的设置同步状态。
+  // 移动端上 early mount 可能因为宿主文档尚未就绪而失败，这里做一次兜底补建。
   const settings = getSettings();
   if (settings.show_fab === false) {
     removeFab();
+  } else {
+    setFabVisibility(true);
   }
 }
 
