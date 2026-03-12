@@ -32,6 +32,7 @@ export type EwWorkflowNoticeIslandInput = {
   tone?: 'streaming' | 'success' | 'warning';
   flow_order?: number;
   updated_at?: number;
+  extra_count?: number;
 };
 
 export type EwNoticeHandle = {
@@ -508,6 +509,10 @@ function ensureWorkflowStyle(doc: Document) {
       display: flex;
     }
 
+    .ew-workflow-notice[data-collapsed='true'][data-active='true'] .ew-workflow-notice__stack {
+      width: auto;
+    }
+
     .ew-workflow-notice__row {
       --ew-row-accent: rgba(115, 184, 255, 0.9);
       width: fit-content;
@@ -521,6 +526,15 @@ function ensureWorkflowStyle(doc: Document) {
       opacity: 0;
       animation: ewWorkflowStackIn 180ms ease forwards;
       transition: opacity 180ms ease, transform 180ms ease, margin-left 180ms ease;
+      cursor: pointer;
+    }
+
+    .ew-workflow-notice[data-collapsed='true'] .ew-workflow-notice__row:not([data-row-index='0']) {
+      display: none;
+    }
+
+    .ew-workflow-notice[data-collapsed='true'] .ew-workflow-notice__row[data-row-index='0'] {
+      margin-left: 0;
     }
 
     .ew-workflow-notice__row[data-row-index='1'],
@@ -561,6 +575,15 @@ function ensureWorkflowStyle(doc: Document) {
       -webkit-backdrop-filter: blur(12px) saturate(125%);
     }
 
+    .ew-workflow-notice__row-slot--content {
+      position: relative;
+      padding-right: 14px;
+    }
+
+    .ew-workflow-notice__row[data-has-extra='true'] .ew-workflow-notice__row-slot--content {
+      padding-right: 50px;
+    }
+
     .ew-workflow-notice__row-slot--name {
       font-size: 14px;
       font-weight: 800;
@@ -574,6 +597,30 @@ function ensureWorkflowStyle(doc: Document) {
       font-weight: 650;
       line-height: 1.2;
       color: color-mix(in srgb, #f2f7ff 88%, #93abc4);
+    }
+
+    .ew-workflow-notice__row-extra {
+      position: absolute;
+      top: -7px;
+      right: -5px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      min-width: 28px;
+      height: 20px;
+      padding: 0 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(163, 207, 255, 0.36);
+      background: rgba(13, 30, 52, 0.92);
+      color: #eef5ff;
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1;
+      box-shadow: 0 8px 16px rgba(3, 8, 17, 0.22);
+    }
+
+    .ew-workflow-notice[data-collapsed='true'] .ew-workflow-notice__row[data-has-extra='true'] .ew-workflow-notice__row-extra {
+      display: inline-flex;
     }
 
     .ew-workflow-notice__row-orb {
@@ -659,6 +706,10 @@ function ensureWorkflowStyle(doc: Document) {
 
       .ew-workflow-notice__row-slot--content {
         font-size: 12px;
+      }
+
+      .ew-workflow-notice__row[data-has-extra='true'] .ew-workflow-notice__row-slot--content {
+        padding-right: 42px;
       }
     }
 
@@ -874,10 +925,17 @@ function applyWorkflowNoticeState(item: HTMLElement, input: EwWorkflowNoticeInpu
   const level = input.level ?? 'info';
   const islands = input.islands ?? [];
   const isActive = islands.length > 0;
+  const collapsed = item.dataset.collapsed !== 'false';
 
   item.dataset.level = level;
   item.dataset.busy = input.busy ? 'true' : 'false';
   item.dataset.active = isActive ? 'true' : 'false';
+
+  if (!isActive) {
+    item.dataset.collapsed = 'true';
+  } else if (!collapsed) {
+    item.dataset.collapsed = 'false';
+  }
 
   item.setAttribute('aria-label', isActive ? `${input.title}，${input.message}` : input.title);
 
@@ -923,9 +981,18 @@ function createWorkflowStackItem(doc: Document, island: EwWorkflowNoticeIslandIn
   const content = doc.createElement('span');
   content.className = 'ew-workflow-notice__row-slot ew-workflow-notice__row-slot--content';
 
+  const contentText = doc.createElement('span');
+  contentText.className = 'ew-workflow-notice__row-content-text';
+
+  const extra = doc.createElement('span');
+  extra.className = 'ew-workflow-notice__row-extra';
+  extra.setAttribute('aria-hidden', 'true');
+
   item.appendChild(name);
   item.appendChild(orb);
   item.appendChild(content);
+  content.appendChild(contentText);
+  content.appendChild(extra);
 
   applyWorkflowStackItemState(item, island);
   return item;
@@ -934,6 +1001,7 @@ function createWorkflowStackItem(doc: Document, island: EwWorkflowNoticeIslandIn
 function applyWorkflowStackItemState(item: HTMLElement, island: EwWorkflowNoticeIslandInput) {
   item.dataset.itemId = island.id;
   item.dataset.tone = island.tone ?? 'streaming';
+  item.dataset.hasExtra = (island.extra_count ?? 0) > 0 ? 'true' : 'false';
   item.classList.remove('ew-workflow-notice__row--out');
 
   const name = item.querySelector('.ew-workflow-notice__row-slot--name');
@@ -941,9 +1009,14 @@ function applyWorkflowStackItemState(item: HTMLElement, island: EwWorkflowNotice
     name.textContent = island.entry_name?.trim() || '未命名工作流';
   }
 
-  const content = item.querySelector('.ew-workflow-notice__row-slot--content');
-  if (content) {
-    content.textContent = island.content?.trim() || '';
+  const contentText = item.querySelector('.ew-workflow-notice__row-content-text');
+  if (contentText) {
+    contentText.textContent = island.content?.trim() || '';
+  }
+
+  const extra = item.querySelector('.ew-workflow-notice__row-extra');
+  if (extra) {
+    extra.textContent = (island.extra_count ?? 0) > 0 ? `+${island.extra_count}` : '';
   }
 }
 
@@ -990,7 +1063,7 @@ export function showManagedWorkflowNotice(input: EwWorkflowNoticeInput): EwWorkf
 
   const item = doc.createElement('article');
   item.className = 'ew-workflow-notice';
-  item.dataset.collapsed = 'false';
+  item.dataset.collapsed = 'true';
   item.dataset.active = 'false';
 
   const controls = doc.createElement('div');
@@ -1114,10 +1187,12 @@ export function showManagedWorkflowNotice(input: EwWorkflowNoticeInput): EwWorkf
     currentAction = nextInput.action?.onClick ?? null;
     applyWorkflowNoticeState(item, nextInput, progress);
     scheduleAutoClose(nextInput);
+    scheduleCollapse(nextInput);
   };
 
   applyWorkflowNoticeState(item, input, progress);
   scheduleAutoClose(input);
+  scheduleCollapse(input);
 
   actionButton.addEventListener('click', event => {
     event.preventDefault();
@@ -1128,6 +1203,21 @@ export function showManagedWorkflowNotice(input: EwWorkflowNoticeInput): EwWorkf
     event.preventDefault();
     event.stopPropagation();
     close();
+  });
+  item.addEventListener('click', event => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('.ew-workflow-notice__action') || target?.closest('.ew-workflow-notice__close')) {
+      return;
+    }
+    if (item.dataset.active !== 'true') {
+      return;
+    }
+    if (item.dataset.collapsed === 'true') {
+      expand();
+      scheduleCollapse(currentInput);
+      return;
+    }
+    collapse();
   });
 
   host.appendChild(item);

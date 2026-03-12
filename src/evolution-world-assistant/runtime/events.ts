@@ -45,10 +45,7 @@ let tavernHelperRetryTimer: ReturnType<typeof setTimeout> | null = null;
 const NON_SEND_GENERATION_TYPES = new Set(['continue', 'regenerate', 'swipe']);
 const WORKFLOW_NOTICE_COLLAPSE_MS = 5000;
 const WORKFLOW_NOTICE_MAX_ISLANDS = 5;
-const WORKFLOW_NOTICE_SUCCESS_LINGER_MS = 2200;
-const WORKFLOW_NOTICE_WARNING_LINGER_MS = 3600;
-
-type WorkflowNoticeIslandTone = 'streaming' | 'success' | 'warning';
+type WorkflowNoticeIslandTone = 'streaming';
 
 type WorkflowNoticeIslandState = {
   id: string;
@@ -446,27 +443,24 @@ function createWorkflowIslandTracker(processingReminder: ReturnType<typeof creat
   };
 
   const sync = () => {
-    const allIslands = [...islands.values()];
-    const activeIslands = allIslands
+    const activeIslands = [...islands.values()]
       .filter(island => island.tone === 'streaming')
-      .sort((left, right) => left.flow_order - right.flow_order || right.updated_at - left.updated_at);
-    const settledIslands = allIslands
-      .filter(island => island.tone !== 'streaming')
       .sort((left, right) => right.updated_at - left.updated_at || left.flow_order - right.flow_order);
-    const visibleIslands = [...activeIslands, ...settledIslands].slice(0, WORKFLOW_NOTICE_MAX_ISLANDS);
+    const visibleIslands = activeIslands.slice(0, WORKFLOW_NOTICE_MAX_ISLANDS);
 
     processingReminder.update({
       island: {
         entry_name: '',
         content: '',
       },
-      islands: visibleIslands.map(island => ({
+      islands: visibleIslands.map((island, index) => ({
         id: island.id,
         entry_name: island.entry_name,
         content: island.content,
         tone: island.tone,
         flow_order: island.flow_order,
         updated_at: island.updated_at,
+        extra_count: index === 0 ? Math.max(0, activeIslands.length - 1) : 0,
       })),
     });
   };
@@ -494,24 +488,6 @@ function createWorkflowIslandTracker(processingReminder: ReturnType<typeof creat
     return created;
   };
 
-  const scheduleDismiss = (island: WorkflowNoticeIslandState) => {
-    clearDismissTimer(island);
-    if (island.tone === 'streaming') {
-      return;
-    }
-
-    const lingerMs = island.tone === 'success' ? WORKFLOW_NOTICE_SUCCESS_LINGER_MS : WORKFLOW_NOTICE_WARNING_LINGER_MS;
-    island.dismiss_timer = setTimeout(() => {
-      const current = islands.get(island.id);
-      if (!current || current.updated_at !== island.updated_at || current.tone === 'streaming') {
-        return;
-      }
-      clearDismissTimer(current);
-      islands.delete(island.id);
-      sync();
-    }, lingerMs);
-  };
-
   const setIslandState = (input: {
     id: string;
     entry_name: string;
@@ -527,7 +503,6 @@ function createWorkflowIslandTracker(processingReminder: ReturnType<typeof creat
       flow_order: input.flow_order,
       updated_at: Date.now(),
     });
-    scheduleDismiss(island);
     sync();
   };
 
@@ -570,16 +545,13 @@ function createWorkflowIslandTracker(processingReminder: ReturnType<typeof creat
     settleAttempts(attempts: DispatchFlowAttempt[]) {
       for (const attempt of attempts) {
         const current = islands.get(attempt.flow.id);
-        setIslandState({
-          id: attempt.flow.id,
-          entry_name: current?.entry_name || attempt.flow.name.trim() || attempt.flow.id,
-          content: attempt.ok
-            ? current?.content || '处理完成，已纳入本楼结果'
-            : trimWorkflowNoticeText(attempt.error || '执行失败', 54),
-          tone: attempt.ok ? 'success' : 'warning',
-          flow_order: attempt.flow_order,
-        });
+        if (!current) {
+          continue;
+        }
+        clearDismissTimer(current);
+        islands.delete(attempt.flow.id);
       }
+      sync();
     },
     clear() {
       for (const island of islands.values()) {
