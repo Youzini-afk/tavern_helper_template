@@ -296,6 +296,33 @@ function createFab(): void {
   let fabStartY = 0;
   let clickTimer: number | null = null;
 
+  async function triggerFabReroll(): Promise<void> {
+    const settings = getSettings();
+    if (settings.workflow_timing !== 'after_reply') {
+      patchSettings({ ui_open: true });
+      return;
+    }
+
+    const api = window.EvolutionWorldAPI;
+    if (!api?.rerollCurrentAfterReply) {
+      showEwNotice({
+        title: 'Evolution World',
+        message: '运行时尚未就绪，暂时无法重跑当前楼。',
+        level: 'warning',
+      });
+      return;
+    }
+
+    const result = await api.rerollCurrentAfterReply();
+    if (!result.ok) {
+      showEwNotice({
+        title: 'Evolution World',
+        message: `重跑当前楼失败: ${result.reason ?? 'unknown error'}`,
+        level: 'warning',
+      });
+    }
+  }
+
   function clearFabClickTimer() {
     if (clickTimer !== null) {
       window.clearTimeout(clickTimer);
@@ -361,6 +388,12 @@ function createFab(): void {
       return;
     }
 
+    if (isMobile && clickTimer !== null) {
+      clearFabClickTimer();
+      void triggerFabReroll();
+      return;
+    }
+
     clearFabClickTimer();
     clickTimer = window.setTimeout(() => {
       clickTimer = null;
@@ -377,31 +410,7 @@ function createFab(): void {
     }
 
     clearFabClickTimer();
-
-    const settings = getSettings();
-    if (settings.workflow_timing !== 'after_reply') {
-      patchSettings({ ui_open: true });
-      return;
-    }
-
-    const api = window.EvolutionWorldAPI;
-    if (!api?.rerollCurrentAfterReply) {
-      showEwNotice({
-        title: 'Evolution World',
-        message: '运行时尚未就绪，暂时无法重跑当前楼。',
-        level: 'warning',
-      });
-      return;
-    }
-
-    const result = await api.rerollCurrentAfterReply();
-    if (!result.ok) {
-      showEwNotice({
-        title: 'Evolution World',
-        message: `重跑当前楼失败: ${result.reason ?? 'unknown error'}`,
-        level: 'warning',
-      });
-    }
+    await triggerFabReroll();
   });
 
   // 追加到 <html> 以覆盖所有带 transform 的容器
