@@ -302,6 +302,10 @@ async function writeFloorWorkflowExecution(
   await setChatMessages([{ message_id: messageId, data: nextData }], { refresh: 'none' });
 }
 
+async function clearFloorWorkflowExecution(messageId: number): Promise<void> {
+  await writeFloorWorkflowExecution(messageId, null);
+}
+
 function buildFloorWorkflowExecutionState(
   requestId: string,
   attempts: Array<{ flow: { id: string }; ok: boolean; response?: Record<string, any> }>,
@@ -966,6 +970,24 @@ function isAssistantMessage(messageId: number): boolean {
   }
 }
 
+async function invalidateAfterReplyExecutionForMessage(messageId: number): Promise<void> {
+  if (!Number.isFinite(messageId) || messageId < 0) {
+    return;
+  }
+
+  if (!isAssistantMessage(messageId)) {
+    return;
+  }
+
+  const executionState = readFloorWorkflowExecution(messageId);
+  if (!executionState) {
+    return;
+  }
+
+  await clearFloorWorkflowExecution(messageId);
+  console.info(`[Evolution World] Cleared stale workflow execution state for floor #${messageId}`);
+}
+
 async function onAfterReplyMessage(messageId: number, type: string, source: 'message_received' | 'generation_ended') {
   const settings = getSettings();
   if (settings.workflow_timing !== 'after_reply') {
@@ -1138,6 +1160,18 @@ export function initRuntimeEvents() {
   listenerStops.push(
     eventOn(tavern_events.MESSAGE_RECEIVED, async (messageId, type) => {
       await onAfterReplyMessage(messageId, type, 'message_received');
+    }),
+  );
+
+  listenerStops.push(
+    eventOn(tavern_events.MESSAGE_EDITED, async messageId => {
+      await invalidateAfterReplyExecutionForMessage(messageId);
+    }),
+  );
+
+  listenerStops.push(
+    eventOn(tavern_events.MESSAGE_SWIPED, async messageId => {
+      await invalidateAfterReplyExecutionForMessage(messageId);
     }),
   );
 
