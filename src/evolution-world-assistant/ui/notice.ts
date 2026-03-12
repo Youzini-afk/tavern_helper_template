@@ -361,7 +361,7 @@ function ensureWorkflowStyle(doc: Document) {
         box-shadow 240ms ease,
         background 240ms ease,
         transform 220ms ease;
-      cursor: default;
+      cursor: pointer;
     }
 
     .ew-workflow-notice::after {
@@ -563,32 +563,49 @@ function ensureWorkflowStyle(doc: Document) {
     }
 
     .ew-workflow-notice__island-orb {
-      width: 30px;
-      height: 30px;
+      width: 32px;
+      height: 32px;
       border-radius: 50%;
       position: relative;
       flex: 0 0 auto;
-      background:
-        radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.95), color-mix(in srgb, var(--ew-notice-accent) 76%, #9bd1ff) 34%, rgba(11, 26, 45, 0.12) 66%),
-        rgba(255, 255, 255, 0.04);
+      overflow: hidden;
+      background: linear-gradient(145deg, rgba(10, 18, 34, 0.92), rgba(5, 13, 26, 0.98));
       box-shadow:
-        0 0 18px color-mix(in srgb, var(--ew-notice-accent) 46%, transparent),
-        0 0 0 1px rgba(255, 255, 255, 0.3) inset;
+        0 0 18px color-mix(in srgb, var(--ew-notice-accent) 28%, transparent),
+        0 0 0 1px rgba(255, 255, 255, 0.16) inset,
+        inset 0 1px 2px rgba(255, 255, 255, 0.06);
+    }
+
+    .ew-workflow-notice__island-orb::before {
+      content: '';
+      position: absolute;
+      inset: 3px;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 34% 30%, rgba(255, 255, 255, 0.98), rgba(252, 245, 216, 0.96) 28%, rgba(227, 213, 166, 0.94) 62%, rgba(185, 171, 130, 0.92) 100%);
+      box-shadow:
+        0 0 10px rgba(255, 239, 198, 0.28),
+        inset -2px -2px 4px rgba(116, 98, 55, 0.18),
+        inset 2px 2px 4px rgba(255, 255, 255, 0.26);
     }
 
     .ew-workflow-notice__island-orb::after {
       content: '';
       position: absolute;
-      inset: -5px;
+      top: 3px;
+      bottom: 3px;
+      width: 24px;
+      right: -2px;
       border-radius: inherit;
-      border: 1px solid color-mix(in srgb, var(--ew-notice-accent) 42%, transparent);
-      opacity: 0.6;
-      animation: ewWorkflowIslandPulse 1.8s ease-in-out infinite;
+      background:
+        radial-gradient(circle at 46% 50%, rgba(11, 19, 35, 0.18) 0%, rgba(8, 16, 30, 0.82) 54%, rgba(6, 12, 24, 0.98) 100%);
+      filter: blur(0.2px);
+      transform: translateX(0);
+      animation: ewWorkflowMoonPhase 4.8s ease-in-out infinite;
     }
 
     .ew-workflow-notice[data-busy='false'] .ew-workflow-notice__island-orb::after {
-      animation: none;
-      opacity: 0.3;
+      animation-duration: 7.2s;
     }
 
     .ew-workflow-notice--out {
@@ -602,14 +619,21 @@ function ensureWorkflowStyle(doc: Document) {
       }
     }
 
-    @keyframes ewWorkflowIslandPulse {
-      0%, 100% {
-        transform: scale(1);
-        opacity: 0.45;
+    @keyframes ewWorkflowMoonPhase {
+      0% {
+        transform: translateX(12px) scaleX(1.02);
+      }
+      24% {
+        transform: translateX(4px) scaleX(0.96);
       }
       50% {
-        transform: scale(1.12);
-        opacity: 0.8;
+        transform: translateX(-8px) scaleX(0.22);
+      }
+      76% {
+        transform: translateX(4px) scaleX(0.96);
+      }
+      100% {
+        transform: translateX(12px) scaleX(1.02);
       }
     }
 
@@ -969,6 +993,7 @@ export function showManagedWorkflowNotice(input: EwWorkflowNoticeInput): EwWorkf
   let closeTimer: ReturnType<typeof setTimeout> | null = null;
   let collapseTimer: ReturnType<typeof setTimeout> | null = null;
   let currentAction = input.action?.onClick ?? null;
+  let currentInput: EwWorkflowNoticeInput = input;
 
   const clearCloseTimer = () => {
     if (closeTimer) {
@@ -988,6 +1013,7 @@ export function showManagedWorkflowNotice(input: EwWorkflowNoticeInput): EwWorkf
     if (closed) {
       return;
     }
+    clearCollapseTimer();
     item.dataset.collapsed = 'true';
   };
 
@@ -996,6 +1022,7 @@ export function showManagedWorkflowNotice(input: EwWorkflowNoticeInput): EwWorkf
       return;
     }
     item.dataset.collapsed = 'false';
+    scheduleCollapse(currentInput);
   };
 
   const close = () => {
@@ -1048,6 +1075,7 @@ export function showManagedWorkflowNotice(input: EwWorkflowNoticeInput): EwWorkf
     if (closed) {
       return;
     }
+    currentInput = nextInput;
     currentAction = nextInput.action?.onClick ?? null;
     applyWorkflowNoticeState(item, nextInput, progress);
     scheduleAutoClose(nextInput);
@@ -1069,10 +1097,12 @@ export function showManagedWorkflowNotice(input: EwWorkflowNoticeInput): EwWorkf
     close();
   });
   item.addEventListener('click', event => {
+    event.preventDefault();
     if (item.dataset.collapsed === 'true') {
-      event.preventDefault();
       expand();
+      return;
     }
+    collapse();
   });
 
   host.appendChild(item);

@@ -28,7 +28,7 @@ const HOOK_RETRY_DELAY_MS = 1200;
 let sendIntentRetryTimer: ReturnType<typeof setTimeout> | null = null;
 let tavernHelperRetryTimer: ReturnType<typeof setTimeout> | null = null;
 const NON_SEND_GENERATION_TYPES = new Set(['continue', 'regenerate', 'swipe']);
-const WORKFLOW_NOTICE_COLLAPSE_MS = 12000;
+const WORKFLOW_NOTICE_COLLAPSE_MS = 5000;
 
 function getHostWindow(): Window & typeof globalThis {
   try {
