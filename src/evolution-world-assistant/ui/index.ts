@@ -30,6 +30,9 @@ const FAB_STYLE_ID = 'ew-assistant-fab-style';
 const FAB_POS_KEY = '__EW_FAB_POS__';
 const FAB_SIZE = 48;
 const FAB_CLICK_DELAY_MS = 220;
+let fabViewportSyncScrollHandler: (() => void) | null = null;
+let fabViewportSyncResizeHandler: (() => void) | null = null;
+let fabViewportSyncRaf: number | null = null;
 
 function resolveParentDocument(): Document {
   return getHostWindow().document;
@@ -40,6 +43,22 @@ function getHostWindow(): Window {
     return window.parent && window.parent !== window ? window.parent : window;
   } catch {
     return window;
+  }
+}
+
+function detachFabViewportSync(): void {
+  const hostWin = getHostWindow();
+  if (fabViewportSyncScrollHandler) {
+    hostWin.removeEventListener('scroll', fabViewportSyncScrollHandler);
+    fabViewportSyncScrollHandler = null;
+  }
+  if (fabViewportSyncResizeHandler) {
+    hostWin.removeEventListener('resize', fabViewportSyncResizeHandler);
+    fabViewportSyncResizeHandler = null;
+  }
+  if (fabViewportSyncRaf !== null) {
+    cancelAnimationFrame(fabViewportSyncRaf);
+    fabViewportSyncRaf = null;
   }
 }
 
@@ -194,12 +213,19 @@ function createFab(): void {
   ensureFabStyle();
 
   const hostWin = getHostWindow();
+  const isMobile = hostWin.matchMedia?.('(max-width: 1000px)').matches ?? hostWin.innerWidth <= 1000;
+  detachFabViewportSync();
+
   const fab = doc.createElement('div');
   fab.id = FAB_ID;
   fab.textContent = '🌕';
   fab.title = 'Evolution World';
   fab.setAttribute('tabindex', '-1');
   fab.setAttribute('inputmode', 'none');
+
+  if (isMobile) {
+    fab.style.position = 'absolute';
+  }
 
   // 恢复已保存的位置，否则默认右下角
   let vpX: number | null = null;
@@ -217,11 +243,48 @@ function createFab(): void {
   }
 
   if (vpX !== null && vpY !== null) {
-    fab.style.left = vpX + 'px';
-    fab.style.top = vpY + 'px';
+    if (isMobile) {
+      fab.style.left = vpX + hostWin.scrollX + 'px';
+      fab.style.top = vpY + hostWin.scrollY + 'px';
+    } else {
+      fab.style.left = vpX + 'px';
+      fab.style.top = vpY + 'px';
+    }
   } else {
-    fab.style.right = '16px';
-    fab.style.bottom = '80px';
+    vpX = hostWin.innerWidth - 16 - FAB_SIZE;
+    vpY = hostWin.innerHeight - 80 - FAB_SIZE;
+    if (isMobile) {
+      fab.style.left = vpX + hostWin.scrollX + 'px';
+      fab.style.top = vpY + hostWin.scrollY + 'px';
+    } else {
+      fab.style.right = '16px';
+      fab.style.bottom = '80px';
+    }
+  }
+
+  if (isMobile) {
+    const syncPosition = () => {
+      fabViewportSyncRaf = null;
+      if (!doc.getElementById(FAB_ID)) {
+        return;
+      }
+      const currentVpX = vpX ?? hostWin.innerWidth - 16 - FAB_SIZE;
+      const currentVpY = vpY ?? hostWin.innerHeight - 80 - FAB_SIZE;
+      fab.style.left = currentVpX + hostWin.scrollX + 'px';
+      fab.style.top = currentVpY + hostWin.scrollY + 'px';
+    };
+    fabViewportSyncScrollHandler = () => {
+      if (fabViewportSyncRaf === null) {
+        fabViewportSyncRaf = requestAnimationFrame(syncPosition);
+      }
+    };
+    fabViewportSyncResizeHandler = () => {
+      if (fabViewportSyncRaf === null) {
+        fabViewportSyncRaf = requestAnimationFrame(syncPosition);
+      }
+    };
+    hostWin.addEventListener('scroll', fabViewportSyncScrollHandler, { passive: true });
+    hostWin.addEventListener('resize', fabViewportSyncResizeHandler, { passive: true });
   }
 
   // ── 拖拽支持（匹配 ST-Manager-STscript 的模式） ──
@@ -266,8 +329,13 @@ function createFab(): void {
     const ny = Math.max(0, Math.min(maxY, fabStartY + dy));
     vpX = nx;
     vpY = ny;
-    fab.style.left = nx + 'px';
-    fab.style.top = ny + 'px';
+    if (isMobile) {
+      fab.style.left = nx + hostWin.scrollX + 'px';
+      fab.style.top = ny + hostWin.scrollY + 'px';
+    } else {
+      fab.style.left = nx + 'px';
+      fab.style.top = ny + 'px';
+    }
     fab.style.right = 'auto';
     fab.style.bottom = 'auto';
   });
@@ -348,6 +416,7 @@ function createFab(): void {
 
 function removeFab(): void {
   const doc = resolveParentDocument();
+  detachFabViewportSync();
   const fab = doc.getElementById(FAB_ID);
   if (fab) fab.remove();
   doc.getElementById(FAB_STYLE_ID)?.remove();
