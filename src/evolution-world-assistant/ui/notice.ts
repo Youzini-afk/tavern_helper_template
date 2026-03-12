@@ -1061,6 +1061,8 @@ export function showManagedWorkflowNotice(input: EwWorkflowNoticeInput): EwWorkf
   ensureWorkflowStyle(doc);
   const host = ensureWorkflowHost(doc);
 
+  host.querySelectorAll('.ew-workflow-notice').forEach(existing => existing.remove());
+
   const item = doc.createElement('article');
   item.className = 'ew-workflow-notice';
   item.dataset.collapsed = 'true';

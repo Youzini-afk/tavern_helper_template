@@ -57,6 +57,15 @@ type WorkflowNoticeIslandState = {
   dismiss_timer: ReturnType<typeof setTimeout> | null;
 };
 
+type ProcessingReminderHandle = {
+  update: (next: Partial<EwWorkflowNoticeInput>) => void;
+  dismiss: () => void;
+  collapse: () => void;
+  expand: () => void;
+};
+
+let activeProcessingReminder: ProcessingReminderHandle | null = null;
+
 function getHostWindow(): Window & typeof globalThis {
   try {
     if (window.parent && window.parent !== window) {
@@ -383,6 +392,8 @@ async function buildPreservedDispatchResults(
 }
 
 function createProcessingReminder(onAbort: () => void) {
+  activeProcessingReminder?.dismiss();
+
   let state: EwWorkflowNoticeInput = {
     title: 'Evolution World',
     message: '正在读取上下文并处理本轮工作流，请稍后…',
@@ -414,12 +425,21 @@ function createProcessingReminder(onAbort: () => void) {
     handle.update(state);
   };
 
-  return {
+  const reminder: ProcessingReminderHandle = {
     update,
-    dismiss: handle.dismiss,
+    dismiss: () => {
+      handle.dismiss();
+      if (activeProcessingReminder === reminder) {
+        activeProcessingReminder = null;
+      }
+    },
     collapse: handle.collapse,
     expand: handle.expand,
   };
+
+  activeProcessingReminder = reminder;
+
+  return reminder;
 }
 
 function trimWorkflowNoticeText(text: string | undefined, maxLength: number) {
