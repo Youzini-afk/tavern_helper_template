@@ -528,9 +528,9 @@ function ensureWorkflowStyle(doc: Document) {
     .ew-workflow-notice__row[data-tone='success'] { --ew-row-accent: rgba(101, 211, 156, 0.95); }
     .ew-workflow-notice__row[data-tone='warning'] { --ew-row-accent: rgba(234, 185, 111, 0.95); }
 
-    /* collapsed: only first row visible */
+    /* collapsed: only first row visible (JS also sets inline display, this is fallback) */
     .ew-workflow-notice[data-collapsed='true'] .ew-workflow-notice__row:not([data-row-index='0']) {
-      display: none;
+      display: none !important;
     }
 
     .ew-workflow-notice__row--out {
@@ -710,10 +710,6 @@ function ensureWorkflowStyle(doc: Document) {
 function ensureWorkflowHost(doc: Document): HTMLElement {
   let host = doc.getElementById(WORKFLOW_HOST_ID);
   if (host) {
-    // Purge all old children — a fresh showManagedWorkflowNotice will recreate
-    while (host.firstChild) {
-      host.removeChild(host.firstChild);
-    }
     return host;
   }
 
@@ -918,7 +914,7 @@ function applyWorkflowNoticeState(item: HTMLElement, input: EwWorkflowNoticeInpu
   const level = input.level ?? 'info';
   const islands = input.islands ?? [];
   const isActive = islands.length > 0;
-  const collapsed = item.dataset.collapsed !== 'false';
+  const isCollapsed = item.dataset.collapsed !== 'false';
 
   item.dataset.level = level;
   item.dataset.busy = input.busy ? 'true' : 'false';
@@ -926,11 +922,19 @@ function applyWorkflowNoticeState(item: HTMLElement, input: EwWorkflowNoticeInpu
 
   if (!isActive) {
     item.dataset.collapsed = 'true';
-  } else if (!collapsed) {
-    item.dataset.collapsed = 'false';
   }
 
-  item.setAttribute('aria-label', isActive ? `${input.title}，${input.message}` : input.title);
+  // JS-driven visibility for idle orb vs stack
+  const idleOrb = item.querySelector('.ew-workflow-notice__idle-orb') as HTMLElement | null;
+  const stack = item.querySelector('.ew-workflow-notice__stack') as HTMLElement | null;
+  if (idleOrb) {
+    idleOrb.style.display = isActive ? 'none' : 'block';
+  }
+  if (stack) {
+    stack.style.display = isActive ? 'flex' : 'none';
+  }
+
+  item.setAttribute('aria-label', isActive ? `${input.title}\uFF0C${input.message}` : input.title);
 
   const actionButton = item.querySelector('.ew-workflow-notice__action') as HTMLButtonElement | null;
   if (actionButton) {
@@ -945,9 +949,8 @@ function applyWorkflowNoticeState(item: HTMLElement, input: EwWorkflowNoticeInpu
     }
   }
 
-  const stack = item.querySelector('.ew-workflow-notice__stack') as HTMLElement | null;
   if (stack) {
-    reconcileWorkflowNoticeStack(stack, islands);
+    reconcileWorkflowNoticeStack(stack, islands, isCollapsed);
   }
 
   if (input.persist) {
@@ -1013,7 +1016,7 @@ function applyWorkflowStackItemState(row: HTMLElement, island: EwWorkflowNoticeI
   }
 }
 
-function reconcileWorkflowNoticeStack(stack: HTMLElement, islands: EwWorkflowNoticeIslandInput[]) {
+function reconcileWorkflowNoticeStack(stack: HTMLElement, islands: EwWorkflowNoticeIslandInput[], collapsed: boolean) {
   const doc = stack.ownerDocument;
   const existing = new Map<string, HTMLElement>();
 
@@ -1034,6 +1037,24 @@ function reconcileWorkflowNoticeStack(stack: HTMLElement, islands: EwWorkflowNot
     applyWorkflowStackItemState(current, island);
     current.dataset.rowIndex = String(index);
     current.dataset.removing = 'false';
+
+    // JS-driven visibility: hide non-first rows when collapsed
+    if (collapsed && index > 0) {
+      current.style.display = 'none';
+    } else {
+      current.style.display = '';
+    }
+
+    // JS-driven +N badge visibility: only on first row when collapsed
+    const extraBadge = current.querySelector('.ew-workflow-notice__row-extra') as HTMLElement | null;
+    if (extraBadge) {
+      if (collapsed && index === 0 && (island.extra_count ?? 0) > 0) {
+        extraBadge.style.display = 'inline-flex';
+      } else {
+        extraBadge.style.display = 'none';
+      }
+    }
+
     stack.appendChild(current);
   });
 
@@ -1120,6 +1141,7 @@ export function showManagedWorkflowNotice(input: EwWorkflowNoticeInput): EwWorkf
     }
     clearCollapseTimer();
     item.dataset.collapsed = 'true';
+    applyWorkflowNoticeState(item, currentInput, progress);
   };
 
   const expand = () => {
@@ -1127,6 +1149,7 @@ export function showManagedWorkflowNotice(input: EwWorkflowNoticeInput): EwWorkf
       return;
     }
     item.dataset.collapsed = 'false';
+    applyWorkflowNoticeState(item, currentInput, progress);
   };
 
   const close = () => {
