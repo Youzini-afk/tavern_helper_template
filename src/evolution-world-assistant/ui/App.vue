@@ -439,19 +439,19 @@ import EwSectionCard from './components/EwSectionCard.vue';
 import { getFieldHelp, PANEL_TABS } from './help-meta';
 import EwGraphEditor from './graph/EwGraphEditor.vue';
 import { useGraphStore } from './graph/graph-store';
-import { migrateAllFlowConfigs } from './graph/migration';
+import { migrateAllFlowsToGraph } from './graph/migration';
 import { showEwNotice } from './notice';
 import { useEwStore } from './store';
 
 const store = useEwStore();
 const graphStore = useGraphStore();
 
-// 在首次切换到 graph tab 时，从现有 flows 迁移生成节点图
+// 首次进入 graph tab 时，将所有现有 flows 迁移到一个工作流图
 watch(
   () => store.activeTab,
   (tab) => {
-    if (tab === 'graph' && graphStore.graphs.length === 0 && store.settings.flows.length > 0) {
-      graphStore.loadGraphs(migrateAllFlowConfigs(store.settings.flows));
+    if (tab === 'graph' && !graphStore.graph && store.settings.flows.length > 0) {
+      graphStore.loadGraph(migrateAllFlowsToGraph(store.settings.flows));
     }
   },
 );

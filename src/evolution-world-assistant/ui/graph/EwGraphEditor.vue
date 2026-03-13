@@ -57,7 +57,7 @@ import EwAiCallNode from './nodes/EwAiCallNode.vue';
 import EwWorldbookOutputNode from './nodes/EwWorldbookOutputNode.vue';
 
 const graphStore = useGraphStore();
-const activeGraph = computed(() => graphStore.activeGraph);
+const activeGraph = computed(() => graphStore.graph);
 
 // 注册自定义节点类型
 const nodeTypes = {
@@ -98,7 +98,6 @@ const flowEdges = computed(() => {
 
 function onNodesChange(changes: any[]) {
   if (!activeGraph.value) return;
-  // 处理位置/选中等变化
   const currentNodes = [...activeGraph.value.nodes];
   for (const change of changes) {
     if (change.type === 'position' && change.position) {
@@ -108,7 +107,7 @@ function onNodesChange(changes: any[]) {
       }
     }
   }
-  graphStore.updateNodes(activeGraph.value.id, currentNodes);
+  graphStore.updateNodes(currentNodes);
 }
 
 function onEdgesChange(changes: any[]) {
@@ -119,7 +118,7 @@ function onEdgesChange(changes: any[]) {
       currentEdges = currentEdges.filter(e => e.id !== change.id);
     }
   }
-  graphStore.updateEdges(activeGraph.value.id, currentEdges);
+  graphStore.updateEdges(currentEdges);
 }
 
 function onConnect(connection: Connection) {
@@ -131,7 +130,7 @@ function onConnect(connection: Connection) {
     target: connection.target,
     targetHandle: connection.targetHandle ?? undefined,
   };
-  graphStore.updateEdges(activeGraph.value.id, [...activeGraph.value.edges, newEdge]);
+  graphStore.updateEdges([...activeGraph.value.edges, newEdge]);
 }
 
 function onAddNode(type: NodeTypeName) {
@@ -143,7 +142,7 @@ function onAddNode(type: NodeTypeName) {
     position: { x: 200, y: 200 },
     data: {},
   };
-  graphStore.updateNodes(activeGraph.value.id, [...activeGraph.value.nodes, newNode]);
+  graphStore.updateNodes([...activeGraph.value.nodes, newNode]);
 }
 
 function miniMapNodeColor(node: any): string {

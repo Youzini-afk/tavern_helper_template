@@ -62,8 +62,13 @@ export type NodeTypeName = keyof typeof NODE_TYPE_DEFS;
 
 // ── 每种节点的 data 类型 ──────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface TriggerNodeData {}
+export interface TriggerNodeData {
+  flow_name: string;
+  flow_id: string;
+  enabled: boolean;
+  timing: 'default' | 'after_reply' | 'before_reply';
+  priority: number;
+}
 
 export interface ContextBuilderNodeData {
   context_turns: number;

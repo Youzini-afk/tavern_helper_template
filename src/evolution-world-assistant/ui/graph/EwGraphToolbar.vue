@@ -1,17 +1,10 @@
 <template>
   <div class="ew-graph-toolbar">
     <div class="ew-graph-toolbar__left">
-      <span class="ew-graph-toolbar__title">工作流图</span>
-      <select
-        v-if="graphs.length > 0"
-        class="ew-graph-toolbar__select"
-        :value="activeGraphId ?? ''"
-        @change="onSelectGraph"
-      >
-        <option v-for="g in graphs" :key="g.id" :value="g.id">
-          {{ g.name }} {{ g.enabled ? '' : '(已禁用)' }}
-        </option>
-      </select>
+      <span class="ew-graph-toolbar__title">{{ graph?.name ?? '工作流图' }}</span>
+      <span v-if="chainCount > 0" class="ew-graph-toolbar__badge">
+        {{ chainCount }} 条管线
+      </span>
     </div>
     <div class="ew-graph-toolbar__right">
       <div class="ew-graph-toolbar__add-menu">
@@ -39,9 +32,8 @@
 
 <script setup lang="ts">
 import { NODE_TYPE_DEFS, type NodeTypeName, type EwWorkflowGraph } from './graph-types';
-import { useGraphStore } from './graph-store';
 
-defineProps<{
+const props = defineProps<{
   graph: EwWorkflowGraph | null;
 }>();
 
@@ -49,17 +41,13 @@ const emit = defineEmits<{
   (event: 'add-node', type: NodeTypeName): void;
 }>();
 
-const graphStore = useGraphStore();
-const graphs = computed(() => graphStore.graphs);
-const activeGraphId = computed(() => graphStore.activeGraphId);
-
 const menuOpen = ref(false);
 const nodeTypes = Object.values(NODE_TYPE_DEFS);
 
-function onSelectGraph(e: Event) {
-  const target = e.target as HTMLSelectElement;
-  graphStore.setActiveGraph(target.value);
-}
+/** 统计图中的管线链数（= trigger 节点数） */
+const chainCount = computed(() =>
+  props.graph?.nodes.filter(n => n.type === 'trigger').length ?? 0,
+);
 
 function addNode(type: NodeTypeName) {
   emit('add-node', type);
@@ -90,25 +78,13 @@ function addNode(type: NodeTypeName) {
   white-space: nowrap;
 }
 
-.ew-graph-toolbar__select {
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+.ew-graph-toolbar__badge {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.45);
   background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 0.85rem;
-  outline: none;
-  cursor: pointer;
-  max-width: 200px;
-}
-
-.ew-graph-toolbar__select:focus {
-  border-color: rgba(255, 255, 255, 0.25);
-}
-
-.ew-graph-toolbar__select option {
-  background: #1a1e2e;
-  color: #e0e0e0;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .ew-graph-toolbar__right {
