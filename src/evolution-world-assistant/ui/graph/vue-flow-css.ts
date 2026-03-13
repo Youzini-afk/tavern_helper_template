@@ -243,14 +243,18 @@ const VUE_FLOW_CSS = `
 
 export function injectVueFlowCSS(): void {
   if (injected) return;
-  if (document.getElementById(VUE_FLOW_STYLE_ID)) {
-    injected = true;
-    return;
+  
+  let style = document.getElementById(VUE_FLOW_STYLE_ID) as HTMLStyleElement | null;
+  if (!style) {
+    style = document.createElement('style');
+    style.id = VUE_FLOW_STYLE_ID;
+    document.head.appendChild(style);
   }
-
-  const style = document.createElement('style');
-  style.id = VUE_FLOW_STYLE_ID;
-  style.textContent = VUE_FLOW_CSS;
-  document.head.appendChild(style);
+  
+  // 关键：如果样式内容不是最新的（例如 HMR 热更新或重新加载插件），则覆盖它
+  if (style.textContent !== VUE_FLOW_CSS) {
+    style.textContent = VUE_FLOW_CSS;
+  }
+  
   injected = true;
 }
