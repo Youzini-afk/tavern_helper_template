@@ -405,6 +405,10 @@
             </template>
           </template>
 
+          <template v-else-if="store.activeTab === 'graph'">
+            <EwGraphEditor />
+          </template>
+
           <template v-else-if="store.activeTab === 'history'">
             <EwHistoryPanel />
           </template>
@@ -433,10 +437,24 @@ import EwHistoryPanel from './components/EwHistoryPanel.vue';
 import EwPanelShell from './components/EwPanelShell.vue';
 import EwSectionCard from './components/EwSectionCard.vue';
 import { getFieldHelp, PANEL_TABS } from './help-meta';
+import EwGraphEditor from './graph/EwGraphEditor.vue';
+import { useGraphStore } from './graph/graph-store';
+import { migrateAllFlowConfigs } from './graph/migration';
 import { showEwNotice } from './notice';
 import { useEwStore } from './store';
 
 const store = useEwStore();
+const graphStore = useGraphStore();
+
+// 在首次切换到 graph tab 时，从现有 flows 迁移生成节点图
+watch(
+  () => store.activeTab,
+  (tab) => {
+    if (tab === 'graph' && graphStore.graphs.length === 0 && store.settings.flows.length > 0) {
+      graphStore.loadGraphs(migrateAllFlowConfigs(store.settings.flows));
+    }
+  },
+);
 const importFileInputRef = ref<HTMLInputElement | null>(null);
 const flowImportRef = ref<HTMLInputElement | null>(null);
 const migratingSnapshots = ref(false);
