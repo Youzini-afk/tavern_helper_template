@@ -42,9 +42,10 @@ import { VueFlow, ConnectionMode, type Connection } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { MiniMap } from '@vue-flow/minimap';
 import { Controls } from '@vue-flow/controls';
-// NOTE: Vue Flow CSS is NOT imported from node_modules because webpack
-// excludes node_modules from CSS loaders. We provide all necessary styles
-// via scoped CSS overrides below.
+import '@vue-flow/core/dist/style.css';
+import '@vue-flow/core/dist/theme-default.css';
+import '@vue-flow/minimap/dist/style.css';
+import '@vue-flow/controls/dist/style.css';
 
 import { useGraphStore } from './graph-store';
 import { NODE_TYPE_DEFS, type NodeTypeName } from './graph-types';

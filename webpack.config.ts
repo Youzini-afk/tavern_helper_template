@@ -348,6 +348,12 @@ function parse_configuration(entry: Entry): (_env: any, argv: any) => webpack.Co
           ].concat(
             entry.html === undefined
               ? ([
+                  // @vue-flow CSS — must come before the exclude: /node_modules/ rules
+                  {
+                    test: /\.css$/,
+                    include: /[\\/]node_modules[\\/]@vue-flow[\\/]/,
+                    use: ['style-loader', { loader: 'css-loader', options: { url: false } }],
+                  },
                   {
                     test: /\.vue\.s(a|c)ss$/,
                     use: [
@@ -384,6 +390,12 @@ function parse_configuration(entry: Entry): (_env: any, argv: any) => webpack.Co
                   },
                 ] as any[])
               : ([
+                  // @vue-flow CSS — must come before the exclude: /node_modules/ rules
+                  {
+                    test: /\.css$/,
+                    include: /[\\/]node_modules[\\/]@vue-flow[\\/]/,
+                    use: [MiniCssExtractPlugin.loader, { loader: 'css-loader', options: { url: false } }],
+                  },
                   {
                     test: /\.s(a|c)ss$/,
                     use: [
