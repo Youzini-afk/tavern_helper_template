@@ -955,7 +955,7 @@ export function showEwNotice(input: EwNoticeInput) {
 
 function applyWorkflowNoticeState(item: HTMLElement, input: EwWorkflowNoticeInput, progress: HTMLElement) {
   const level = input.level ?? 'info';
-  const hasPreview = Boolean(input.island?.entry_name?.trim() || input.island?.content?.trim());
+  const hasPreview = Boolean(input.island?.content?.trim());
 
   item.dataset.level = level;
   item.dataset.busy = input.busy ? 'true' : 'false';
