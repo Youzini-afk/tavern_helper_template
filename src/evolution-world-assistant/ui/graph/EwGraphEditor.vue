@@ -68,6 +68,7 @@ const nodeTypes = {
  */
 const vfNodes = ref<any[]>([]);
 const vfEdges = ref<any[]>([]);
+const canvasRef = ref<HTMLElement | null>(null);
 
 // 当 graph 数据加载时填充 Vue Flow
 watch(activeGraph, (graph) => {
@@ -93,6 +94,49 @@ watch(activeGraph, (graph) => {
     style: { stroke: 'rgba(255,255,255,0.3)', strokeWidth: 2 },
   }));
 }, { immediate: true });
+
+// ── 诊断：挂载后检查 Vue Flow DOM 状态 ──
+onMounted(() => {
+  setTimeout(() => {
+    const el = canvasRef.value;
+    if (!el) { console.warn('[EW graph] canvasRef is null'); return; }
+    const vf = el.querySelector('.vue-flow');
+    if (!vf) { console.warn('[EW graph] .vue-flow not found in canvas'); return; }
+    const cs = getComputedStyle(vf);
+    console.log('[EW graph] .vue-flow dimensions:', cs.width, cs.height, 'position:', cs.position, 'overflow:', cs.overflow);
+    const nodeEls = el.querySelectorAll('.vue-flow__node');
+    console.log('[EW graph] .vue-flow__node count:', nodeEls.length);
+    if (nodeEls.length > 0) {
+      const n0 = nodeEls[0] as HTMLElement;
+      const ncs = getComputedStyle(n0);
+      console.log('[EW graph] first node:', {
+        display: ncs.display,
+        visibility: ncs.visibility,
+        opacity: ncs.opacity,
+        width: ncs.width,
+        height: ncs.height,
+        position: ncs.position,
+        transform: n0.style.transform,
+        zIndex: ncs.zIndex,
+        innerHTML: n0.innerHTML.substring(0, 300),
+      });
+    }
+    // 检查 viewport 和 transformation pane
+    const viewport = el.querySelector('.vue-flow__viewport');
+    if (viewport) {
+      const vcs = getComputedStyle(viewport);
+      console.log('[EW graph] viewport:', vcs.width, vcs.height, 'overflow:', vcs.overflow);
+    }
+    const tp = el.querySelector('.vue-flow__transformationpane');
+    if (tp) {
+      const tcs = getComputedStyle(tp);
+      console.log('[EW graph] transformationpane:', 'transform:', (tp as HTMLElement).style.transform, 'zIndex:', tcs.zIndex);
+    }
+    // 检查 CSS 注入
+    const cssTag = document.getElementById('ew-vue-flow-css');
+    console.log('[EW graph] injected CSS tag exists:', !!cssTag);
+  }, 1500);
+});
 
 function onConnect(connection: Connection) {
   if (!connection.source || !connection.target) return;
