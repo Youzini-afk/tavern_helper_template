@@ -1171,7 +1171,7 @@ export async function rerollCurrentAfterReplyWorkflow(): Promise<{ ok: boolean; 
   const userInput = resolveAfterReplyUserInput();
   const rerollScope = settings.reroll_scope ?? 'all';
 
-  let flowIds: string[] | undefined;
+  let flowIds: string[] | undefined = afterReplyFlowIds;
   let preservedResults: FloorWorkflowStoredResult[] = [];
 
   if (rerollScope === 'failed_only') {
