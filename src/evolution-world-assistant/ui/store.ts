@@ -543,6 +543,67 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     }
   }
 
+  async function mergeFlowsToCard(flowIds: string[]) {
+    try {
+      const selected = settings.value.flows.filter(f => flowIds.includes(f.id));
+      if (selected.length === 0) {
+        showEwNotice({ title: 'Evolution World', message: '未选择任何工作流', level: 'warning' });
+        return;
+      }
+
+      // 读取角色卡已有工作流
+      const existing = await readCharFlows(settings.value);
+
+      // 合并：同名更新，新名追加
+      const merged = [...existing];
+      let updatedCount = 0;
+      let appendedCount = 0;
+
+      for (const flow of selected) {
+        const copy = klona(flow);
+        // 去除敏感字段（与 char-flows sanitizeFlow 一致）
+        delete (copy as any).api_url;
+        delete (copy as any).api_key;
+        delete (copy as any).headers_json;
+        delete (copy as any).api_preset_id;
+
+        const trimmedName = copy.name.trim();
+        const existingIndex = merged.findIndex(f => f.name.trim() === trimmedName);
+        if (existingIndex >= 0) {
+          // 同名更新：保留原有 ID
+          copy.id = merged[existingIndex].id;
+          merged[existingIndex] = copy;
+          updatedCount++;
+        } else {
+          // 新名追加：生成新 ID 避免冲突
+          copy.id = `${copy.id}_char_${Date.now()}`;
+          merged.push(copy);
+          appendedCount++;
+        }
+      }
+
+      await writeCharFlows(settings.value, merged);
+      charFlows.value = merged;
+      activeCharName.value = getCurrentCharacterName?.() ?? '';
+
+      const parts: string[] = [];
+      if (updatedCount > 0) parts.push(`更新 ${updatedCount} 条`);
+      if (appendedCount > 0) parts.push(`新增 ${appendedCount} 条`);
+      showEwNotice({
+        title: 'Evolution World',
+        message: `已写入角色卡工作流：${parts.join('，')}`,
+        level: 'success',
+      });
+    } catch (e) {
+      console.error('[Evolution World] mergeFlowsToCard failed:', e);
+      showEwNotice({
+        title: 'Evolution World',
+        message: '写入角色卡失败: ' + (e as Error).message,
+        level: 'error',
+      });
+    }
+  }
+
   function addCharFlow() {
     const apiPresets = settings.value.api_presets;
     if (apiPresets.length === 0) {
@@ -698,6 +759,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     closePanel,
     loadCharFlows,
     saveCharFlows,
+    mergeFlowsToCard,
     addCharFlow,
     duplicateCharFlow,
     removeCharFlow,
