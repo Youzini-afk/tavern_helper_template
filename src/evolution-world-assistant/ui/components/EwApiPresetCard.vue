@@ -133,19 +133,17 @@ async function loadModels() {
 
   loadingModels.value = true;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10_000);
+  const timeout = setTimeout(() => controller.abort(), 15_000);
 
   try {
-    // 根据 base URL 构建 /v1/models 端点
+    // 构建 models 端点 URL
     const base = apiurl.replace(/\/+$/, '');
     const modelsUrl = base.endsWith('/models') ? base : `${base}/models`;
 
-    // 合并默认和自定义请求头（与 dispatcher.ts 相同模式）
+    // 构建请求头
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
-
-    // 解析用户自定义请求头
     const headersJson = preset.value.headers_json?.trim();
     if (headersJson) {
       try {
@@ -154,33 +152,89 @@ async function loadModels() {
           Object.assign(headers, custom);
         }
       } catch {
-        // 非致命错误：自定义请求头解析失败
+        /* ignore */
       }
     }
-
     const apiKey = preset.value.api_key.trim();
     if (apiKey) {
       headers['Authorization'] = `Bearer ${apiKey}`;
     }
 
-    const resp = await fetch(modelsUrl, {
-      method: 'GET',
-      headers,
-      signal: controller.signal,
-    });
+    let json: any;
 
-    if (!resp.ok) {
-      throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+    // 策略1: 直接从浏览器 fetch（适用于公网 API）
+    try {
+      const resp = await fetch(modelsUrl, {
+        method: 'GET',
+        headers,
+        signal: controller.signal,
+      });
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+      }
+      json = await resp.json();
+    } catch (directError) {
+      // 策略2: 通过 ST 后端代理（适用于本地端口、CORS 限制的 API）
+      console.info(
+        `[EW] Direct model fetch failed (${directError instanceof Error ? directError.message : directError}), trying ST backend proxy…`,
+      );
+
+      // 获取 ST 请求头
+      const stHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+      const g = globalThis as Record<string, any>;
+      if (typeof g.SillyTavern?.getRequestHeaders === 'function') {
+        Object.assign(stHeaders, g.SillyTavern.getRequestHeaders());
+      }
+      stHeaders['Content-Type'] = 'application/json';
+
+      // 构建 custom_include_headers（将用户的 API key 和自定义头传给 ST 后端）
+      const includeHeaders = Object.entries(headers)
+        .filter(([k]) => k.toLowerCase() !== 'content-type')
+        .map(([k, v]) => `${k}: ${v}`)
+        .join('\n');
+
+      // 通过 ST 后端代理发送请求
+      // 使用 chat-completions/generate 端点 + 特殊的 model_list 模式
+      // ST 后端会将请求转发到 custom_url
+      const proxyResp = await fetch('/api/backends/chat-completions/models', {
+        method: 'POST',
+        headers: stHeaders,
+        body: JSON.stringify({
+          chat_completion_source: 'custom',
+          custom_url: modelsUrl,
+          custom_include_headers: includeHeaders,
+          reverse_proxy: modelsUrl,
+          proxy_password: '',
+        }),
+        signal: controller.signal,
+      });
+
+      if (proxyResp.ok) {
+        json = await proxyResp.json();
+      } else {
+        // 策略3: 通用 OpenAI 模型列表端点
+        const openaiProxyResp = await fetch('/api/backends/chat-completions/models', {
+          method: 'POST',
+          headers: stHeaders,
+          body: JSON.stringify({
+            chat_completion_source: 'openai',
+            reverse_proxy: apiurl,
+            proxy_password: apiKey,
+          }),
+          signal: controller.signal,
+        });
+        if (!openaiProxyResp.ok) {
+          throw new Error(
+            `本地端口加载失败。请确认: 1) API 服务已启动 2) URL 正确 (当前: ${modelsUrl})`,
+          );
+        }
+        json = await openaiProxyResp.json();
+      }
     }
 
-    const json = await resp.json();
-
-    // 支持多种响应格式：
-    // 1. OpenAI 标准: { data: [{ id: "model-name" }, ...] }
-    // 2. 纯数组: ["model-a", "model-b"]
-    // 3. 对象数组: [{ id: "model-name" }]
+    // 解析响应：支持多种格式
     let rawList: string[];
-    if (Array.isArray(json.data)) {
+    if (Array.isArray(json?.data)) {
       rawList = json.data.map((m: any) => String(m.id ?? m.name ?? '')).filter(Boolean);
     } else if (Array.isArray(json)) {
       rawList = json.map((m: any) => (typeof m === 'string' ? m : String(m.id ?? m.name ?? ''))).filter(Boolean);
@@ -198,7 +252,7 @@ async function loadModels() {
     toastr.success(`已加载 ${model_candidates.length} 个模型`, 'Evolution World');
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
-      toastr.error('加载模型超时 (10s)', 'Evolution World');
+      toastr.error('加载模型超时 (15s)', 'Evolution World');
     } else {
       const message = error instanceof Error ? error.message : String(error);
       toastr.error(`加载模型失败: ${message}`, 'Evolution World');
