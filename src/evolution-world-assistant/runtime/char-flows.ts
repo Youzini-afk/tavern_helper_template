@@ -138,11 +138,14 @@ export async function getEffectiveFlows(settings: EwSettings): Promise<EwFlowCon
 
   if (charFlows.length === 0) return globalFlows;
 
-  // 角色卡流 ID 集合，用于覆盖同 ID 全局流
+  // 角色卡流 ID 和 name 集合，用于覆盖同 ID 或同名的全局流
   const charFlowIds = new Set(charFlows.map(f => f.id));
+  const charFlowNames = new Set(charFlows.map(f => f.name.trim().toLowerCase()));
 
-  // 过滤掉被角色卡流覆盖的全局流
-  const filteredGlobal = globalFlows.filter(f => !charFlowIds.has(f.id));
+  // 过滤掉被角色卡流覆盖的全局流（ID 匹配 OR 名称匹配）
+  const filteredGlobal = globalFlows.filter(
+    f => !charFlowIds.has(f.id) && !charFlowNames.has(f.name.trim().toLowerCase()),
+  );
 
   // 给角色卡流加优先级偏移
   const boostedChar = charFlows.map(f => ({
