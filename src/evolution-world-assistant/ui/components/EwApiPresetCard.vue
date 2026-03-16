@@ -4,9 +4,9 @@
       <div class="ew-api-card__summary">
         <strong class="ew-api-card__name">{{ preset.name || `API配置 ${index + 1}` }}</strong>
         <div class="ew-api-card__chips">
-          <span class="ew-api-card__chip">{{ preset.mode === 'workflow_http' ? '自定义API' : '酒馆连接器' }}</span>
+          <span class="ew-api-card__chip">自定义API</span>
           <span class="ew-api-card__chip">
-            {{ preset.mode === 'workflow_http' ? `模型 ${preset.model || '未选'}` : '使用酒馆主API' }}
+            模型 {{ preset.model || '未选' }}
           </span>
           <span class="ew-api-card__chip">工作流引用 {{ bindCount }}</span>
         </div>
@@ -32,21 +32,7 @@
           <EwFieldRow label="预设名称">
             <input :value="preset.name" type="text" @input="setText('name', $event)" />
           </EwFieldRow>
-          <EwFieldRow label="API模式" :help="help('api_preset.mode')">
-            <select :value="preset.mode" @change="setMode">
-              <option value="workflow_http">自定义API</option>
-              <option value="llm_connector">酒馆连接器（主API）</option>
-            </select>
-          </EwFieldRow>
-
-          <div v-if="preset.mode === 'llm_connector'" class="ew-api-card__hint">
-            已启用酒馆连接器：将直接使用酒馆当前主 API 与当前模型，无需额外配置。
-          </div>
-
-          <EwFieldRow
-            v-if="preset.mode === 'workflow_http'"
-            label="API URL"
-          >
+          <EwFieldRow label="API URL">
             <input
               :value="preset.api_url"
               type="text"
@@ -55,14 +41,11 @@
             />
           </EwFieldRow>
 
-          <EwFieldRow
-            v-if="preset.mode === 'workflow_http'"
-            label="API Key"
-          >
+          <EwFieldRow label="API Key">
             <input :value="preset.api_key" type="password" @input="setText('api_key', $event)" />
           </EwFieldRow>
 
-          <EwFieldRow v-if="preset.mode === 'workflow_http'" label="模型">
+          <EwFieldRow label="模型">
             <div class="ew-api-card__model-wrap">
               <select
                 v-if="preset.model_candidates.length > 0"
@@ -98,7 +81,6 @@
 
 <script setup lang="ts">
 import type { EwApiPreset } from '../../runtime/types';
-import { getFieldHelp } from '../help-meta';
 import EwFieldRow from './EwFieldRow.vue';
 
 const props = defineProps<{
@@ -118,10 +100,6 @@ const emit = defineEmits<{
 const preset = computed(() => props.modelValue);
 const loadingModels = ref(false);
 const endpointSummary = computed(() => {
-  if (preset.value.mode === 'llm_connector') {
-    return '酒馆主API（自动使用当前配置）';
-  }
-
   const endpoint = preset.value.api_url.trim();
   const model = preset.value.model.trim() || '未选模型';
   if (!endpoint && !model) {
@@ -133,10 +111,6 @@ const endpointSummary = computed(() => {
   const merged = `${endpoint} / ${model}`;
   return merged.length <= 72 ? merged : `${merged.slice(0, 69)}...`;
 });
-
-function help(key: string) {
-  return getFieldHelp(key);
-}
 
 function patch(partial: Partial<EwApiPreset>) {
   emit('update:modelValue', {
@@ -150,23 +124,7 @@ function setText(key: 'name' | 'api_url' | 'api_key' | 'model' | 'headers_json',
   patch({ [key]: next } as Partial<EwApiPreset>);
 }
 
-function setMode(event: Event) {
-  const mode = (event.target as HTMLSelectElement).value;
-  if (mode !== 'workflow_http' && mode !== 'llm_connector') {
-    return;
-  }
-  patch({
-    mode,
-    use_main_api: mode === 'llm_connector',
-  });
-}
-
 async function loadModels() {
-  if (preset.value.mode === 'llm_connector') {
-    toastr.info('酒馆连接器模式使用酒馆主API，无需手动加载模型列表', 'Evolution World');
-    return;
-  }
-
   const apiurl = preset.value.api_url.trim();
   if (!apiurl) {
     toastr.warning('请先填写 API URL', 'Evolution World');

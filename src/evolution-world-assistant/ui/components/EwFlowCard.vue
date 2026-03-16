@@ -753,9 +753,6 @@ const endpointSummary = computed(() => {
   if (!preset) {
     return '未绑定API配置';
   }
-  if (preset.mode === 'llm_connector') {
-    return '酒馆主API（自动使用当前配置）';
-  }
   const endpoint = preset.api_url.trim();
   const model = preset.model.trim() || '未选模型';
   if (!endpoint && !model) {

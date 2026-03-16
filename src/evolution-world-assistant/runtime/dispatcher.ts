@@ -767,8 +767,7 @@ function resolveApiPreset(settings: EwSettings, flow: EwFlowConfig): EwApiPreset
     return {
       id: '__legacy__',
       name: '兼容旧配置',
-      mode: 'workflow_http',
-      use_main_api: false,
+      mode: 'workflow_http' as const,
       api_url: flow.api_url,
       api_key: flow.api_key,
       model: '',
@@ -1065,8 +1064,7 @@ async function executeFlow(
   const startedAt = Date.now();
   throwIfDispatchAborted(abortSignal, isCancelled);
   const apiPreset = resolveApiPreset(settings, flow);
-  const usesTavernMain = apiPreset.mode === 'llm_connector' || apiPreset.use_main_api;
-  const attemptApiUrl = usesTavernMain ? 'tavern://main_api' : apiPreset.api_url;
+  const attemptApiUrl = apiPreset.api_url;
   const generationId = `${requestId}:${flow.id}`;
   const streamEnabled = flow.generation_options.stream;
   let lastStreamSignature = '';
@@ -1120,58 +1118,19 @@ async function executeFlow(
     const body = applyTemplate(request as unknown as Record<string, any>, flow.request_template);
     const promptComponents = await promptComponentsPromise;
     const orderedPrompts = await buildOrderedPromptsForFlow(flow, promptComponents, body);
-    const mainApiStreamBridgeRequest =
-      usesTavernMain && streamEnabled ? buildMainApiStBackendRequestBody(flow, orderedPrompts) : null;
     const requestDebugBase = {
-      route: usesTavernMain
-        ? mainApiStreamBridgeRequest
-          ? '/api/backends/chat-completions/generate (main_api stream bridge)'
-          : 'generateRaw(main_api)'
-        : shouldUseGenerateRawCustomApi(apiPreset)
-          ? streamEnabled
-            ? '/api/backends/chat-completions/generate (custom_api stream bridge)'
-            : 'generateRaw(custom_api)'
-          : '/api/backends/chat-completions/generate',
+      route: shouldUseGenerateRawCustomApi(apiPreset)
+        ? streamEnabled
+          ? '/api/backends/chat-completions/generate (custom_api stream bridge)'
+          : 'generateRaw(custom_api)'
+        : '/api/backends/chat-completions/generate',
       flow_request: request,
       assembled_messages: orderedPrompts,
     };
-
     let response: NonNullable<DispatchFlowAttempt['response']>;
     let requestDebug = requestDebugBase as Record<string, any>;
 
-    if (usesTavernMain) {
-      if (mainApiStreamBridgeRequest) {
-        requestDebug = {
-          ...requestDebugBase,
-          transport_request: mainApiStreamBridgeRequest,
-        };
-        response = await executeFlowViaMainApiStBackend(
-          flow,
-          orderedPrompts,
-          emitStreamProgress,
-          abortSignal,
-          isCancelled,
-        );
-      } else {
-        requestDebug = {
-          ...requestDebugBase,
-          transport_request: {
-            generation_id: generationId,
-            should_stream: streamEnabled,
-            should_silence: true,
-            ordered_prompts: orderedPrompts,
-          },
-        };
-        response = await executeFlowViaLlmConnector(
-          flow,
-          orderedPrompts,
-          generationId,
-          streamEnabled ? emitStreamProgress : undefined,
-          abortSignal,
-          isCancelled,
-        );
-      }
-    } else if (shouldUseGenerateRawCustomApi(apiPreset)) {
+    if (shouldUseGenerateRawCustomApi(apiPreset)) {
       if (streamEnabled) {
         const streamBridgeRequest = buildCustomStBackendRequestBody(flow, apiPreset, orderedPrompts);
         requestDebug = {

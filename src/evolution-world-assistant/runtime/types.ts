@@ -3,8 +3,7 @@ import { TextSliceRuleSchema } from './contracts';
 export const EwApiPresetSchema = z.object({
   id: z.string().min(1),
   name: z.string().default('API配置'),
-  mode: z.enum(['workflow_http', 'llm_connector']).default('workflow_http'),
-  use_main_api: z.boolean().default(false),
+  mode: z.enum(['workflow_http']).default('workflow_http'),
   api_url: z.string().default(''),
   api_key: z.string().default(''),
   model: z.string().default(''),

@@ -7,7 +7,6 @@ export function createDefaultApiPreset(index: number): EwApiPreset {
     id,
     name: `API配置 ${index}`,
     mode: 'workflow_http',
-    use_main_api: false,
     api_url: '',
     api_key: '',
     model: '',
