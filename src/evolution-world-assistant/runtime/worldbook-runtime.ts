@@ -31,12 +31,15 @@ function toEntrySnapshot(entries: WorldbookEntry[]): Array<{ name: string; enabl
  *    if no primary worldbook exists.
  *
  * Strategy:
- *  1. Read the current character's bound worldbooks in order: primary, then additional.
+ *  1. Read bound worldbooks in order: character primary, character additional, chat-bound.
  *  2. Return the first worldbook that loads successfully.
- *  3. If no bound worldbook loads:
+ *  3. If no bound worldbook loads, try detached EW_<charName> if it already exists.
+ *  4. If still unavailable:
  *     a. autoCreate=false -> return null (no side effects).
- *     b. autoCreate=true and character has zero bindings -> create EW_charName and bind as primary.
- *     c. autoCreate=true but bindings exist (all unreadable) -> return null to avoid destructive rebinding.
+ *     b. autoCreate=true -> create detached EW_<charName> and return it.
+ *
+ * Note:
+ *  - This resolver must never modify binding state.
  */
 export async function resolveTargetWorldbook(
   _settings: EwSettings,
@@ -44,8 +47,15 @@ export async function resolveTargetWorldbook(
 ): Promise<TargetWorldbook | null> {
   const autoCreate = options?.autoCreate ?? false;
   const charWb = getCharWorldbookNames('current');
+  const chatBoundWorldbook = getChatWorldbookName('current');
+  const charName = getCurrentCharacterName() ?? 'unknown';
+  const autoName = `EW_${charName}`;
 
-  const candidateNames = _.uniq([...(charWb.primary ? [charWb.primary] : []), ...(charWb.additional ?? [])]);
+  const candidateNames = _.uniq([
+    ...(charWb.primary ? [charWb.primary] : []),
+    ...(charWb.additional ?? []),
+    ...(chatBoundWorldbook ? [chatBoundWorldbook] : []),
+  ]);
 
   for (const wbName of candidateNames) {
     try {
@@ -56,36 +66,29 @@ export async function resolveTargetWorldbook(
     }
   }
 
-  if (!autoCreate) {
-    return null;
-  }
-
-  // 已存在角色卡绑定但全部不可读：不自动改绑，避免破坏用户现有绑定。
+  // 只要存在绑定候选（角色或聊天），即使当前读取失败也不自动创建，
+  // 防止异常状态下误创建并引发“原绑定被挤掉”的连锁问题。
   if (candidateNames.length > 0) {
-    console.warn('[Evolution World] All bound worldbooks failed to load, skip auto-create to avoid rebinding');
     return null;
   }
 
-  // ── autoCreate=true 且角色卡无任何世界书绑定：创建 EW 书并绑定为 primary ──
-  const charName = getCurrentCharacterName() ?? 'unknown';
-  const autoName = `EW_${charName}`;
+  if (!autoCreate) {
+    try {
+      const entries = await getWorldbook(autoName);
+      return { worldbook_name: autoName, entries, created: false };
+    } catch {
+      return null;
+    }
+  }
 
-  let exists = false;
   try {
-    await getWorldbook(autoName);
-    exists = true;
+    const entries = await getWorldbook(autoName);
+    return { worldbook_name: autoName, entries, created: false };
   } catch {
-    exists = false;
+    // not found, will create below
   }
 
-  if (!exists) {
-    await createWorldbook(autoName, []);
-  }
-
-  await rebindCharWorldbooks('current', {
-    primary: autoName,
-    additional: [],
-  });
+  await createWorldbook(autoName, []);
 
   const entries = await getWorldbook(autoName);
   return { worldbook_name: autoName, entries, created: true };
