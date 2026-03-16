@@ -427,9 +427,7 @@
           <button type="button" class="ew-modal__close" @click="showWriteToCardModal = false">✕</button>
         </header>
         <div class="ew-modal__body">
-          <p class="ew-modal__hint">
-            同名工作流将更新，新工作流将追加。已有角色卡工作流不受影响。
-          </p>
+          <p class="ew-modal__hint">同名工作流将更新，新工作流将追加。已有角色卡工作流不受影响。</p>
           <label class="ew-write-card-item ew-write-card-item--all">
             <input
               type="checkbox"
@@ -440,11 +438,7 @@
             <span>全选 / 取消全选</span>
           </label>
           <div class="ew-write-card-list">
-            <label
-              v-for="flow in store.settings.flows"
-              :key="flow.id"
-              class="ew-write-card-item"
-            >
+            <label v-for="flow in store.settings.flows" :key="flow.id" class="ew-write-card-item">
               <input
                 type="checkbox"
                 :checked="writeToCardSelection.has(flow.id)"
@@ -504,9 +498,7 @@ const writeToCardBusy = ref(false);
 
 function openWriteToCardModal() {
   // 默认选中所有已启用的工作流
-  writeToCardSelection.value = new Set(
-    store.settings.flows.filter(f => f.enabled).map(f => f.id),
-  );
+  writeToCardSelection.value = new Set(store.settings.flows.filter(f => f.enabled).map(f => f.id));
   showWriteToCardModal.value = true;
 }
 
@@ -840,7 +832,7 @@ function scheduleControllerEntryRename(
       }
 
       const { resolveTargetWorldbook } = await import('../runtime/worldbook-runtime');
-      const target = await resolveTargetWorldbook(store.settings, { autoCreate: true });
+      const target = await resolveTargetWorldbook(store.settings);
       if (!target) return;
       const entries = klona(target.entries);
       const entriesByOriginalName = new Map<string, any>();
@@ -2301,7 +2293,9 @@ body:has(.theme-moon-phase) .ew-flow-scope-tab--active {
   border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 20%, transparent);
   background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 6%, rgba(0, 0, 0, 0.12));
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .ew-write-card-item:hover {
