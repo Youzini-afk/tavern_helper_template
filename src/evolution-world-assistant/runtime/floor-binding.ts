@@ -309,7 +309,7 @@ export async function collectLatestSnapshots(): Promise<{
  *   Switch back   → old chat's snapshots survive → full restore
  */
 export async function purgeAndRestoreForChat(settings: EwSettings): Promise<void> {
-  const target = await resolveTargetWorldbook(settings, { autoCreate: true });
+  const target = await resolveTargetWorldbook(settings);
   if (!target) {
     console.info('[Evolution World] purgeAndRestore: no worldbook available, skipping');
     return;
@@ -593,7 +593,7 @@ async function restoreWorldbookFromSnapshots(
   }
 
   // Apply to worldbook (same pattern as purgeAndRestoreForChat)
-  const target = await resolveTargetWorldbook(settings, { autoCreate: true });
+  const target = await resolveTargetWorldbook(settings);
   if (!target) {
     console.info('[Evolution World] restoreWorldbookFromSnapshots: no worldbook available, skipping');
     return;

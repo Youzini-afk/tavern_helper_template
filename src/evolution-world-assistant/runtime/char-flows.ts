@@ -9,7 +9,7 @@
  */
 
 import { EwFlowConfig, EwFlowConfigSchema, EwSettings } from './types';
-import { resolveTargetWorldbook, ensureDefaultEntry } from './worldbook-runtime';
+import { ensureDefaultEntry, resolveTargetWorldbook } from './worldbook-runtime';
 
 /** 角色卡工作流在世界书中的条目名称 */
 export const CHAR_FLOWS_ENTRY_NAME = 'EW/Flows';
@@ -90,11 +90,8 @@ export async function readCharFlows(settings: EwSettings): Promise<EwFlowConfig[
  * 将工作流配置写入当前角色卡世界书的 EW/Flows 条目。
  * 自动过滤敏感字段（api_url、api_key）。
  */
-export async function writeCharFlows(
-  settings: EwSettings,
-  flows: EwFlowConfig[],
-): Promise<void> {
-  const target = await resolveTargetWorldbook(settings, { autoCreate: true });
+export async function writeCharFlows(settings: EwSettings, flows: EwFlowConfig[]): Promise<void> {
+  const target = await resolveTargetWorldbook(settings);
   if (!target) {
     throw new Error('Cannot resolve target worldbook for writing — no worldbook available');
   }
@@ -117,7 +114,7 @@ export async function writeCharFlows(
       content,
       false, // disabled
       nextEntries,
-      true,  // constant
+      true, // constant
     );
     nextEntries.push(newEntry);
   }

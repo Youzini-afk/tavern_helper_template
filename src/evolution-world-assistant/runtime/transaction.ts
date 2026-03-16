@@ -68,7 +68,7 @@ export async function commitMergedPlan(
   _requestId: string,
   messageId: number,
 ): Promise<CommitResult> {
-  const target = await resolveTargetWorldbook(settings, { autoCreate: true });
+  const target = await resolveTargetWorldbook(settings);
   if (!target) {
     throw new Error('Cannot resolve target worldbook — no worldbook available');
   }

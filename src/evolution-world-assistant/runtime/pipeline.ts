@@ -13,6 +13,7 @@ import {
   RunSummarySchema,
   WorkflowProgressUpdate,
 } from './types';
+import { resolveTargetWorldbook } from './worldbook-runtime';
 
 type RunWorkflowInput = {
   message_id: number;
@@ -124,6 +125,12 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
       request_id: requestId,
       message: '正在准备工作流上下文…',
     });
+
+    const targetWorldbook = await resolveTargetWorldbook(settings);
+    if (!targetWorldbook) {
+      throw new Error('EW requires a bound worldbook on current character. Please bind one before running workflows.');
+    }
+
     // Merge global flows + per-character flows (from EW/Flows worldbook entry).
     const allEnabledFlows = await getEffectiveFlows(settings);
     const selectedFlowIds = new Set((input.flow_ids ?? []).filter(Boolean));

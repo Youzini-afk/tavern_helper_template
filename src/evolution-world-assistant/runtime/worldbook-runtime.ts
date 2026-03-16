@@ -26,36 +26,15 @@ function toEntrySnapshot(entries: WorldbookEntry[]): Array<{ name: string; enabl
 /**
  * Resolve the target worldbook for reading EW entries.
  *
- * Options:
- *  - autoCreate (default false): when true, auto-create an EW worldbook
- *    if no primary worldbook exists.
- *
  * Strategy:
- *  1. Read bound worldbooks in order: character primary, character additional, chat-bound.
+ *  1. Read bound worldbooks in order: character primary, character additional.
  *  2. Return the first worldbook that loads successfully.
- *  3. If no bound worldbook loads, try detached EW_<charName> if it already exists.
- *  4. If still unavailable:
- *     a. autoCreate=false -> return null (no side effects).
- *     b. autoCreate=true -> create detached EW_<charName> and return it.
- *
- * Note:
- *  - This resolver must never modify binding state.
+ *  3. If no bound worldbook loads, return null.
  */
-export async function resolveTargetWorldbook(
-  _settings: EwSettings,
-  options?: { autoCreate?: boolean },
-): Promise<TargetWorldbook | null> {
-  const autoCreate = options?.autoCreate ?? false;
+export async function resolveTargetWorldbook(_settings: EwSettings): Promise<TargetWorldbook | null> {
   const charWb = getCharWorldbookNames('current');
-  const chatBoundWorldbook = getChatWorldbookName('current');
-  const charName = getCurrentCharacterName() ?? 'unknown';
-  const autoName = `EW_${charName}`;
 
-  const candidateNames = _.uniq([
-    ...(charWb.primary ? [charWb.primary] : []),
-    ...(charWb.additional ?? []),
-    ...(chatBoundWorldbook ? [chatBoundWorldbook] : []),
-  ]);
+  const candidateNames = _.uniq([...(charWb.primary ? [charWb.primary] : []), ...(charWb.additional ?? [])]);
 
   for (const wbName of candidateNames) {
     try {
@@ -66,32 +45,7 @@ export async function resolveTargetWorldbook(
     }
   }
 
-  // 只要存在绑定候选（角色或聊天），即使当前读取失败也不自动创建，
-  // 防止异常状态下误创建并引发“原绑定被挤掉”的连锁问题。
-  if (candidateNames.length > 0) {
-    return null;
-  }
-
-  if (!autoCreate) {
-    try {
-      const entries = await getWorldbook(autoName);
-      return { worldbook_name: autoName, entries, created: false };
-    } catch {
-      return null;
-    }
-  }
-
-  try {
-    const entries = await getWorldbook(autoName);
-    return { worldbook_name: autoName, entries, created: false };
-  } catch {
-    // not found, will create below
-  }
-
-  await createWorldbook(autoName, []);
-
-  const entries = await getWorldbook(autoName);
-  return { worldbook_name: autoName, entries, created: true };
+  return null;
 }
 
 /**
