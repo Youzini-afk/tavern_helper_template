@@ -60,10 +60,17 @@ export async function readCharFlows(settings: EwSettings): Promise<EwFlowConfig[
       return [];
     }
 
+    const defaultPresetId = settings.api_presets[0]?.id ?? '';
     const result: EwFlowConfig[] = [];
     for (const raw of (parsed as CharFlowsPayload).flows) {
       try {
-        result.push(EwFlowConfigSchema.parse(raw));
+        const flow = EwFlowConfigSchema.parse(raw);
+        // 角色卡流写入时会清空 api_preset_id（安全考虑），
+        // 读回时自动绑定第一个全局 API 预设
+        if (!flow.api_preset_id && defaultPresetId) {
+          flow.api_preset_id = defaultPresetId;
+        }
+        result.push(flow);
       } catch {
         // 跳过无效条目
         console.warn('[Evolution World] skipped invalid char flow entry');
