@@ -68,7 +68,10 @@ export async function commitMergedPlan(
   _requestId: string,
   messageId: number,
 ): Promise<CommitResult> {
-  const target = await resolveTargetWorldbook(settings);
+  const target = await resolveTargetWorldbook(settings, { autoCreate: true });
+  if (!target) {
+    throw new Error('Cannot resolve target worldbook — no worldbook available');
+  }
   const beforeEntries = target.entries;
   const chatId = String(SillyTavern.getCurrentChatId?.() ?? SillyTavern.chatId ?? 'unknown');
 

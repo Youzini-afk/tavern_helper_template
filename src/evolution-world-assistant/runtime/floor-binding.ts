@@ -253,7 +253,7 @@ export async function collectLatestSnapshots(): Promise<{
 }> {
   const lastId = getLastMessageId();
   if (lastId < 0) {
-    return { controllers: {}, dyn: new Map() };
+    return { controllers: [], dyn: new Map() };
   }
 
   const allMessages = getChatMessages(`0-${lastId}`);
@@ -309,7 +309,11 @@ export async function collectLatestSnapshots(): Promise<{
  *   Switch back   → old chat's snapshots survive → full restore
  */
 export async function purgeAndRestoreForChat(settings: EwSettings): Promise<void> {
-  const target = await resolveTargetWorldbook(settings);
+  const target = await resolveTargetWorldbook(settings, { autoCreate: true });
+  if (!target) {
+    console.info('[Evolution World] purgeAndRestore: no worldbook available, skipping');
+    return;
+  }
 
   // Step 1: Remove all EW/Dyn/* entries and clear all EW/Controller/* entries.
   const nextEntries = klona(target.entries).filter(entry => !entry.name.startsWith(settings.dynamic_entry_prefix));
@@ -589,7 +593,11 @@ async function restoreWorldbookFromSnapshots(
   }
 
   // Apply to worldbook (same pattern as purgeAndRestoreForChat)
-  const target = await resolveTargetWorldbook(settings);
+  const target = await resolveTargetWorldbook(settings, { autoCreate: true });
+  if (!target) {
+    console.info('[Evolution World] restoreWorldbookFromSnapshots: no worldbook available, skipping');
+    return;
+  }
   const nextEntries = klona(target.entries).filter(entry => !entry.name.startsWith(settings.dynamic_entry_prefix));
 
   // Clear all existing controller entries.

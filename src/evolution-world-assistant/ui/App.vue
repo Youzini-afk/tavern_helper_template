@@ -840,7 +840,8 @@ function scheduleControllerEntryRename(
       }
 
       const { resolveTargetWorldbook } = await import('../runtime/worldbook-runtime');
-      const target = await resolveTargetWorldbook(store.settings);
+      const target = await resolveTargetWorldbook(store.settings, { autoCreate: true });
+      if (!target) return;
       const entries = klona(target.entries);
       const entriesByOriginalName = new Map<string, any>();
       for (const entry of entries) {

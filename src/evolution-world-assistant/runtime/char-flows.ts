@@ -47,6 +47,7 @@ function sanitizeFlow(flow: EwFlowConfig): Record<string, unknown> {
 export async function readCharFlows(settings: EwSettings): Promise<EwFlowConfig[]> {
   try {
     const target = await resolveTargetWorldbook(settings);
+    if (!target) return [];
     const entry = target.entries.find(e => e.name === CHAR_FLOWS_ENTRY_NAME);
     if (!entry) return [];
 
@@ -93,7 +94,10 @@ export async function writeCharFlows(
   settings: EwSettings,
   flows: EwFlowConfig[],
 ): Promise<void> {
-  const target = await resolveTargetWorldbook(settings);
+  const target = await resolveTargetWorldbook(settings, { autoCreate: true });
+  if (!target) {
+    throw new Error('Cannot resolve target worldbook for writing — no worldbook available');
+  }
 
   const payload: CharFlowsPayload = {
     ew_char_flows: true,

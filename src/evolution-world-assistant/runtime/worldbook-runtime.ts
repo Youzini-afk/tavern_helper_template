@@ -24,16 +24,24 @@ function toEntrySnapshot(entries: WorldbookEntry[]): Array<{ name: string; enabl
 }
 
 /**
- * Resolve the target worldbook for writing EW/Dyn/ entries and EW/Controller.
+ * Resolve the target worldbook for reading EW entries.
+ *
+ * Options:
+ *  - autoCreate (default false): when true, auto-create an EW worldbook
+ *    if no primary worldbook exists.
  *
  * Strategy:
  *  1. Read the current character's primary worldbook — if it exists and loads, use it directly.
- *  2. If primary exists but fails to load, still DON'T override it. Instead, create/find
- *     an EW auxiliary worldbook and add it to `additional` books.
- *  3. If NO primary worldbook is set at all, auto-create one and set it as primary
- *     (this is the only case where we set primary).
+ *  2. If autoCreate is false and no primary loads, return null (no side effects).
+ *  3. If autoCreate is true:
+ *     a. If NO primary worldbook is set at all, auto-create EW_charName and set as primary.
+ *     b. If primary is set but fails to load, create EW_charName in `additional` (preserve primary).
  */
-export async function resolveTargetWorldbook(_settings: EwSettings): Promise<TargetWorldbook> {
+export async function resolveTargetWorldbook(
+  _settings: EwSettings,
+  options?: { autoCreate?: boolean },
+): Promise<TargetWorldbook | null> {
+  const autoCreate = options?.autoCreate ?? false;
   const charWb = getCharWorldbookNames('current');
 
   // ── Case 1: Primary worldbook exists and loads → use it directly ──
@@ -43,14 +51,22 @@ export async function resolveTargetWorldbook(_settings: EwSettings): Promise<Tar
       return { worldbook_name: charWb.primary, entries, created: false };
     } catch {
       // Primary worldbook name is set but fails to load.
-      // DO NOT override the primary — create/use an EW auxiliary book instead.
+      if (!autoCreate) {
+        console.debug(
+          `[Evolution World] Primary worldbook "${charWb.primary}" failed to load, skipping (autoCreate=false)`,
+        );
+        return null;
+      }
       console.warn(
         `[Evolution World] Primary worldbook "${charWb.primary}" failed to load, using EW auxiliary book`,
       );
     }
+  } else if (!autoCreate) {
+    // No primary worldbook and autoCreate is false → return null
+    return null;
   }
 
-  // ── Case 2 & 3: Need an EW worldbook ──
+  // ── Case 2 & 3: autoCreate=true, need an EW worldbook ──
   const charName = getCurrentCharacterName() ?? 'unknown';
   const autoName = `EW_${charName}`;
 
@@ -67,7 +83,7 @@ export async function resolveTargetWorldbook(_settings: EwSettings): Promise<Tar
   }
 
   // Only set as primary if the character has NO worldbook at all.
-  // If primary already exists (but failed to load), add EW book to additional list.
+  // If primary already exists (but failed to load), add EW book to additional.
   if (!charWb.primary) {
     // No primary → safe to set EW book as primary
     await rebindCharWorldbooks('current', {

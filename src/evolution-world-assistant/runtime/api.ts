@@ -26,6 +26,9 @@ async function validateControllerSyntax(): Promise<{ ok: boolean; reason?: strin
   try {
     const settings = getSettings();
     const target = await resolveTargetWorldbook(settings);
+    if (!target) {
+      return { ok: false, reason: 'no worldbook found for current character' };
+    }
     const controllerEntries = target.entries.filter(entry => entry.name.startsWith(settings.controller_entry_prefix));
     if (controllerEntries.length === 0) {
       return { ok: false, reason: `no controller entries found with prefix: ${settings.controller_entry_prefix}` };
