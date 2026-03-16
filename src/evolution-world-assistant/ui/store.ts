@@ -319,10 +319,35 @@ export const useEwStore = defineStore('evolution-world-store', () => {
       (flow as any).api_preset_id = '';
     }
     const payload = JSON.stringify(safeSettings, null, 2);
-    navigator.clipboard
-      .writeText(payload)
-      .then(() => toastr.success('配置已复制到剪贴板（已去除 API 密钥）', 'Evolution World'))
-      .catch(() => toastr.error('复制配置失败', 'Evolution World'));
+    const blob = new Blob([payload], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ew_config_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toastr.success('配置已导出为文件（已去除 API 密钥）', 'Evolution World');
+  }
+
+  /**
+   * 预处理导入数据：兼容旧版配置中已删除的字段。
+   * - api_presets[].mode: 'llm_connector' → 'workflow_http'
+   * - api_presets[].use_main_api: 删除
+   */
+  function sanitizeImportData(data: any): any {
+    if (!data || typeof data !== 'object') return data;
+    const clone = klona(data);
+    if (Array.isArray(clone.api_presets)) {
+      for (const preset of clone.api_presets) {
+        if (preset.mode === 'llm_connector') {
+          preset.mode = 'workflow_http';
+        }
+        delete preset.use_main_api;
+      }
+    }
+    return clone;
   }
 
   function importConfig() {
@@ -338,9 +363,9 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     }
 
     try {
-      const parsed = JSON.parse(importText.value);
-      // CR-2: 替换前先校验 schema，确保无效 JSON 被明确捕获。
-      EwSettingsSchema.parse(parsed);
+      const raw = JSON.parse(importText.value);
+      const sanitized = sanitizeImportData(raw);
+      const parsed = EwSettingsSchema.parse(sanitized);
       replaceSettings(parsed as EwSettings);
       settings.value = getSettings();
       showEwNotice({
@@ -467,18 +492,25 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   }
 
   function validateConfig() {
-    const result = window.EvolutionWorldAPI?.validateConfig();
-    if (!result) {
-      toastr.error('EvolutionWorldAPI not ready', 'Evolution World');
-      return;
+    try {
+      const result = EwSettingsSchema.safeParse(settings.value);
+      if (result.success) {
+        toastr.success('配置校验通过 ✓', 'Evolution World');
+        showEwNotice({ title: '校验', message: '当前配置合法、完整。', level: 'success' });
+        return;
+      }
+      const errors = result.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`);
+      toastr.error(`配置校验失败 (${errors.length} 项)`, 'Evolution World');
+      showEwNotice({
+        title: '校验失败',
+        message: errors.join('\n'),
+        level: 'error',
+        duration_ms: 6000,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toastr.error(`校验异常: ${msg}`, 'Evolution World');
     }
-
-    if (result.ok) {
-      toastr.success('配置校验通过 ✓', 'Evolution World');
-      return;
-    }
-
-    toastr.error(result.errors.join('\n'), 'Evolution World');
   }
 
   async function validateControllerSyntax() {
