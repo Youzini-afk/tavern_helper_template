@@ -266,6 +266,9 @@ export const EwSettingsSchema = z.object({
   enabled: z.boolean().default(false),
   total_timeout_ms: z.coerce.number().int().positive().default(300000),
   dispatch_mode: z.enum(['parallel', 'serial']).default('parallel'),
+  after_reply_delay_seconds: z.coerce.number().min(0).default(0),
+  parallel_dispatch_interval_seconds: z.coerce.number().min(0).default(10),
+  serial_dispatch_interval_seconds: z.coerce.number().min(0).default(2),
   workflow_timing: z.enum(['after_reply', 'before_reply']).default('after_reply'),
   reroll_scope: z.enum(['all', 'failed_only']).default('all'),
   failure_policy: z

@@ -199,6 +199,33 @@
                     <option value="before_reply">回复前拦截</option>
                   </select>
                 </EwFieldRow>
+                <EwFieldRow label="回复后延迟(秒)" :help="help('after_reply_delay_seconds')">
+                  <input
+                    v-model.number="store.settings.after_reply_delay_seconds"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    :placeholder="help('after_reply_delay_seconds')?.placeholder"
+                  />
+                </EwFieldRow>
+                <EwFieldRow label="并行间隔(秒)" :help="help('parallel_dispatch_interval_seconds')">
+                  <input
+                    v-model.number="store.settings.parallel_dispatch_interval_seconds"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    :placeholder="help('parallel_dispatch_interval_seconds')?.placeholder"
+                  />
+                </EwFieldRow>
+                <EwFieldRow label="串行间隔(秒)" :help="help('serial_dispatch_interval_seconds')">
+                  <input
+                    v-model.number="store.settings.serial_dispatch_interval_seconds"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    :placeholder="help('serial_dispatch_interval_seconds')?.placeholder"
+                  />
+                </EwFieldRow>
                 <EwFieldRow label="失败策略" :help="help('failure_policy')">
                   <select v-model="store.settings.failure_policy">
                     <option value="stop_generation">失败即中止发送</option>

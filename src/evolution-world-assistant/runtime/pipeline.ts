@@ -123,6 +123,23 @@ function throwIfWorkflowCancelled(input: Pick<RunWorkflowInput, 'abortSignal' | 
   }
 }
 
+async function waitWithCancellation(
+  ms: number,
+  input: Pick<RunWorkflowInput, 'abortSignal' | 'isCancelled'>,
+): Promise<void> {
+  if (ms <= 0) {
+    return;
+  }
+
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < ms) {
+    throwIfWorkflowCancelled(input);
+    const remaining = ms - (Date.now() - startedAt);
+    await new Promise(resolve => setTimeout(resolve, Math.min(remaining, 200)));
+  }
+  throwIfWorkflowCancelled(input);
+}
+
 export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowOutput> {
   const startedAt = Date.now();
   const settings = getSettings();
@@ -173,6 +190,16 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
         };
       }
       throw new Error('no enabled flows');
+    }
+
+    const afterReplyDelayMs = Math.max(0, Math.round((settings.after_reply_delay_seconds ?? 0) * 1000));
+    if (input.timing_filter === 'after_reply' && afterReplyDelayMs > 0) {
+      input.onProgress?.({
+        phase: 'dispatching',
+        request_id: requestId,
+        message: `AI 回复已完成，等待 ${settings.after_reply_delay_seconds} 秒后开始执行工作流…`,
+      });
+      await waitWithCancellation(afterReplyDelayMs, input);
     }
 
     throwIfWorkflowCancelled(input);

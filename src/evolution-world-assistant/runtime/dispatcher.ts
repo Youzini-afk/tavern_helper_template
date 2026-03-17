@@ -108,6 +108,21 @@ function throwIfDispatchAborted(signal?: AbortSignal, isCancelled?: () => boolea
   }
 }
 
+async function waitDispatchDelay(ms: number, signal?: AbortSignal, isCancelled?: () => boolean): Promise<void> {
+  if (ms <= 0) {
+    return;
+  }
+
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < ms) {
+    throwIfDispatchAborted(signal, isCancelled);
+    const remaining = ms - (Date.now() - startedAt);
+    await new Promise(resolve => setTimeout(resolve, Math.min(remaining, 200)));
+  }
+
+  throwIfDispatchAborted(signal, isCancelled);
+}
+
 function buildTemplateContext(base: Record<string, any>): Record<string, any> {
   const userInput = typeof base.user_input === 'string' ? base.user_input : '';
   return _.merge({}, base, {
@@ -1245,12 +1260,27 @@ export async function dispatchFlows(input: DispatchInput): Promise<DispatchFlows
     throw new Error('no enabled flows');
   }
 
+  const serialIntervalMs = Math.max(0, Math.round((input.settings.serial_dispatch_interval_seconds ?? 0) * 1000));
+  const parallelIntervalMs = Math.max(0, Math.round((input.settings.parallel_dispatch_interval_seconds ?? 0) * 1000));
+
   if (input.settings.dispatch_mode === 'serial') {
     const serialResults: Record<string, any>[] = [];
     const attempts: DispatchFlowAttempt[] = [];
     const outputs: DispatchFlowResult[] = [];
 
     for (const [index, flow] of flows.entries()) {
+      if (index > 0 && serialIntervalMs > 0) {
+        input.onProgress?.({
+          phase: 'dispatching',
+          request_id: input.request_id,
+          flow_id: flow.id,
+          flow_name: flow.name,
+          flow_order: index,
+          message: `串行调度等待 ${input.settings.serial_dispatch_interval_seconds} 秒后发出下一条工作流…`,
+        });
+        await waitDispatchDelay(serialIntervalMs, input.abortSignal, input.isCancelled);
+      }
+
       throwIfDispatchAborted(input.abortSignal, input.isCancelled);
       const attempt = await executeFlow(
         input.settings,
@@ -1290,8 +1320,21 @@ export async function dispatchFlows(input: DispatchInput): Promise<DispatchFlows
   }
 
   const attempts = await Promise.all(
-    flows.map((flow, index) =>
-      executeFlow(
+    flows.map(async (flow, index) => {
+      const delayMs = parallelIntervalMs * index;
+      if (delayMs > 0) {
+        input.onProgress?.({
+          phase: 'dispatching',
+          request_id: input.request_id,
+          flow_id: flow.id,
+          flow_name: flow.name,
+          flow_order: index,
+          message: `并行调度错峰中：工作流「${flow.name || flow.id}」将在 ${delayMs / 1000} 秒后发出…`,
+        });
+        await waitDispatchDelay(delayMs, input.abortSignal, input.isCancelled);
+      }
+
+      return executeFlow(
         input.settings,
         flow,
         index,
@@ -1303,8 +1346,8 @@ export async function dispatchFlows(input: DispatchInput): Promise<DispatchFlows
         input.abortSignal,
         input.isCancelled,
         input.onProgress,
-      ),
-    ),
+      );
+    }),
   );
 
   throwIfDispatchAborted(input.abortSignal, input.isCancelled);
