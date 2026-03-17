@@ -302,29 +302,30 @@
             <EwSectionCard title="隐藏设置" subtitle="批量隐藏旧楼层（节省 tokens）或限制界面渲染数量（提升流畅度）。">
               <div class="ew-grid two">
                 <EwFieldRow label="隐藏楼层">
-                  <button
-                    type="button"
-                    class="ew-switch"
-                    role="switch"
-                    :aria-checked="store.settings.hide_settings.enabled ? 'true' : 'false'"
-                    @click="store.settings.hide_settings.enabled = !store.settings.hide_settings.enabled"
-                  >
-                    <span class="ew-switch__track" :data-enabled="store.settings.hide_settings.enabled ? '1' : '0'">
-                      <span class="ew-switch__thumb" />
-                    </span>
-                    <span class="ew-switch__text">{{
-                      store.settings.hide_settings.enabled ? '已开启' : '已关闭'
-                    }}</span>
-                  </button>
-                </EwFieldRow>
-                <EwFieldRow label="保留最新 N 条">
-                  <input
-                    v-model.number="store.settings.hide_settings.hide_last_n"
-                    type="number"
-                    min="0"
-                    step="1"
-                    placeholder="0 表示不隐藏"
-                  />
+                  <div style="display: flex; align-items: center; gap: 0.6rem">
+                    <button
+                      type="button"
+                      class="ew-switch"
+                      role="switch"
+                      :aria-checked="store.settings.hide_settings.enabled ? 'true' : 'false'"
+                      @click="store.settings.hide_settings.enabled = !store.settings.hide_settings.enabled"
+                    >
+                      <span class="ew-switch__track" :data-enabled="store.settings.hide_settings.enabled ? '1' : '0'">
+                        <span class="ew-switch__thumb" />
+                      </span>
+                      <span class="ew-switch__text">{{
+                        store.settings.hide_settings.enabled ? '已开启' : '已关闭'
+                      }}</span>
+                    </button>
+                    <input
+                      v-model.number="store.settings.hide_settings.hide_last_n"
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="保留最新 N 条"
+                      style="flex: 1; min-width: 80px"
+                    />
+                  </div>
                 </EwFieldRow>
                 <EwFieldRow label="限制楼层渲染">
                   <div style="display: flex; align-items: center; gap: 0.6rem">
