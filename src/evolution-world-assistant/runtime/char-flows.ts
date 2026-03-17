@@ -4,8 +4,8 @@
  * 将工作流配置序列化到角色卡世界书的 `EW/Flows` 条目中，
  * 使工作流随角色卡导出/导入。
  *
- * 数据安全：EW/Flows 条目中不存储 API 配置（URL/Key/Model），
- * 角色卡工作流仅通过 api_preset_id 引用全局 API 预设。
+ * 数据安全：EW/Flows 条目中不存储 API 密钥 / URL / headers，
+ * 但会保留 api_preset_id，用于在刷新后继续绑定到同一个全局 API 预设。
  */
 
 import { EwFlowConfig, EwFlowConfigSchema, EwSettings } from './types';
@@ -23,7 +23,11 @@ interface CharFlowsPayload {
 // ── 敏感字段过滤 ────────────────────────────────────────────
 
 /** 写入 EW/Flows 时排除的字段（敏感 / 仅本地） */
-const EXCLUDED_FIELDS = new Set(['api_url', 'api_key', 'headers_json', 'api_preset_id']);
+const EXCLUDED_FIELDS = new Set(['api_url', 'api_key', 'headers_json']);
+
+function normalizeFlowName(name: string): string {
+  return name.trim().toLowerCase();
+}
 
 /**
  * 从 flow 配置中去除敏感字段，返回安全的纯数据对象。
@@ -62,14 +66,25 @@ export async function readCharFlows(settings: EwSettings): Promise<EwFlowConfig[
     }
 
     const defaultPresetId = settings.api_presets[0]?.id ?? '';
+    const presetIds = new Set(settings.api_presets.map(preset => preset.id));
+    const globalPresetIdByName = new Map(
+      settings.flows
+        .map(flow => [normalizeFlowName(flow.name), flow.api_preset_id])
+        .filter((entry): entry is [string, string] => Boolean(entry[1])),
+    );
     const result: EwFlowConfig[] = [];
     for (const raw of (parsed as CharFlowsPayload).flows) {
       try {
         const flow = EwFlowConfigSchema.parse(raw);
-        // 角色卡流写入时会清空 api_preset_id（安全考虑），
-        // 读回时自动绑定第一个全局 API 预设
-        if (!flow.api_preset_id && defaultPresetId) {
-          flow.api_preset_id = defaultPresetId;
+        // 兼容旧版本：此前保存角色卡流时错误地清空了 api_preset_id。
+        // 优先按同名全局流恢复绑定；仍无法恢复时再回落到第一个全局预设。
+        if (!flow.api_preset_id || !presetIds.has(flow.api_preset_id)) {
+          const recoveredPresetId = globalPresetIdByName.get(normalizeFlowName(flow.name));
+          if (recoveredPresetId && presetIds.has(recoveredPresetId)) {
+            flow.api_preset_id = recoveredPresetId;
+          } else if (defaultPresetId) {
+            flow.api_preset_id = defaultPresetId;
+          }
         }
         result.push(flow);
       } catch {

@@ -243,6 +243,11 @@ function buildCustomIncludeHeaders(apiPreset: EwApiPreset): string {
 }
 
 function shouldUseGenerateRawCustomApi(apiPreset: EwApiPreset): boolean {
+  // 当存在 api_key 时，强制走 ST backend 路径（custom_include_headers）而非 generateRaw(key)，
+  // 避免酒馆助手框架将 key 字段写入脚本变量（进而写入角色卡）。
+  if (apiPreset.api_key.trim()) {
+    return false;
+  }
   return !apiPreset.headers_json.trim();
 }
 
@@ -615,7 +620,6 @@ function buildGenerateRawCustomApi(
   flow: EwFlowConfig,
 ): {
   apiurl: string;
-  key?: string;
   model: string;
   source?: string;
   max_tokens?: 'same_as_preset' | 'unset' | number;
@@ -624,9 +628,10 @@ function buildGenerateRawCustomApi(
   presence_penalty?: 'same_as_preset' | 'unset' | number;
   top_p?: 'same_as_preset' | 'unset' | number;
 } {
+  // api_key 不传给 generateRaw，避免酒馆助手框架将其写入脚本变量。
+  // 有 key 的请求已被 shouldUseGenerateRawCustomApi 路由至 ST backend（Authorization header）。
   return {
     apiurl: apiPreset.api_url.trim(),
-    key: apiPreset.api_key.trim() || undefined,
     model: apiPreset.model.trim().replace(/^models\//, ''),
     source: apiPreset.api_source?.trim() || 'openai',
     max_tokens: flow.generation_options.max_reply_tokens,

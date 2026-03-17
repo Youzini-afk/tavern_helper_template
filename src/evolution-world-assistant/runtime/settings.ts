@@ -35,7 +35,7 @@ type ScriptStorageShape = {
   >;
 };
 
-const SCRIPT_STORAGE_KEY = 'evolution_world_assistant';
+const LOCAL_STORAGE_KEY = 'evolution_world_assistant';
 
 const settingsListeners = new Set<SettingsListener>();
 const runListeners = new Set<RunListener>();
@@ -55,42 +55,31 @@ const makeDefaultApiPreset = createDefaultApiPreset;
 const makeDefaultFlow = createDefaultFlow;
 
 function readScriptStorage(): ScriptStorageShape {
-  const variables = getVariables({ type: 'script', script_id: getScriptId() });
-  const raw = _.get(variables, SCRIPT_STORAGE_KEY);
-  if (!_.isPlainObject(raw)) {
+  try {
+    const raw = globalThis.localStorage?.getItem(LOCAL_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw);
+    if (!_.isPlainObject(parsed)) {
+      return {};
+    }
+    return parsed as ScriptStorageShape;
+  } catch (error) {
+    console.warn('[Evolution World] Failed to read local storage cache:', error);
     return {};
   }
-  return raw as ScriptStorageShape;
 }
 
 function writeScriptStorage(updater: (storage: ScriptStorageShape) => ScriptStorageShape) {
-  const option = { type: 'script', script_id: getScriptId() } as const;
-  const runtime = globalThis as Record<string, unknown>;
+  const previous = readScriptStorage();
+  const nextStorage = updater(previous);
 
-  const readPrevious = (variables: Record<string, any>) => {
-    return _.isPlainObject(_.get(variables, SCRIPT_STORAGE_KEY))
-      ? (_.get(variables, SCRIPT_STORAGE_KEY) as ScriptStorageShape)
-      : {};
-  };
-
-  if (typeof runtime.updateVariablesWith === 'function') {
-    updateVariablesWith(variables => {
-      const previous = readPrevious(variables);
-      _.set(variables, SCRIPT_STORAGE_KEY, updater(previous));
-      return variables;
-    }, option);
-    return;
+  try {
+    globalThis.localStorage?.setItem(LOCAL_STORAGE_KEY, JSON.stringify(nextStorage));
+  } catch (error) {
+    console.warn('[Evolution World] Failed to write local storage cache:', error);
   }
-
-  if (typeof runtime.insertOrAssignVariables === 'function') {
-    const variables = getVariables(option);
-    const previous = readPrevious(variables);
-    const nextStorage = updater(previous);
-    insertOrAssignVariables({ [SCRIPT_STORAGE_KEY]: nextStorage }, option);
-    return;
-  }
-
-  throw new Error('script storage API unavailable: updateVariablesWith/insertOrAssignVariables');
 }
 
 function persistLocalSettings(settings: EwSettings) {

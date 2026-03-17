@@ -5,7 +5,9 @@ import { showEwNotice } from './ui/notice';
 const BOOTSTRAP_TIMEOUT_MS = 12_000;
 const BOOTSTRAP_POLL_MS = 100;
 
-const REQUIRED_GLOBALS = ['getScriptId', 'getVariables', 'eventOn', 'tavern_events'] as const;
+// 不再要求 getVariables —— EW 从不调用酒馆助手变量系统；
+// 依然等待 eventOn / tavern_events 确保事件总线就绪。
+const REQUIRED_GLOBALS = ['getScriptId', 'eventOn', 'tavern_events'] as const;
 
 function getMissingGlobals(): string[] {
   const runtime = globalThis as Record<string, unknown>;

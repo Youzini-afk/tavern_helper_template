@@ -50,13 +50,29 @@ function toPreview(value: unknown, maxLen = 3000): string {
   }
 }
 
+/**
+ * 从 request_debug 中抹除敏感字段，防止 api_key 写入 localStorage / last_io。
+ */
+function sanitizeRequestDebug(debug: Record<string, any>): Record<string, any> {
+  // 深克隆避免修改原始对象
+  const copy = klona(debug);
+  // generateRaw custom_api.key
+  if (copy.transport_request?.custom_api && 'key' in copy.transport_request.custom_api) {
+    copy.transport_request.custom_api.key = '[REDACTED]';
+  }
+  // ST backend custom_include_headers 中的 Authorization 值
+  if (typeof copy.transport_request?.custom_include_headers === 'string') {
+    copy.transport_request.custom_include_headers = copy.transport_request.custom_include_headers.replace(
+      /(Authorization\s*:\s*Bearer\s+)\S+/gi,
+      '$1[REDACTED]',
+    );
+  }
+  return copy;
+}
+
 function buildAttemptRequestPreview(attempt: DispatchFlowAttempt): string {
-  return toPreview(
-    attempt.request_debug ?? {
-      flow_request: attempt.request,
-    },
-    20000,
-  );
+  const debug = attempt.request_debug ?? { flow_request: attempt.request };
+  return toPreview(sanitizeRequestDebug(debug), 20000);
 }
 
 function saveIoSummary(requestId: string, chatId: string, mode: 'auto' | 'manual', attempts: DispatchFlowAttempt[]) {

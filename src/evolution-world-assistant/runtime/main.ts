@@ -21,9 +21,9 @@ export async function initRuntime() {
     initGlobalApi();
     initRuntimeEvents();
 
-    if (_.isFunction(initializeGlobal)) {
-      initializeGlobal('EvolutionWorldAPI', window.EvolutionWorldAPI ?? {});
-    }
+    // 不再通过酒馆助手的 initializeGlobal 注册全局变量，
+    // 避免框架将 EvolutionWorldAPI（含 getConfig()）序列化写入角色卡变量。
+    // EvolutionWorldAPI 已由 initGlobalApi() 直接挂载到 window，外部脚本仍可访问。
 
     initialized = true;
     console.info('[Evolution World] runtime initialized');

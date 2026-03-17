@@ -34,6 +34,8 @@ import type { TabKey } from './help-meta';
 import { showEwNotice } from './notice';
 
 export const useEwStore = defineStore('evolution-world-store', () => {
+  const CHAR_FLOW_DRAFT_STORAGE_PREFIX = 'ew_char_flow_draft:';
+
   const settings = ref<EwSettings>(getSettings());
   const lastRun = ref<RunSummary | null>(getLastRun());
   const lastIo = ref<LastIoSummary | null>(getLastIo());
@@ -49,6 +51,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   const activeCharName = ref<string>('');
   const flowScope = ref<'global' | 'character'>('global');
   const charFlowsLoading = ref(false);
+  let suppressCharFlowDraftPersist = false;
 
   // ── 调试预览 ──
   const promptPreview = ref<PromptPreviewMessage[] | null>(null);
@@ -148,6 +151,89 @@ export const useEwStore = defineStore('evolution-world-store', () => {
         expandedFlowId.value = null;
       }
     },
+  );
+
+  function normalizeCharDraftName(name: string): string {
+    return name.trim();
+  }
+
+  function getCharFlowDraftStorageKey(charName: string): string | null {
+    const normalizedName = normalizeCharDraftName(charName);
+    if (!normalizedName) {
+      return null;
+    }
+    return `${CHAR_FLOW_DRAFT_STORAGE_PREFIX}${normalizedName}`;
+  }
+
+  function sanitizeCharFlowDraft(flow: EwFlowConfig): Record<string, unknown> {
+    const copy = klona(flow) as Record<string, unknown>;
+    delete copy.api_url;
+    delete copy.api_key;
+    delete copy.headers_json;
+    return copy;
+  }
+
+  function readCharFlowDraft(charName: string): EwFlowConfig[] | null {
+    const storageKey = getCharFlowDraftStorageKey(charName);
+    if (!storageKey) {
+      return null;
+    }
+
+    try {
+      const raw = globalThis.localStorage?.getItem(storageKey);
+      if (!raw) {
+        return null;
+      }
+
+      const parsed = JSON.parse(raw);
+      if (!parsed || parsed.version !== 'ew-char-flow-draft/v1' || !Array.isArray(parsed.flows)) {
+        return null;
+      }
+
+      const flows: EwFlowConfig[] = [];
+      for (const item of parsed.flows) {
+        flows.push(EwFlowConfigSchema.parse(item));
+      }
+      return flows;
+    } catch (error) {
+      console.warn('[Evolution World] Failed to read char flow draft cache:', error);
+      return null;
+    }
+  }
+
+  function writeCharFlowDraft(charName: string, flows: EwFlowConfig[]): void {
+    const storageKey = getCharFlowDraftStorageKey(charName);
+    if (!storageKey) {
+      return;
+    }
+
+    try {
+      const payload = {
+        version: 'ew-char-flow-draft/v1',
+        updated_at: Date.now(),
+        flows: flows.map(sanitizeCharFlowDraft),
+      };
+      globalThis.localStorage?.setItem(storageKey, JSON.stringify(payload));
+    } catch (error) {
+      console.warn('[Evolution World] Failed to write char flow draft cache:', error);
+    }
+  }
+
+  watch(
+    charFlows,
+    next => {
+      if (suppressCharFlowDraftPersist || charFlowsLoading.value) {
+        return;
+      }
+      if (flowScope.value !== 'character') {
+        return;
+      }
+      if (!activeCharName.value.trim()) {
+        return;
+      }
+      writeCharFlowDraft(activeCharName.value, next);
+    },
+    { deep: true, flush: 'post' },
   );
 
   function addApiPreset() {
@@ -552,7 +638,14 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     try {
       const name = getCurrentCharacterName?.() ?? '';
       activeCharName.value = name;
-      charFlows.value = await readCharFlows(settings.value);
+      const savedFlows = await readCharFlows(settings.value);
+      const draftFlows = readCharFlowDraft(name);
+
+      suppressCharFlowDraftPersist = true;
+      charFlows.value = draftFlows ?? savedFlows;
+      queueMicrotask(() => {
+        suppressCharFlowDraftPersist = false;
+      });
     } catch (e) {
       console.warn('[Evolution World] loadCharFlows failed:', e);
       charFlows.value = [];
@@ -564,6 +657,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   async function saveCharFlows() {
     try {
       await writeCharFlows(settings.value, charFlows.value);
+      writeCharFlowDraft(activeCharName.value, charFlows.value);
       showEwNotice({ title: 'Evolution World', message: '角色卡工作流已保存到世界书', level: 'success' });
     } catch (e) {
       console.error('[Evolution World] saveCharFlows failed:', e);
@@ -593,11 +687,10 @@ export const useEwStore = defineStore('evolution-world-store', () => {
 
       for (const flow of selected) {
         const copy = klona(flow);
-        // 去除敏感字段（与 char-flows sanitizeFlow 一致）
+        // 去除敏感字段（与 char-flows sanitizeFlow 一致），但保留 api_preset_id。
         delete (copy as any).api_url;
         delete (copy as any).api_key;
         delete (copy as any).headers_json;
-        delete (copy as any).api_preset_id;
 
         const trimmedName = copy.name.trim();
         const existingIndex = merged.findIndex(f => f.name.trim() === trimmedName);
@@ -617,6 +710,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
       await writeCharFlows(settings.value, merged);
       charFlows.value = merged;
       activeCharName.value = getCurrentCharacterName?.() ?? '';
+      writeCharFlowDraft(activeCharName.value, merged);
 
       const parts: string[] = [];
       if (updatedCount > 0) parts.push(`更新 ${updatedCount} 条`);
