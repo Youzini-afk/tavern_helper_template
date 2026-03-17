@@ -557,6 +557,41 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     return name.replace(/[<>:"/\\|?*]/g, '_').trim() || 'flow';
   }
 
+  function ensureUniqueFlowIds(flows: EwFlowConfig[], existingIds: Set<string>) {
+    for (const flow of flows) {
+      if (existingIds.has(flow.id)) {
+        flow.id = `${flow.id}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      }
+      existingIds.add(flow.id);
+    }
+  }
+
+  function parseImportedFlows(jsonText: string, filename?: string) {
+    const parsed = JSON.parse(jsonText);
+
+    let validated: EwFlowConfig[];
+
+    if (parsed && parsed.ew_flow_export === true && Array.isArray(parsed.flows)) {
+      validated = [];
+      for (const raw of parsed.flows) {
+        validated.push(EwFlowConfigSchema.parse(raw));
+      }
+    } else if (isSillyTavernPreset(parsed)) {
+      const flowName = filename?.replace(/\.json$/i, '') || 'ST Preset';
+      const flow = EwFlowConfigSchema.parse(convertStPresetToFlow(parsed, flowName));
+      validated = [flow];
+      toastr.info('已识别为酒馆预设并转换', 'Evolution World');
+    } else {
+      throw new Error('无效的工作流导出文件，缺少 ew_flow_export 标识且非酒馆预设');
+    }
+
+    if (validated.length === 0) {
+      throw new Error('导出文件中没有工作流');
+    }
+
+    return validated;
+  }
+
   function exportSingleFlow(flowId: string) {
     const flow = settings.value.flows.find(f => f.id === flowId);
     if (!flow) {
@@ -585,40 +620,9 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     }
 
     try {
-      const parsed = JSON.parse(jsonText);
-
-      let validated: EwFlowConfig[];
-
-      if (parsed && parsed.ew_flow_export === true && Array.isArray(parsed.flows)) {
-        // ── EW 原生格式 ──
-        validated = [];
-        for (const raw of parsed.flows) {
-          validated.push(EwFlowConfigSchema.parse(raw));
-        }
-      } else if (isSillyTavernPreset(parsed)) {
-        // ── ST 预设 → 转换为单个 flow ──
-        const flowName = filename?.replace(/\.json$/i, '') || 'ST Preset';
-        const flow = EwFlowConfigSchema.parse(convertStPresetToFlow(parsed, flowName));
-        validated = [flow];
-        toastr.info('已识别为酒馆预设并转换', 'Evolution World');
-      } else {
-        toastr.error('无效的工作流导出文件，缺少 ew_flow_export 标识且非酒馆预设', 'Evolution World');
-        return;
-      }
-
-      if (validated.length === 0) {
-        toastr.warning('导出文件中没有工作流', 'Evolution World');
-        return;
-      }
-
-      // ID 去重：若冲突，追加时间戳后缀
+      const validated = parseImportedFlows(jsonText, filename);
       const existingIds = new Set(settings.value.flows.map(f => f.id));
-      for (const flow of validated) {
-        if (existingIds.has(flow.id)) {
-          flow.id = `${flow.id}_${Date.now()}`;
-        }
-        existingIds.add(flow.id);
-      }
+      ensureUniqueFlowIds(validated, existingIds);
 
       const next = klona(settings.value);
       next.flows.push(...validated);
@@ -627,6 +631,54 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       toastr.error(`工作流导入失败: ${message}`, 'Evolution World');
+    }
+  }
+
+  function exportSingleCharFlow(flowId: string) {
+    const flow = charFlows.value.find(f => f.id === flowId);
+    if (!flow) {
+      toastr.error('找不到该角色卡工作流', 'Evolution World');
+      return;
+    }
+    const payload = buildFlowExportPayload([flow]);
+    downloadJson(payload, `ew_char_flow_${sanitizeFilename(flow.name)}.json`);
+    toastr.success(`已导出角色卡工作流「${flow.name}」`, 'Evolution World');
+  }
+
+  function exportAllCharFlows() {
+    if (charFlows.value.length === 0) {
+      toastr.warning('当前角色卡没有工作流可导出', 'Evolution World');
+      return;
+    }
+    const charName = sanitizeFilename(activeCharName.value || 'character');
+    const payload = buildFlowExportPayload(charFlows.value);
+    downloadJson(payload, `ew_char_flows_${charName}_${charFlows.value.length}.json`);
+    toastr.success(`已导出当前角色卡全部 ${charFlows.value.length} 条工作流`, 'Evolution World');
+  }
+
+  function importCharFlowsFromText(jsonText: string, filename?: string) {
+    if (!jsonText.trim()) {
+      toastr.warning('导入内容为空', 'Evolution World');
+      return;
+    }
+
+    try {
+      const validated = parseImportedFlows(jsonText, filename);
+      const next = [...charFlows.value];
+      const existingIds = new Set(next.map(f => f.id));
+      ensureUniqueFlowIds(validated, existingIds);
+      next.push(...validated);
+      charFlows.value = next;
+
+      showEwNotice({
+        title: 'Evolution World',
+        message: `已导入 ${validated.length} 条角色卡工作流。若要写回世界书，请继续点击“保存到绑定世界书”。`,
+        level: 'success',
+      });
+      toastr.success(`已导入 ${validated.length} 条角色卡工作流`, 'Evolution World');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      toastr.error(`角色卡工作流导入失败: ${message}`, 'Evolution World');
     }
   }
 
@@ -742,7 +794,11 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     try {
       await writeCharFlows(settings.value, charFlows.value);
       writeCharFlowDraft(activeCharName.value, charFlows.value);
-      showEwNotice({ title: 'Evolution World', message: '角色卡工作流已保存到世界书', level: 'success' });
+      showEwNotice({
+        title: 'Evolution World',
+        message: '角色卡工作流已保存到当前绑定世界书。若要分享，请连同更新后的角色世界书一起导出。',
+        level: 'success',
+      });
     } catch (e) {
       console.error('[Evolution World] saveCharFlows failed:', e);
       showEwNotice({
@@ -963,6 +1019,9 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     exportSingleFlow,
     exportAllFlows,
     importFlowsFromText,
+    exportSingleCharFlow,
+    exportAllCharFlows,
+    importCharFlowsFromText,
     validateConfig,
     validateControllerSyntax,
     setOpen,

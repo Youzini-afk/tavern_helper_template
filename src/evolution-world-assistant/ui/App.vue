@@ -457,16 +457,29 @@
             <template v-else>
               <EwSectionCard
                 :title="'角色卡工作流' + (store.activeCharName ? ` — ${store.activeCharName}` : '')"
-                subtitle="仅在当前角色卡生效的工作流，随角色卡导出/导入。优先级高于全局。"
+                subtitle="保存在当前角色绑定世界书的 EW/Flows 条目中。分享给他人时，需要连同更新后的角色世界书一起导出；优先级高于全局。"
               >
                 <template #actions>
                   <button type="button" class="ew-btn" @click="store.addCharFlow">新增工作流</button>
-                  <button type="button" class="ew-btn" @click="store.saveCharFlows">💾 保存到世界书</button>
+                  <button type="button" class="ew-btn" @click="openCharFlowImportPicker">导入工作流</button>
+                  <button type="button" class="ew-btn" @click="store.exportAllCharFlows">导出全部工作流</button>
+                  <button type="button" class="ew-btn" @click="store.saveCharFlows">💾 保存到绑定世界书</button>
                   <button type="button" class="ew-btn" @click="store.loadCharFlows">刷新</button>
                   <button type="button" class="ew-btn" @click="store.reloadCharFlowsFromWorldbook">
                     从世界书覆盖读取
                   </button>
+                  <input
+                    ref="charFlowImportRef"
+                    type="file"
+                    accept=".json,application/json"
+                    class="ew-hidden-file-input"
+                    @change="onCharFlowImportChange"
+                  />
                 </template>
+
+                <div class="ew-flow-hint ew-flow-hint--warning">
+                  这里只会改当前绑定世界书里的 EW/Flows。若要分享给别人，请确认导出的角色卡包含这份更新后的角色世界书。
+                </div>
 
                 <div v-if="store.charFlowsLoading" class="ew-flow-loading">加载角色卡工作流中...</div>
 
@@ -482,6 +495,7 @@
                     @toggle-expand="store.toggleFlowExpanded(flow.id)"
                     @duplicate="store.duplicateCharFlow(flow.id)"
                     @remove="store.removeCharFlow(flow.id)"
+                    @export="store.exportSingleCharFlow(flow.id)"
                     @update:model-value="value => updateCharFlow(index, value)"
                   />
                 </transition-group>
@@ -576,6 +590,7 @@ import { useEwStore } from './store';
 const store = useEwStore();
 const importFileInputRef = ref<HTMLInputElement | null>(null);
 const flowImportRef = ref<HTMLInputElement | null>(null);
+const charFlowImportRef = ref<HTMLInputElement | null>(null);
 const migratingSnapshots = ref(false);
 
 // ── 写入角色卡弹窗 ──
@@ -1040,6 +1055,10 @@ function openFlowImportPicker() {
   flowImportRef.value?.click();
 }
 
+function openCharFlowImportPicker() {
+  charFlowImportRef.value?.click();
+}
+
 async function onFlowImportChange(event: Event) {
   const input = event.target as HTMLInputElement | null;
   const file = input?.files?.[0];
@@ -1048,6 +1067,22 @@ async function onFlowImportChange(event: Event) {
   try {
     const text = await file.text();
     store.importFlowsFromText(text, file.name);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    toastr.error(`文件读取失败: ${message}`, 'Evolution World');
+  } finally {
+    if (input) input.value = '';
+  }
+}
+
+async function onCharFlowImportChange(event: Event) {
+  const input = event.target as HTMLInputElement | null;
+  const file = input?.files?.[0];
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    store.importCharFlowsFromText(text, file.name);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     toastr.error(`文件读取失败: ${message}`, 'Evolution World');
