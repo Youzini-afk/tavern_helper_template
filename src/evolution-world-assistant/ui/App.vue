@@ -463,6 +463,9 @@
                   <button type="button" class="ew-btn" @click="store.addCharFlow">新增工作流</button>
                   <button type="button" class="ew-btn" @click="store.saveCharFlows">💾 保存到世界书</button>
                   <button type="button" class="ew-btn" @click="store.loadCharFlows">刷新</button>
+                  <button type="button" class="ew-btn" @click="store.reloadCharFlowsFromWorldbook">
+                    从世界书覆盖读取
+                  </button>
                 </template>
 
                 <div v-if="store.charFlowsLoading" class="ew-flow-loading">加载角色卡工作流中...</div>

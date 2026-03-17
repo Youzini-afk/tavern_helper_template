@@ -252,6 +252,19 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     }
   }
 
+  function clearCharFlowDraft(charName: string): void {
+    const storageKey = getCharFlowDraftStorageKey(charName);
+    if (!storageKey) {
+      return;
+    }
+
+    try {
+      globalThis.localStorage?.removeItem(storageKey);
+    } catch (error) {
+      console.warn('[Evolution World] Failed to clear char flow draft cache:', error);
+    }
+  }
+
   watch(
     charFlows,
     next => {
@@ -694,6 +707,37 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     }
   }
 
+  async function reloadCharFlowsFromWorldbook() {
+    charFlowsLoading.value = true;
+    try {
+      const name = getCurrentCharacterName?.() ?? '';
+      activeCharName.value = name;
+      const savedFlows = await readCharFlows(settings.value);
+
+      suppressCharFlowDraftPersist = true;
+      charFlows.value = savedFlows;
+      clearCharFlowDraft(name);
+      queueMicrotask(() => {
+        suppressCharFlowDraftPersist = false;
+      });
+
+      showEwNotice({
+        title: 'Evolution World',
+        message: `已从角色世界书重新读取 ${savedFlows.length} 条工作流，并覆盖当前角色卡草稿。`,
+        level: 'success',
+      });
+    } catch (e) {
+      console.error('[Evolution World] reloadCharFlowsFromWorldbook failed:', e);
+      showEwNotice({
+        title: 'Evolution World',
+        message: '从角色世界书读取工作流失败: ' + (e as Error).message,
+        level: 'error',
+      });
+    } finally {
+      charFlowsLoading.value = false;
+    }
+  }
+
   async function saveCharFlows() {
     try {
       await writeCharFlows(settings.value, charFlows.value);
@@ -925,6 +969,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     openPanel,
     closePanel,
     loadCharFlows,
+    reloadCharFlowsFromWorldbook,
     saveCharFlows,
     mergeFlowsToCard,
     addCharFlow,
