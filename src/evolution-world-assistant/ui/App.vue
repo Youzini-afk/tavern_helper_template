@@ -230,9 +230,35 @@
                   <select v-model="store.settings.failure_policy">
                     <option value="stop_generation">失败即中止发送</option>
                     <option value="continue_generation">静默继续生成</option>
-                    <option value="retry_once">失败重试一次</option>
+                    <option value="retry_once">自动重roll</option>
                     <option value="notify_only">仅通知（不中止）</option>
                   </select>
+                </EwFieldRow>
+                <EwFieldRow
+                  v-if="store.settings.failure_policy === 'retry_once'"
+                  label="自动重roll次数"
+                  :help="help('auto_reroll_max_attempts')"
+                >
+                  <input
+                    v-model.number="store.settings.auto_reroll_max_attempts"
+                    type="number"
+                    min="1"
+                    step="1"
+                    :placeholder="help('auto_reroll_max_attempts')?.placeholder"
+                  />
+                </EwFieldRow>
+                <EwFieldRow
+                  v-if="store.settings.failure_policy === 'retry_once'"
+                  label="自动重roll间隔(秒)"
+                  :help="help('auto_reroll_interval_seconds')"
+                >
+                  <input
+                    v-model.number="store.settings.auto_reroll_interval_seconds"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    :placeholder="help('auto_reroll_interval_seconds')?.placeholder"
+                  />
                 </EwFieldRow>
                 <EwFieldRow label="重roll范围" :help="help('reroll_scope')">
                   <select v-model="store.settings.reroll_scope">

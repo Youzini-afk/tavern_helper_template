@@ -21,10 +21,17 @@ type SettingsListener = (settings: EwSettings) => void;
 type RunListener = (summary: RunSummary | null) => void;
 type IoListener = (summary: LastIoSummary | null) => void;
 
+type WorkflowRoundCounterEntry = {
+  before_reply: number;
+  after_reply: number;
+  updated_at: number;
+};
+
 type ScriptStorageShape = {
   settings?: EwSettings;
   last_run?: RunSummary | null;
   last_io?: LastIoSummary | null;
+  workflow_round_counters?: Record<string, Partial<WorkflowRoundCounterEntry> | undefined>;
   backups?: Record<
     string,
     {
@@ -41,6 +48,7 @@ const settingsListeners = new Set<SettingsListener>();
 const runListeners = new Set<RunListener>();
 const ioListeners = new Set<IoListener>();
 const SHARED_SETTINGS_WRITE_DELAY_MS = 240;
+const MAX_WORKFLOW_ROUND_COUNTER_CHATS = 40;
 
 let cachedSettings: EwSettings | null = null;
 let cachedLastRun: RunSummary | null | undefined = undefined;
@@ -84,6 +92,48 @@ function writeScriptStorage(updater: (storage: ScriptStorageShape) => ScriptStor
 
 function persistLocalSettings(settings: EwSettings) {
   writeScriptStorage(previous => ({ ...previous, settings }));
+}
+
+function normalizeWorkflowRoundCounterEntry(
+  raw: Partial<WorkflowRoundCounterEntry> | undefined,
+): WorkflowRoundCounterEntry {
+  return {
+    before_reply: Math.max(0, Math.trunc(Number(raw?.before_reply ?? 0) || 0)),
+    after_reply: Math.max(0, Math.trunc(Number(raw?.after_reply ?? 0) || 0)),
+    updated_at: Math.max(0, Math.trunc(Number(raw?.updated_at ?? 0) || 0)),
+  };
+}
+
+export function advanceWorkflowRoundCounter(chatId: string, timing: 'before_reply' | 'after_reply'): number {
+  let nextValue = 1;
+
+  writeScriptStorage(previous => {
+    const counters = {
+      ...(previous.workflow_round_counters ?? {}),
+    };
+    const entry = normalizeWorkflowRoundCounterEntry(counters[chatId]);
+    nextValue = entry[timing] + 1;
+    counters[chatId] = {
+      ...entry,
+      [timing]: nextValue,
+      updated_at: Date.now(),
+    };
+
+    const entries = Object.entries(counters);
+    if (entries.length > MAX_WORKFLOW_ROUND_COUNTER_CHATS) {
+      entries.sort((left, right) => (Number(right[1]?.updated_at ?? 0) || 0) - (Number(left[1]?.updated_at ?? 0) || 0));
+      for (const [staleChatId] of entries.slice(MAX_WORKFLOW_ROUND_COUNTER_CHATS)) {
+        delete counters[staleChatId];
+      }
+    }
+
+    return {
+      ...previous,
+      workflow_round_counters: counters,
+    };
+  });
+
+  return nextValue;
 }
 
 function queueSharedSettingsPersist(settings: EwSettings) {

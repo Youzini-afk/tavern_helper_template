@@ -45,6 +45,24 @@ const FIELD_HELP_LIST: FieldHelpMeta[] = [
     isAdvanced: true,
   },
   {
+    key: 'auto_reroll_max_attempts',
+    label: '自动重roll次数',
+    shortHelp: '工作流失败后，最多再自动重roll多少次。',
+    detailHelp:
+      '仅在失败策略选择“自动重roll”时生效，表示首次失败后还会额外补跑多少次。设为 1 等价于旧版“失败重试一次”；设为 3 则最多会尝试 1 次首跑 + 3 次自动重roll。',
+    placeholder: '1',
+    isAdvanced: true,
+  },
+  {
+    key: 'auto_reroll_interval_seconds',
+    label: '自动重roll间隔',
+    shortHelp: '两次自动重roll之间额外等待多少秒。',
+    detailHelp:
+      '仅在失败策略选择“自动重roll”时生效。设为 0 表示失败后立即重roll；设为 5 则每次失败后等待 5 秒再进行下一次自动重roll，用于给模型或网关一点缓冲时间。',
+    placeholder: '0',
+    isAdvanced: true,
+  },
+  {
     key: 'parallel_dispatch_interval_seconds',
     label: '并行发出间隔',
     shortHelp: '并行模式下，每条工作流请求相对前一条错开发出的秒数。',
@@ -104,7 +122,7 @@ const FIELD_HELP_LIST: FieldHelpMeta[] = [
     label: '失败策略',
     shortHelp: '工作流失败时的处理方式。',
     detailHelp:
-      '失败即中止：停止 AI 生成并提示错误。静默继续：显示警告但 AI 照常生成。失败重试一次：自动重试一次，仍失败则中止。仅通知：仅弹出提示，不影响生成。',
+      '失败即中止：停止 AI 生成并提示错误。静默继续：显示警告但 AI 照常生成。自动重roll：按配置的次数与间隔自动补跑，仍失败则中止。仅通知：仅弹出提示，不影响生成。',
     isAdvanced: true,
   },
   {
@@ -200,6 +218,13 @@ const FIELD_HELP_LIST: FieldHelpMeta[] = [
     label: '优先级',
     shortHelp: '用于多工作流结果合并冲突决策。',
     detailHelp: '按优先级降序合并；同优先级按工作流顺序后者覆盖前者。',
+  },
+  {
+    key: 'flow.run_every_n_floors',
+    label: '自动触发执行间隔',
+    shortHelp: '控制该工作流按多少次自动触发执行一次，1 表示每次自动触发都执行。',
+    detailHelp:
+      '只对自动触发生效，手动运行与重roll不会受影响。回复后更新时按 after_reply 自动触发次数计数，回复前拦截时按 before_reply 自动触发次数计数；例如设为 3，则只会在第 3、6、9 次对应链路自动触发时运行。',
   },
   {
     key: 'flow.timeout_ms',

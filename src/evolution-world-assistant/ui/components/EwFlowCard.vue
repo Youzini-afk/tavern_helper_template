@@ -5,6 +5,7 @@
         <strong class="ew-flow-card__name">{{ flow.name || `工作流 ${index + 1}` }}</strong>
         <div class="ew-flow-card__chips">
           <span class="ew-flow-card__chip">{{ flow.enabled ? '启用' : '停用' }}</span>
+          <span class="ew-flow-card__chip">{{ floorIntervalLabel }}</span>
           <span class="ew-flow-card__chip">优先级 {{ flow.priority }}</span>
           <span class="ew-flow-card__chip">超时 {{ flow.timeout_ms }}ms</span>
           <span class="ew-flow-card__chip">API {{ presetLabel }}</span>
@@ -71,6 +72,15 @@
                 max="9999"
                 step="1"
                 @input="setFlowNumber('priority', $event)"
+              />
+            </EwFieldRow>
+            <EwFieldRow label="每多少次自动触发执行一次" :help="help('flow.run_every_n_floors')">
+              <input
+                :value="flow.run_every_n_floors"
+                type="number"
+                min="1"
+                step="1"
+                @input="setFlowNumber('run_every_n_floors', $event)"
               />
             </EwFieldRow>
             <EwFieldRow label="超时(ms)" :help="help('flow.timeout_ms')">
@@ -595,12 +605,12 @@ import { convertStPresetToFlow, isSillyTavernPreset } from '../convertStPreset';
 import { getFieldHelp } from '../help-meta';
 import EwFieldRow from './EwFieldRow.vue';
 
+import { useEwStore } from '../store';
 import EwPromptOrderList from './EwPromptOrderList.vue';
 import EwRulesEditor from './EwRulesEditor.vue';
-import { useEwStore } from '../store';
 
 const ewStore = useEwStore();
-type FlowNumberKey = 'priority' | 'timeout_ms' | 'context_turns';
+type FlowNumberKey = 'priority' | 'timeout_ms' | 'context_turns' | 'run_every_n_floors';
 type GenerationNumberKey =
   | 'max_context_tokens'
   | 'max_reply_tokens'
@@ -765,6 +775,10 @@ const endpointSummary = computed(() => {
   return merged.length <= 72 ? merged : `${merged.slice(0, 69)}...`;
 });
 const presetLabel = computed(() => selectedPreset.value?.name?.trim() || '未绑定');
+const floorIntervalLabel = computed(() => {
+  const interval = Math.max(1, Math.trunc(Number(flow.value.run_every_n_floors ?? 1) || 1));
+  return interval <= 1 ? '每次自动触发都执行' : `每 ${interval} 次自动触发执行`;
+});
 
 function help(key: string) {
   return getFieldHelp(key);
@@ -808,6 +822,11 @@ function setRequestTemplateDraft(event: Event) {
   }, 160);
 }
 function setFlowNumber(key: FlowNumberKey, event: Event) {
+  if (key === 'run_every_n_floors') {
+    return patch({
+      run_every_n_floors: Math.max(1, Math.trunc(toNumber((event.target as HTMLInputElement).value, 1))),
+    });
+  }
   patch({
     [key]: Math.trunc(toNumber((event.target as HTMLInputElement).value, flow.value[key] as number)),
   } as Partial<EwFlowConfig>);

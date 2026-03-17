@@ -1,5 +1,5 @@
-import { EwApiPreset, EwApiPresetSchema, EwFlowConfig, EwFlowConfigSchema } from './types';
 import { simpleHash } from './helpers';
+import { EwApiPreset, EwApiPresetSchema, EwFlowConfig, EwFlowConfigSchema } from './types';
 
 export function createDefaultApiPreset(index: number): EwApiPreset {
   const id = `api_${index}_${simpleHash(`api-${index}-${Date.now()}`)}`;
@@ -23,6 +23,7 @@ export function createDefaultFlow(index: number, apiPresetId: string): EwFlowCon
     id,
     name: `工作流 ${index}`,
     enabled: true,
+    run_every_n_floors: 1,
     priority: 100,
     timeout_ms: 300000,
     api_preset_id: apiPresetId,

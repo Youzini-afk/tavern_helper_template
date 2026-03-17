@@ -995,9 +995,8 @@ async function executeWorkflowWithPolicy(
     } satisfies WorkflowExecutionOutcome;
   };
 
-  let result;
-  try {
-    result = await runWorkflow({
+  const runWorkflowAttempt = async () => {
+    const nextResult = await runWorkflow({
       message_id: options.messageId,
       user_input: options.userInput,
       trigger: options.trigger,
@@ -1010,6 +1009,42 @@ async function executeWorkflowWithPolicy(
       isCancelled: () => abortedByUser,
       onProgress: handleWorkflowProgress,
     });
+
+    if (options.trigger.timing === 'after_reply') {
+      const assistantMessageId = options.trigger.assistant_message_id ?? options.messageId;
+      const executionState = buildFloorWorkflowExecutionState(
+        nextResult.request_id,
+        nextResult.attempts,
+        !nextResult.ok,
+        currentPreservedStoredResults,
+      );
+      await writeFloorWorkflowExecution(assistantMessageId, executionState);
+      lastAfterReplyExecutionState = executionState;
+      currentPreservedStoredResults = executionState.successful_results;
+      currentPreservedDispatchResults = await buildPreservedDispatchResults(settings, currentPreservedStoredResults);
+    }
+
+    return nextResult;
+  };
+
+  const waitForAutoRerollInterval = async (delayMs: number) => {
+    const remainingDelayMs = Math.max(0, delayMs);
+    if (remainingDelayMs <= 0) {
+      return;
+    }
+
+    const deadline = Date.now() + remainingDelayMs;
+    while (Date.now() < deadline) {
+      if (abortedByUser || workflowAbortController.signal.aborted) {
+        throw new Error('workflow cancelled by user');
+      }
+      await new Promise(resolve => setTimeout(resolve, Math.min(200, deadline - Date.now())));
+    }
+  };
+
+  let result;
+  try {
+    result = await runWorkflowAttempt();
   } catch (error) {
     if (abortedByUser) {
       return finalizeUserAbort();
@@ -1022,72 +1057,55 @@ async function executeWorkflowWithPolicy(
     return finalizeUserAbort();
   }
 
-  if (options.trigger.timing === 'after_reply') {
-    const assistantMessageId = options.trigger.assistant_message_id ?? options.messageId;
-    const executionState = buildFloorWorkflowExecutionState(
-      result.request_id,
-      result.attempts,
-      !result.ok,
-      currentPreservedStoredResults,
-    );
-    await writeFloorWorkflowExecution(assistantMessageId, executionState);
-    lastAfterReplyExecutionState = executionState;
-    currentPreservedStoredResults = executionState.successful_results;
-    currentPreservedDispatchResults = await buildPreservedDispatchResults(settings, currentPreservedStoredResults);
-  }
-
   if (!result.ok) {
     const policy = settings.failure_policy ?? 'stop_generation';
+    const autoRerollMaxAttempts = Math.max(1, Math.trunc(Number(settings.auto_reroll_max_attempts ?? 1) || 1));
+    const autoRerollIntervalMs = Math.max(0, Math.round((settings.auto_reroll_interval_seconds ?? 0) * 1000));
+    let autoRerollCount = 0;
 
     if (policy === 'retry_once') {
-      console.warn('[EW] retry_once: first attempt failed — retrying.');
-      const retryMessage = buildFailureNoticeMessage(result.failure, result.reason, { retrying: true });
-      processingReminder.update(buildAbortableReminder(retryMessage, 'warning'));
-      toastr.warning(buildFailureToastMessage(result.failure, result.reason), 'Evolution World');
-      try {
-        result = await runWorkflow({
-          message_id: options.messageId,
-          user_input: options.userInput,
-          trigger: options.trigger,
-          mode: 'auto',
-          inject_reply: options.injectReply,
-          flow_ids: options.flowIds,
-          timing_filter: options.timingFilter,
-          preserved_results: currentPreservedDispatchResults,
-          abortSignal: workflowAbortController.signal,
-          isCancelled: () => abortedByUser,
-          onProgress: handleWorkflowProgress,
-        });
-      } catch (error) {
+      while (!result.ok && autoRerollCount < autoRerollMaxAttempts) {
+        const nextAttemptNumber = autoRerollCount + 1;
+        const retryMessageBase = buildFailureNoticeMessage(result.failure, result.reason, { retrying: true });
+        const intervalHint =
+          autoRerollIntervalMs > 0
+            ? `\n将在 ${settings.auto_reroll_interval_seconds} 秒后开始第 ${nextAttemptNumber} 次自动重roll。`
+            : `\n即将开始第 ${nextAttemptNumber} 次自动重roll。`;
+        console.warn(
+          `[EW] auto reroll: attempt ${nextAttemptNumber}/${autoRerollMaxAttempts} after failure.`,
+          result.reason,
+        );
+        processingReminder.update(buildAbortableReminder(`${retryMessageBase}${intervalHint}`, 'warning'));
+        toastr.warning(
+          `工作流失败，准备进行第 ${nextAttemptNumber}/${autoRerollMaxAttempts} 次自动重roll: ${buildFailureToastMessage(result.failure, result.reason)}`,
+          'Evolution World',
+        );
+
+        try {
+          await waitForAutoRerollInterval(autoRerollIntervalMs);
+          result = await runWorkflowAttempt();
+          autoRerollCount = nextAttemptNumber;
+        } catch (error) {
+          if (abortedByUser) {
+            return finalizeUserAbort();
+          }
+          processingReminder.dismiss();
+          throw error;
+        }
+
         if (abortedByUser) {
           return finalizeUserAbort();
         }
-        processingReminder.dismiss();
-        throw error;
-      }
-
-      if (abortedByUser) {
-        return finalizeUserAbort();
-      }
-
-      if (options.trigger.timing === 'after_reply') {
-        const assistantMessageId = options.trigger.assistant_message_id ?? options.messageId;
-        const executionState = buildFloorWorkflowExecutionState(
-          result.request_id,
-          result.attempts,
-          !result.ok,
-          currentPreservedStoredResults,
-        );
-        await writeFloorWorkflowExecution(assistantMessageId, executionState);
-        lastAfterReplyExecutionState = executionState;
-        currentPreservedStoredResults = executionState.successful_results;
-        currentPreservedDispatchResults = await buildPreservedDispatchResults(settings, currentPreservedStoredResults);
       }
     }
 
     if (!result.ok) {
-      const displayReason = buildFailureNoticeMessage(result.failure, result.reason);
-      const toastReason = buildFailureToastMessage(result.failure, result.reason);
+      const exhaustedAutoRerollSuffix =
+        policy === 'retry_once' && autoRerollCount > 0 ? `\n已自动重roll ${autoRerollCount} 次，仍未成功。` : '';
+      const displayReason = `${buildFailureNoticeMessage(result.failure, result.reason)}${exhaustedAutoRerollSuffix}`;
+      const toastReason = `${buildFailureToastMessage(result.failure, result.reason)}${
+        policy === 'retry_once' && autoRerollCount > 0 ? `（已自动重roll ${autoRerollCount} 次）` : ''
+      }`;
       const noticeAction = buildFailureNoticeAction(result.failure);
       switch (policy) {
         case 'continue_generation':

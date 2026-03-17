@@ -4,7 +4,7 @@ import { dispatchFlows, DispatchFlowsError } from './dispatcher';
 import { uuidv4 } from './helpers';
 import { injectReplyInstructionOnce } from './injection';
 import { mergeFlowResults } from './merger';
-import { getSettings, setLastIo, setLastRun } from './settings';
+import { advanceWorkflowRoundCounter, getSettings, setLastIo, setLastRun } from './settings';
 import { commitMergedPlan } from './transaction';
 import {
   ControllerTemplateSlot,
@@ -203,6 +203,14 @@ function classifyDispatchFlowFailure(reason: string) {
     suggestion: inferFailureSuggestion('dispatch', kind, reason),
     httpStatus: extractHttpStatus(reason),
   };
+}
+
+function shouldRunFlowOnRound(flow: DispatchFlowAttempt['flow'] | DispatchFlowResult['flow'], round: number): boolean {
+  const interval = Math.max(1, Math.trunc(Number(flow.run_every_n_floors ?? 1) || 1));
+  if (interval <= 1) {
+    return true;
+  }
+  return round % interval === 0;
 }
 
 function buildWorkflowFailureDiagnostic(params: {
@@ -452,6 +460,22 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
       });
     }
 
+    if (input.mode === 'auto' && input.timing_filter && selectedFlowIds.size === 0) {
+      const round = advanceWorkflowRoundCounter(currentChatId, input.timing_filter);
+      enabledFlows = enabledFlows.filter(flow => shouldRunFlowOnRound(flow, round));
+
+      if (enabledFlows.length === 0) {
+        return {
+          ok: true,
+          reason: `no flows scheduled for timing '${input.timing_filter}' on round ${round}`,
+          request_id: requestId,
+          attempts: [],
+          results: [],
+          failure: null,
+        };
+      }
+    }
+
     if (enabledFlows.length === 0) {
       // If timing filter caused 0 flows, this is a no-op — not an error.
       if (input.timing_filter) {
@@ -461,6 +485,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
           request_id: requestId,
           attempts: [],
           results: [],
+          failure: null,
         };
       }
       throw new Error('no enabled flows');
