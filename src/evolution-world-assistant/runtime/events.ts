@@ -1406,6 +1406,27 @@ function isAssistantMessage(messageId: number): boolean {
   }
 }
 
+function appendTriggerMessageIds(
+  trigger: {
+    timing: 'before_reply' | 'after_reply' | 'manual';
+    source: string;
+    generation_type: string;
+    user_message_id?: number;
+    assistant_message_id?: number;
+  },
+  ids: { userMessageId?: number | null; assistantMessageId?: number | null },
+) {
+  if (Number.isFinite(ids.userMessageId)) {
+    trigger.user_message_id = ids.userMessageId;
+  }
+
+  if (Number.isFinite(ids.assistantMessageId)) {
+    trigger.assistant_message_id = ids.assistantMessageId;
+  }
+
+  return trigger;
+}
+
 async function onAfterReplyMessage(messageId: number, type: string, source: 'message_received' | 'generation_ended') {
   const settings = getSettings();
   if (!hasFlowsForTiming(settings, 'after_reply')) {
@@ -1446,13 +1467,17 @@ async function onAfterReplyMessage(messageId: number, type: string, source: 'mes
         userInput,
         injectReply: false,
         timingFilter: 'after_reply',
-        trigger: {
-          timing: 'after_reply',
-          source,
-          generation_type: generationType,
-          user_message_id: pendingUserMessageId,
-          assistant_message_id: messageId,
-        },
+        trigger: appendTriggerMessageIds(
+          {
+            timing: 'after_reply',
+            source,
+            generation_type: generationType,
+          },
+          {
+            userMessageId: pendingUserMessageId,
+            assistantMessageId: messageId,
+          },
+        ),
         reminderMessage: '正在根据最新回复更新动态世界，请稍后…',
         successMessage: '动态世界已根据最新回复完成更新。',
       });
@@ -1620,13 +1645,17 @@ export async function rerollCurrentAfterReplyWorkflow(): Promise<{ ok: boolean; 
           flowIds,
           timingFilter: 'after_reply',
           preservedResults,
-          trigger: {
-            timing: 'after_reply',
-            source: 'fab_double_click',
-            generation_type: generationType,
-            user_message_id: runtimeState.after_reply.pending_user_message_id ?? runtimeState.last_send?.message_id,
-            assistant_message_id: messageId,
-          },
+          trigger: appendTriggerMessageIds(
+            {
+              timing: 'after_reply',
+              source: 'fab_double_click',
+              generation_type: generationType,
+            },
+            {
+              userMessageId: runtimeState.after_reply.pending_user_message_id ?? runtimeState.last_send?.message_id,
+              assistantMessageId: messageId,
+            },
+          ),
           reminderMessage:
             rerollScope === 'failed_only' && flowIds?.length
               ? failedOnlyFallbackToAll

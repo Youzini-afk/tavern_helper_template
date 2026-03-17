@@ -12,12 +12,35 @@ export type BuildRequestInput = {
   serial_results?: Record<string, any>[];
 };
 
+function sanitizeTrigger(trigger: FlowTriggerV1 | undefined): FlowTriggerV1 | undefined {
+  if (!trigger) {
+    return undefined;
+  }
+
+  const next: Record<string, unknown> = {
+    timing: trigger.timing,
+    source: trigger.source,
+    generation_type: trigger.generation_type,
+  };
+
+  if (Number.isFinite(trigger.user_message_id)) {
+    next.user_message_id = trigger.user_message_id;
+  }
+
+  if (Number.isFinite(trigger.assistant_message_id)) {
+    next.assistant_message_id = trigger.assistant_message_id;
+  }
+
+  return next as FlowTriggerV1;
+}
+
 export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRequestV1> {
   const chatId = String(
     (typeof SillyTavern !== 'undefined' ? (SillyTavern?.getCurrentChatId?.() ?? (SillyTavern as any).chatId) : null) ??
       'unknown',
   );
   const requestId = input.request_id ?? uuidv4();
+  const trigger = sanitizeTrigger(input.trigger);
 
   const payload = FlowRequestSchema.parse({
     version: 'ew-flow/v1',
@@ -25,7 +48,7 @@ export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRe
     chat_id: chatId,
     message_id: input.message_id,
     ...(input.user_input ? { user_input: input.user_input } : {}),
-    ...(input.trigger ? { trigger: input.trigger } : {}),
+    ...(trigger ? { trigger } : {}),
     flow: {
       id: input.flow.id,
       name: input.flow.name,
