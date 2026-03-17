@@ -211,7 +211,7 @@ function normalizeApiPresets(rawPresets: EwApiPreset[]): EwApiPreset[] {
     return normalized;
   }
 
-  return [makeDefaultApiPreset(1)];
+  return [];
 }
 
 function findPresetByLegacyFields(presets: EwApiPreset[], flow: EwFlowConfig): EwApiPreset | null {
@@ -283,8 +283,8 @@ function normalizeSettings(raw: unknown): EwSettings {
   const base = parsed.success ? parsed.data : EwSettingsSchema.parse({});
   const apiPresets = normalizeApiPresets(base.api_presets ?? []);
   const usedPresetNames = new Set(apiPresets.map(preset => preset.name));
-  const defaultPresetId = apiPresets[0].id;
-  const flowSeed = base.flows.length > 0 ? base.flows : [makeDefaultFlow(1, defaultPresetId)];
+  const defaultPresetId = apiPresets[0]?.id ?? '';
+  const flowSeed = base.flows;
 
   const normalizedFlows = flowSeed.map(flow => {
     let nextFlow = EwFlowConfigSchema.parse(flow);

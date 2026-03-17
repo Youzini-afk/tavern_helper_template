@@ -310,19 +310,13 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   function removeApiPreset(presetId: string) {
     const next = klona(settings.value);
     _.remove(next.api_presets, preset => preset.id === presetId);
-
-    if (next.api_presets.length === 0) {
-      next.api_presets.push(createDefaultApiPreset(1));
-    }
-
-    const fallbackPresetId = next.api_presets[0].id;
     next.flows = next.flows.map(flow => {
       if (flow.api_preset_id !== presetId) {
         return flow;
       }
       return {
         ...flow,
-        api_preset_id: fallbackPresetId,
+        api_preset_id: next.api_presets[0]?.id ?? '',
       };
     });
 
@@ -347,12 +341,6 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   function removeFlow(flowId: string) {
     const next = klona(settings.value);
     _.remove(next.flows, flow => flow.id === flowId);
-    if (next.flows.length === 0) {
-      if (next.api_presets.length === 0) {
-        next.api_presets.push(createDefaultApiPreset(1));
-      }
-      next.flows.push(createDefaultFlow(1, next.api_presets[0].id));
-    }
     settings.value = next;
     if (expandedFlowId.value === flowId) {
       expandedFlowId.value = next.flows[0]?.id ?? null;
@@ -783,13 +771,14 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   }
 
   function addCharFlow() {
-    const apiPresets = settings.value.api_presets;
-    if (apiPresets.length === 0) {
+    let defaultPresetId = settings.value.api_presets[0]?.id ?? '';
+    if (!defaultPresetId) {
       const next = klona(settings.value);
       next.api_presets.push(createDefaultApiPreset(1));
       settings.value = next;
+      defaultPresetId = next.api_presets[0]?.id ?? '';
     }
-    const newFlow = createDefaultFlow(charFlows.value.length + 1, settings.value.api_presets[0].id);
+    const newFlow = createDefaultFlow(charFlows.value.length + 1, defaultPresetId);
     charFlows.value = [...charFlows.value, newFlow];
     expandedFlowId.value = newFlow.id;
   }

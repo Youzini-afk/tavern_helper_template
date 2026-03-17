@@ -138,6 +138,10 @@
                   @update:model-value="value => updateApiPreset(index, value)"
                 />
               </transition-group>
+
+              <div v-if="store.settings.api_presets.length === 0" class="ew-flow-empty">
+                当前还没有 API 配置。点击「新增API配置」来创建。
+              </div>
             </EwSectionCard>
           </template>
 
@@ -442,6 +446,10 @@
                     @update:model-value="value => updateFlow(index, value)"
                   />
                 </transition-group>
+
+                <div v-if="store.settings.flows.length === 0" class="ew-flow-empty">
+                  当前还没有全局工作流。点击「新增工作流」来创建。
+                </div>
               </EwSectionCard>
             </template>
 
