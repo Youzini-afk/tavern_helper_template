@@ -52,6 +52,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   const flowScope = ref<'global' | 'character'>('global');
   const charFlowsLoading = ref(false);
   let suppressCharFlowDraftPersist = false;
+  let charFlowRefreshTimer: number | null = null;
 
   // ── 调试预览 ──
   const promptPreview = ref<PromptPreviewMessage[] | null>(null);
@@ -80,6 +81,37 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   function flushSettingsPersist() {
     clearScheduledPersist();
     persistSettingsDraft(settings.value);
+  }
+
+  function clearCharFlowRefreshTimer() {
+    if (charFlowRefreshTimer !== null) {
+      window.clearInterval(charFlowRefreshTimer);
+      charFlowRefreshTimer = null;
+    }
+  }
+
+  function isCharacterFlowPanelActive() {
+    return settings.value.ui_open && activeTab.value === 'flows' && flowScope.value === 'character';
+  }
+
+  function scheduleCharFlowRefreshWatch() {
+    clearCharFlowRefreshTimer();
+
+    if (!isCharacterFlowPanelActive()) {
+      return;
+    }
+
+    charFlowRefreshTimer = window.setInterval(() => {
+      if (!isCharacterFlowPanelActive() || charFlowsLoading.value) {
+        return;
+      }
+
+      const currentName = (getCurrentCharacterName?.() ?? '').trim();
+      const loadedName = activeCharName.value.trim();
+      if (currentName !== loadedName) {
+        void loadCharFlows();
+      }
+    }, 900);
   }
 
   function scheduleSettingsPersist() {
@@ -122,6 +154,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     syncRun.stop();
     syncIo.stop();
     clearScheduledPersist();
+    clearCharFlowRefreshTimer();
   });
 
   watch(
@@ -236,6 +269,22 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     { deep: true, flush: 'post' },
   );
 
+  watch(
+    () => [settings.value.ui_open, activeTab.value, flowScope.value] as const,
+    ([uiOpen, tab, scope], [prevUiOpen, prevTab, prevScope]) => {
+      scheduleCharFlowRefreshWatch();
+
+      if (!uiOpen || tab !== 'flows' || scope !== 'character') {
+        return;
+      }
+
+      if (!prevUiOpen || prevTab !== 'flows' || prevScope !== 'character') {
+        void loadCharFlows();
+      }
+    },
+    { immediate: true },
+  );
+
   function addApiPreset() {
     const next = klona(settings.value);
     const newPreset = createDefaultApiPreset(next.api_presets.length + 1);
@@ -325,6 +374,9 @@ export const useEwStore = defineStore('evolution-world-store', () => {
 
   function setActiveTab(tab: TabKey) {
     activeTab.value = tab;
+    if (tab === 'flows' && flowScope.value === 'character') {
+      void loadCharFlows();
+    }
   }
 
   function setGlobalAdvancedOpen(open: boolean) {
@@ -765,7 +817,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   function setFlowScope(scope: 'global' | 'character') {
     flowScope.value = scope;
     if (scope === 'character') {
-      loadCharFlows();
+      void loadCharFlows();
     }
   }
 
