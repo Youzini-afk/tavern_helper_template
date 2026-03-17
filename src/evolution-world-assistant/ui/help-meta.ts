@@ -45,6 +45,14 @@ const FIELD_HELP_LIST: FieldHelpMeta[] = [
     isAdvanced: true,
   },
   {
+    key: 'strip_workflow_image_blocks',
+    label: '屏蔽图片块',
+    shortHelp: '发送聊天历史到工作流 AI 前，自动剥离文生图插件插入的 <image>…</image> 块。',
+    detailHelp:
+      '仅影响发给工作流 AI 的上下文副本，不会修改酒馆里的原始消息显示。建议保持开启；若你的工作流确实需要读取这类图片块原文，再关闭。',
+    isAdvanced: true,
+  },
+  {
     key: 'auto_reroll_max_attempts',
     label: '自动重roll次数',
     shortHelp: '工作流失败后，最多再自动重roll多少次。',

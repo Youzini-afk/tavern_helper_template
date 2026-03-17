@@ -212,6 +212,25 @@
                     :placeholder="help('after_reply_delay_seconds')?.placeholder"
                   />
                 </EwFieldRow>
+                <EwFieldRow label="屏蔽图片块" :help="help('strip_workflow_image_blocks')">
+                  <button
+                    type="button"
+                    class="ew-switch"
+                    role="switch"
+                    :aria-checked="store.settings.strip_workflow_image_blocks ? 'true' : 'false'"
+                    @click="store.settings.strip_workflow_image_blocks = !store.settings.strip_workflow_image_blocks"
+                  >
+                    <span
+                      class="ew-switch__track"
+                      :data-enabled="store.settings.strip_workflow_image_blocks ? '1' : '0'"
+                    >
+                      <span class="ew-switch__thumb" />
+                    </span>
+                    <span class="ew-switch__text">{{
+                      store.settings.strip_workflow_image_blocks ? '已开启' : '已关闭'
+                    }}</span>
+                  </button>
+                </EwFieldRow>
                 <EwFieldRow label="并行间隔(秒)" :help="help('parallel_dispatch_interval_seconds')">
                   <input
                     v-model.number="store.settings.parallel_dispatch_interval_seconds"

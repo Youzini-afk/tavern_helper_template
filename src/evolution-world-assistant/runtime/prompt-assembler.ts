@@ -379,6 +379,17 @@ function stripWorkflowImageBlocks(content: string): { content: string; removedCo
   return { content: nextContent, removedCount };
 }
 
+function sanitizeWorkflowChatMessage(
+  content: string,
+  settings?: EwSettings,
+): { content: string; removedCount: number } {
+  if (!settings?.strip_workflow_image_blocks) {
+    return { content, removedCount: 0 };
+  }
+
+  return stripWorkflowImageBlocks(content);
+}
+
 function formatAttempt(attempt: PromptDiagnosticAttempt): string {
   const base = `${attempt.label}: ${attempt.hasValue ? `hit (${attempt.length})` : 'miss (0)'}`;
   return attempt.detail ? `${base} [${attempt.detail}]` : base;
@@ -701,7 +712,7 @@ export async function collectPromptComponents(flow: EwFlowConfig, settings?: EwS
       components.chatMessages = msgs
         .slice(-flow.context_turns)
         .map((msg: any) => {
-          const sanitized = stripWorkflowImageBlocks(String(msg.message ?? ''));
+          const sanitized = sanitizeWorkflowChatMessage(String(msg.message ?? ''), settings);
           strippedImageBlockCount += sanitized.removedCount;
           return {
             role: msg.role as 'system' | 'user' | 'assistant',
@@ -711,7 +722,7 @@ export async function collectPromptComponents(flow: EwFlowConfig, settings?: EwS
         })
         .filter((msg: any) => Boolean(msg.content.trim()));
 
-      if (strippedImageBlockCount > 0) {
+      if (settings?.strip_workflow_image_blocks && strippedImageBlockCount > 0) {
         chatHistoryAttempts.push({
           label: 'stripWorkflowImageBlocks()',
           hasValue: true,
