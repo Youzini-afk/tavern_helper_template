@@ -301,12 +301,19 @@ export const EwSettingsSchema = z.object({
   // ── 隐藏设置（全局） ──
   hide_settings: z
     .object({
-      enabled: z.boolean().default(false),
-      hide_last_n: z.coerce.number().int().min(0).default(0),
-      limiter_enabled: z.boolean().default(false),
-      limiter_count: z.coerce.number().int().min(1).default(20),
+      enabled: z.boolean().default(true),
+      hide_last_n: z.coerce.number().int().min(0).default(10),
+      affect_workflow_context: z.boolean().default(false),
+      limiter_enabled: z.boolean().default(true),
+      limiter_count: z.coerce.number().int().min(1).default(10),
     })
-    .default({ enabled: false, hide_last_n: 0, limiter_enabled: false, limiter_count: 20 }),
+    .default({
+      enabled: true,
+      hide_last_n: 10,
+      affect_workflow_context: false,
+      limiter_enabled: true,
+      limiter_count: 10,
+    }),
 });
 
 export const WorldbookOperationSchema = z.object({

@@ -1,6 +1,7 @@
 import { disposeGlobalApi, initGlobalApi } from './api';
 import { disposeRuntimeEvents, initRuntimeEvents } from './events';
-import { hydrateSharedSettings, loadLastIo, loadLastRun, loadSettings } from './settings';
+import { scheduleHideSettingsApply } from './hide-engine';
+import { getSettings, hydrateSharedSettings, loadLastIo, loadLastRun, loadSettings } from './settings';
 
 let initialized = false;
 let initPromise: Promise<void> | null = null;
@@ -20,6 +21,7 @@ export async function initRuntime() {
     await hydrateSharedSettings();
     initGlobalApi();
     initRuntimeEvents();
+    scheduleHideSettingsApply(getSettings().hide_settings, 220);
 
     // 不再通过酒馆助手的 initializeGlobal 注册全局变量，
     // 避免框架将 EvolutionWorldAPI（含 getConfig()）序列化写入角色卡变量。

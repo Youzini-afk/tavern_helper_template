@@ -663,12 +663,15 @@ export async function collectPromptComponents(flow: EwFlowConfig, settings?: EwS
     ];
 
     if (lastId >= 0) {
-      const msgs = getRuntimeChatMessages(`0-${lastId}`, { hide_state: 'unhidden' });
+      const hideState = settings?.hide_settings;
+      const shouldRespectHideState = Boolean(hideState?.enabled && hideState?.affect_workflow_context);
+      const chatMessageOptions = shouldRespectHideState ? { hide_state: 'unhidden' as const } : undefined;
+      const msgs = getRuntimeChatMessages(`0-${lastId}`, chatMessageOptions);
       chatHistoryAttempts.push({
         label: 'getChatMessages()',
         hasValue: Array.isArray(msgs) && msgs.length > 0,
         length: Array.isArray(msgs) ? msgs.length : 0,
-        detail: `range=0-${lastId}`,
+        detail: `range=0-${lastId}; hide_state=${shouldRespectHideState ? 'unhidden' : 'all'}`,
       });
       components.chatMessages = msgs
         .slice(-flow.context_turns)

@@ -118,6 +118,13 @@ const FIELD_HELP_LIST: FieldHelpMeta[] = [
     detailHelp: '开启后，在 CHAT_CHANGED 事件触发时会扫描世界书，移除不再与任何楼层关联的孤儿条目。',
   },
   {
+    key: 'hide_settings.affect_workflow_context',
+    label: '隐藏限制工作流上下文',
+    shortHelp: '控制“保留最新 N 条”是否同时限制工作流读取到的聊天楼层。',
+    detailHelp:
+      '关闭时，隐藏只作用于主回复 AI，不限制工作流的上下文楼层数；例如工作流配置 8 层、隐藏设置 4 层时，工作流仍可读取 8 层。开启后，工作流会和主回复一样，只能读取未隐藏的最近楼层。',
+  },
+  {
     key: 'failure_policy',
     label: '失败策略',
     shortHelp: '工作流失败时的处理方式。',

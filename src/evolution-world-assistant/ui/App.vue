@@ -324,8 +324,29 @@
                     min="0"
                     step="1"
                     placeholder="0 表示不隐藏"
-                    :disabled="!store.settings.hide_settings.enabled"
                   />
+                </EwFieldRow>
+                <EwFieldRow label="隐藏限制工作流上下文" :help="help('hide_settings.affect_workflow_context')">
+                  <button
+                    type="button"
+                    class="ew-switch"
+                    role="switch"
+                    :aria-checked="store.settings.hide_settings.affect_workflow_context ? 'true' : 'false'"
+                    @click="
+                      store.settings.hide_settings.affect_workflow_context =
+                        !store.settings.hide_settings.affect_workflow_context
+                    "
+                  >
+                    <span
+                      class="ew-switch__track"
+                      :data-enabled="store.settings.hide_settings.affect_workflow_context ? '1' : '0'"
+                    >
+                      <span class="ew-switch__thumb" />
+                    </span>
+                    <span class="ew-switch__text">{{
+                      store.settings.hide_settings.affect_workflow_context ? '已开启' : '仅主回复生效'
+                    }}</span>
+                  </button>
                 </EwFieldRow>
                 <EwFieldRow label="限制楼层渲染">
                   <button
@@ -355,7 +376,6 @@
                     min="1"
                     step="1"
                     placeholder="例如 20"
-                    :disabled="!store.settings.hide_settings.limiter_enabled"
                   />
                 </EwFieldRow>
               </div>
@@ -526,7 +546,7 @@
 import { checkEjsSyntax, renderEjsContent } from '../runtime/ejs-internal';
 import { migrateSnapshots } from '../runtime/floor-binding';
 import { resolveControllerEntryNameMap } from '../runtime/helpers';
-import { applyFloorLimit, runFullHideCheck, unhideAll } from '../runtime/hide-engine';
+import { applyHideSettings, unhideAll } from '../runtime/hide-engine';
 import { patchSettings } from '../runtime/settings';
 import type { EwApiPreset, EwFlowConfig } from '../runtime/types';
 import EwApiPresetCard from './components/EwApiPresetCard.vue';
@@ -953,8 +973,7 @@ function updateApiPreset(index: number, nextPreset: EwApiPreset) {
 }
 
 function onApplyHide() {
-  runFullHideCheck(store.settings.hide_settings);
-  applyFloorLimit(store.settings.hide_settings);
+  applyHideSettings(store.settings.hide_settings);
   showEwNotice({ title: '隐藏助手', message: '隐藏设置已应用', level: 'success' });
 }
 
@@ -1050,6 +1069,20 @@ watch(
       previousPrefix,
     );
   },
+);
+
+watch(
+  () =>
+    [
+      store.settings.hide_settings.enabled,
+      store.settings.hide_settings.hide_last_n,
+      store.settings.hide_settings.limiter_enabled,
+      store.settings.hide_settings.limiter_count,
+    ] as const,
+  () => {
+    applyHideSettings(store.settings.hide_settings);
+  },
+  { flush: 'post' },
 );
 
 onUnmounted(() => {

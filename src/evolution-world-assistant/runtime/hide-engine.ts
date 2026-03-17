@@ -18,7 +18,7 @@ declare const SillyTavern: { getContext(): Record<string, any> } | undefined;
 
 export interface HideSettings {
   enabled: boolean;
-  hide_last_n: number;       // 0 = don't hide
+  hide_last_n: number; // 0 = don't hide
   limiter_enabled: boolean;
   limiter_count: number;
 }
@@ -29,6 +29,7 @@ interface HideState {
 
 // Module-level state
 let hideState: HideState = { lastProcessedLength: 0 };
+let scheduledHideApplyTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
  * Tracks message indices that EW itself has hidden.
@@ -65,6 +66,33 @@ function getContextFns(): {
   }
 }
 
+function syncSystemAttribute(indices: number[], value: 'true' | 'false'): void {
+  if (indices.length === 0 || typeof $ === 'undefined') {
+    return;
+  }
+  const sel = indices.map(id => `.mes[mesid="${id}"]`).join(',');
+  $(sel).attr('is_system', value);
+}
+
+function rerenderChatSlice(startIdx: number): void {
+  const { clearChat, addOneMessage, swipe } = getContextFns();
+  const chat = getChat();
+  if (!chat || !clearChat || !addOneMessage) {
+    return;
+  }
+
+  if (typeof $ !== 'undefined' && $('#chat .edit_textarea').length > 0) {
+    return;
+  }
+
+  clearChat();
+  for (let i = Math.max(0, startIdx); i < chat.length; i++) {
+    addOneMessage(chat[i], { scroll: false, forceId: i });
+  }
+
+  swipe?.refresh?.();
+}
+
 // ── 1. Full hide check ───────────────────────────────────────────────
 
 /**
@@ -85,6 +113,7 @@ export function runFullHideCheck(settings: HideSettings): void {
 
   const toHide: number[] = [];
   const toShow: number[] = [];
+  const desiredHiddenIndices: number[] = [];
 
   for (let i = 0; i < chatLen; i++) {
     const msg = chat[i];
@@ -92,6 +121,10 @@ export function runFullHideCheck(settings: HideSettings): void {
 
     const isHidden = msg.is_system === true;
     const shouldBeHidden = i < visibleStart;
+
+    if (shouldBeHidden) {
+      desiredHiddenIndices.push(i);
+    }
 
     if (shouldBeHidden && !isHidden) {
       msg.is_system = true;
@@ -105,17 +138,8 @@ export function runFullHideCheck(settings: HideSettings): void {
     }
   }
 
-  // Update DOM attributes
-  if (typeof $ !== 'undefined') {
-    if (toHide.length > 0) {
-      const sel = toHide.map(id => `.mes[mesid="${id}"]`).join(',');
-      $(sel).attr('is_system', 'true');
-    }
-    if (toShow.length > 0) {
-      const sel = toShow.map(id => `.mes[mesid="${id}"]`).join(',');
-      $(sel).attr('is_system', 'false');
-    }
-  }
+  syncSystemAttribute(desiredHiddenIndices, 'true');
+  syncSystemAttribute(toShow, 'false');
 
   hideState.lastProcessedLength = chatLen;
 
@@ -171,6 +195,44 @@ export function runIncrementalHideCheck(settings: HideSettings): void {
   hideState.lastProcessedLength = chatLen;
 }
 
+export function applyHideSettings(settings: HideSettings): void {
+  const normalized: HideSettings = {
+    enabled: Boolean(settings.enabled),
+    hide_last_n: Math.max(0, Math.trunc(Number(settings.hide_last_n ?? 0) || 0)),
+    limiter_enabled: Boolean(settings.limiter_enabled),
+    limiter_count: Math.max(1, Math.trunc(Number(settings.limiter_count ?? 1) || 1)),
+  };
+
+  if (!normalized.enabled || normalized.hide_last_n <= 0) {
+    unhideAll();
+  } else {
+    runFullHideCheck(normalized);
+  }
+
+  applyFloorLimit(normalized);
+}
+
+export function scheduleHideSettingsApply(settings: HideSettings, delayMs = 120): void {
+  const snapshot: HideSettings = {
+    enabled: Boolean(settings.enabled),
+    hide_last_n: Math.max(0, Math.trunc(Number(settings.hide_last_n ?? 0) || 0)),
+    limiter_enabled: Boolean(settings.limiter_enabled),
+    limiter_count: Math.max(1, Math.trunc(Number(settings.limiter_count ?? 1) || 1)),
+  };
+
+  if (scheduledHideApplyTimer) {
+    clearTimeout(scheduledHideApplyTimer);
+  }
+
+  scheduledHideApplyTimer = setTimeout(
+    () => {
+      scheduledHideApplyTimer = null;
+      applyHideSettings(snapshot);
+    },
+    Math.max(0, delayMs),
+  );
+}
+
 /**
  * Removes hidden status only from messages that EW itself has hidden.
  * Original system messages (is_system=true before EW ran) are left untouched.
@@ -207,7 +269,7 @@ export function applyFloorLimit(settings: HideSettings): void {
   if (!settings.limiter_enabled) {
     // If was active, restore
     if (typeof $ !== 'undefined' && $('#chat').attr('data-limiter-active')) {
-      runFullHideCheck(settings); // Restore normal view
+      rerenderChatSlice(0);
       $('#chat').removeAttr('data-limiter-active');
     }
     return;
@@ -216,28 +278,22 @@ export function applyFloorLimit(settings: HideSettings): void {
   const limit = settings.limiter_count;
   if (limit <= 0) return;
 
-  const { clearChat, addOneMessage, swipe } = getContextFns();
   const chat = getChat();
-  if (!chat || !clearChat || !addOneMessage) return;
+  if (!chat) return;
 
-  // Don't run if user is editing
-  if (typeof $ !== 'undefined' && $('#chat .edit_textarea').length > 0) return;
-
-  clearChat();
+  rerenderChatSlice(Math.max(0, chat.length - limit));
   $('#chat').attr('data-limiter-active', 'true');
-
   const startIdx = Math.max(0, chat.length - limit);
-  for (let i = startIdx; i < chat.length; i++) {
-    addOneMessage(chat[i], { scroll: false, forceId: i });
-  }
-
-  if (swipe?.refresh) swipe.refresh();
   console.log(`[EW Hide] Limiter: displaying ${chat.length - startIdx}/${chat.length} messages`);
 }
 
 // ── 5. Reset state ───────────────────────────────────────────────────
 
 export function resetHideState(): void {
+  if (scheduledHideApplyTimer) {
+    clearTimeout(scheduledHideApplyTimer);
+    scheduledHideApplyTimer = null;
+  }
   hideState = { lastProcessedLength: 0 };
   ewHiddenIndices.clear();
 }

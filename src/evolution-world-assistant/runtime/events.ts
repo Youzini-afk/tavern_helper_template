@@ -1,7 +1,7 @@
 import { EwWorkflowNoticeInput, showManagedWorkflowNotice } from '../ui/notice';
 import { getEffectiveFlows } from './char-flows';
 import { disposeFloorBindingEvents, initFloorBindingEvents, rollbackBeforeFloor } from './floor-binding';
-import { runIncrementalHideCheck } from './hide-engine';
+import { resetHideState, runIncrementalHideCheck, scheduleHideSettingsApply } from './hide-engine';
 import { markIntercepted, resetInterceptGuard, wasRecentlyIntercepted } from './intercept-guard';
 import { runWorkflow } from './pipeline';
 import { getSettings, patchSettings } from './settings';
@@ -1686,12 +1686,14 @@ export function initRuntimeEvents() {
 
   listenerStops.push(
     eventOn(tavern_events.MESSAGE_RECEIVED, async (messageId, type) => {
+      scheduleHideSettingsApply(getSettings().hide_settings, 120);
       await onAfterReplyMessage(messageId, type, 'message_received');
     }),
   );
 
   listenerStops.push(
     eventOn(tavern_events.GENERATION_ENDED, async messageId => {
+      scheduleHideSettingsApply(getSettings().hide_settings, 180);
       const type = getRuntimeState().last_generation?.type ?? 'normal';
       await onAfterReplyMessage(messageId, type, 'generation_ended');
     }),
@@ -1709,6 +1711,8 @@ export function initRuntimeEvents() {
       clearQueuedWorkflowTasks('workflow queue cleared because chat changed');
       resetRuntimeState();
       resetInterceptGuard();
+      resetHideState();
+      scheduleHideSettingsApply(getSettings().hide_settings, 360);
       setTimeout(() => {
         installSendIntentHooks();
         // Re-install TavernHelper hook in case it was overwritten during chat change
