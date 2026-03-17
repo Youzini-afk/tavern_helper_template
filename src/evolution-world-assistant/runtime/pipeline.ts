@@ -11,9 +11,12 @@ import {
   DispatchFlowAttempt,
   DispatchFlowResult,
   RunSummarySchema,
+  WorkflowFailureDiagnostic,
   WorkflowProgressUpdate,
 } from './types';
 import { resolveTargetWorldbook } from './worldbook-runtime';
+
+type WorkflowExecutionStage = 'preparing' | 'dispatch' | 'merge' | 'commit' | 'completed';
 
 type RunWorkflowInput = {
   message_id: number;
@@ -36,7 +39,273 @@ export type RunWorkflowOutput = {
   diagnostics?: Record<string, any>;
   attempts: DispatchFlowAttempt[];
   results: DispatchFlowResult[];
+  failure: WorkflowFailureDiagnostic | null;
 };
+
+function extractHttpStatus(reason: string): number | null {
+  const match = reason.match(/HTTP\s+(\d{3})\b/i);
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
+function hasJsonSyntaxHint(reason: string): boolean {
+  return /unexpected token|unterminated|stringified|jsonrepair|json5|parse json|JSON at position/i.test(reason);
+}
+
+function hasRegexExtractHint(reason: string): boolean {
+  return /response_extract_regex|extract regex|did not match|未匹配/i.test(reason);
+}
+
+function inferFailureKind(
+  stage: WorkflowFailureDiagnostic['stage'],
+  reason: string,
+): WorkflowFailureDiagnostic['kind'] {
+  const httpStatus = extractHttpStatus(reason);
+  if (/workflow cancelled by user/i.test(reason)) {
+    return 'cancelled';
+  }
+  if (httpStatus === 401) {
+    return 'auth_error';
+  }
+  if (httpStatus === 403) {
+    return 'permission_error';
+  }
+  if (httpStatus === 404) {
+    return 'not_found';
+  }
+  if (httpStatus === 429) {
+    return 'rate_limit';
+  }
+  if (/secure TLS connection was not established|tls|certificate|ssl/i.test(reason)) {
+    return 'tls_error';
+  }
+  if (/ECONNRESET|connection reset|socket disconnected/i.test(reason)) {
+    return 'connection_reset';
+  }
+  if (/timeout/i.test(reason)) {
+    return 'timeout';
+  }
+  if (/API returned empty response|empty response/i.test(reason)) {
+    return 'empty_response';
+  }
+  if (hasRegexExtractHint(reason)) {
+    return 'regex_extract';
+  }
+  if (/response schema invalid/i.test(reason)) {
+    return 'schema_invalid';
+  }
+  if (hasJsonSyntaxHint(reason)) {
+    return 'response_parse';
+  }
+  if (/request_template invalid|headers_json invalid/i.test(reason)) {
+    return 'template_invalid';
+  }
+  if (/bound worldbook|worldbook/i.test(reason) && stage === 'config') {
+    return 'worldbook_missing';
+  }
+  if (/no enabled flows|api_url is empty|model is empty|generateRaw is unavailable/i.test(reason)) {
+    return 'config_invalid';
+  }
+  if (/上游 API|ST backend error|HTTP\s+\d{3}|ECONNRESET|ETIMEDOUT/i.test(reason)) {
+    return 'http_error';
+  }
+  if (stage === 'merge') {
+    return 'merge_failed';
+  }
+  if (stage === 'commit') {
+    return 'commit_failed';
+  }
+  return 'unknown';
+}
+
+function inferFailureSuggestion(
+  stage: WorkflowFailureDiagnostic['stage'],
+  kind: WorkflowFailureDiagnostic['kind'],
+  reason: string,
+): string {
+  const httpStatus = extractHttpStatus(reason);
+  switch (kind) {
+    case 'auth_error':
+      return '上游接口返回 401，优先检查 API Key、Authorization 头和当前预设是否绑定到了正确模型。';
+    case 'permission_error':
+      return '上游接口返回 403，通常是权限不足、额度受限或模型无权访问，先检查账号权限与模型白名单。';
+    case 'not_found':
+      return '上游接口返回 404，优先检查 API 地址、反向代理路径和模型名称是否写错。';
+    case 'rate_limit':
+      return '上游接口返回 429，说明触发了限流；建议提高并行间隔、串行间隔或 after_reply 延迟，并检查 RPM/TPM 配额。';
+    case 'tls_error':
+      return '与上游建立 TLS/SSL 连接失败，检查证书链、代理配置以及 API 地址是否支持 HTTPS。';
+    case 'connection_reset':
+      return '连接在建立或传输过程中被重置，优先检查代理、网络稳定性和上游服务可用性。';
+    case 'http_error':
+      return httpStatus
+        ? `上游接口返回 HTTP ${httpStatus}，检查 API 预设中的地址、模型、鉴权和代理配置。`
+        : '检查 API 预设中的地址、模型、鉴权和代理配置，确认上游服务当前可访问。';
+    case 'timeout':
+      return '检查模型响应速度，或提高工作流/全局超时，并减少单次返回体积。';
+    case 'empty_response':
+      return '上游接口返回了空内容，优先检查模型是否被静默拒答、流式桥接是否中断，以及请求模板是否导致无正文返回。';
+    case 'regex_extract':
+      return '检查该工作流的 response_extract_regex 是否能稳定命中模型输出；如果模型会输出 thinking/解释文本，也要同步调整 remove/extract 规则。';
+    case 'schema_invalid':
+      return '模型返回结构不符合 FlowResponse 约定，先检查 prompt 约束，再检查响应提取后的 JSON 结构。';
+    case 'response_parse':
+      return '模型返回的文本无法解析为 JSON，优先检查 response_remove_regex、response_extract_regex、thinking 污染以及 schema 约束。';
+    case 'template_invalid':
+      return '检查 request_template 或 headers_json 是否仍是合法 JSON，并确认模板替换后没有破坏结构。';
+    case 'worldbook_missing':
+      return '先为当前角色绑定世界书，再执行工作流。';
+    case 'config_invalid':
+      return '检查工作流启用状态、API 预设绑定以及必填字段是否完整。';
+    case 'merge_failed':
+      return '检查各工作流返回的 operations / controller_model 是否存在结构冲突或字段缺失。';
+    case 'commit_failed':
+      return '检查世界书写回、控制器渲染和楼层绑定状态，确认宿主允许当前聊天写入。';
+    case 'cancelled':
+      return '这是手动中止，不是系统故障；如需复现，请重新执行本轮工作流。';
+    case 'unknown':
+    default:
+      if (stage === 'dispatch') {
+        return '先从下方请求/响应详情定位是哪条工作流失败，再检查对应 API 返回内容。';
+      }
+      if (stage === 'merge') {
+        return '优先查看运行记录中的成功 flow 返回结果，确认合并前的数据是否完整。';
+      }
+      if (stage === 'commit') {
+        return '优先检查世界书绑定、控制器模板和宿主写回路径。';
+      }
+      return reason ? '请结合下方运行记录和请求/响应详情继续排查。' : '请结合运行记录继续排查。';
+  }
+}
+
+function getFailureStageLabel(stage: WorkflowFailureDiagnostic['stage']): string {
+  switch (stage) {
+    case 'dispatch':
+      return '请求阶段';
+    case 'merge':
+      return '合并阶段';
+    case 'commit':
+      return '写回阶段';
+    case 'cancelled':
+      return '已取消';
+    case 'config':
+      return '配置阶段';
+    case 'unknown':
+    default:
+      return '未知阶段';
+  }
+}
+
+function classifyDispatchFlowFailure(reason: string) {
+  const kind = inferFailureKind('dispatch', reason);
+  return {
+    stage: 'dispatch' as const,
+    kind,
+    suggestion: inferFailureSuggestion('dispatch', kind, reason),
+    httpStatus: extractHttpStatus(reason),
+  };
+}
+
+function buildWorkflowFailureDiagnostic(params: {
+  stage: WorkflowFailureDiagnostic['stage'];
+  reason: string;
+  requestId: string;
+  attempts: DispatchFlowAttempt[];
+}): WorkflowFailureDiagnostic {
+  const { stage, reason, requestId, attempts } = params;
+  const failedAttempts = attempts.filter(attempt => !attempt.ok);
+  const successfulAttempts = attempts.filter(attempt => attempt.ok);
+  const primaryAttempt = failedAttempts[0] ?? attempts[attempts.length - 1] ?? null;
+  const kind = inferFailureKind(stage, reason);
+  const flowName = primaryAttempt?.flow.name?.trim() || '';
+  const flowId = primaryAttempt?.flow.id ?? '';
+  const flowLabel = flowName || flowId || '当前工作流';
+  const httpStatus = extractHttpStatus(reason);
+  let summary = '';
+
+  switch (stage) {
+    case 'dispatch':
+      switch (kind) {
+        case 'auth_error':
+          summary = `工作流“${flowLabel}”鉴权失败`;
+          break;
+        case 'permission_error':
+          summary = `工作流“${flowLabel}”被上游拒绝访问`;
+          break;
+        case 'not_found':
+          summary = `工作流“${flowLabel}”请求地址或模型不存在`;
+          break;
+        case 'rate_limit':
+          summary = `工作流“${flowLabel}”触发了上游限流`;
+          break;
+        case 'tls_error':
+          summary = `工作流“${flowLabel}”建立安全连接失败`;
+          break;
+        case 'connection_reset':
+          summary = `工作流“${flowLabel}”连接被上游重置`;
+          break;
+        case 'timeout':
+          summary = `工作流“${flowLabel}”请求超时`;
+          break;
+        case 'empty_response':
+          summary = `工作流“${flowLabel}”返回了空响应`;
+          break;
+        case 'regex_extract':
+          summary = `工作流“${flowLabel}”提取规则未命中有效内容`;
+          break;
+        case 'response_parse':
+          summary = `工作流“${flowLabel}”返回内容无法解析为 JSON`;
+          break;
+        case 'schema_invalid':
+          summary = `工作流“${flowLabel}”返回结构不符合预期`;
+          break;
+        case 'template_invalid':
+          summary = `工作流“${flowLabel}”请求模板配置无效`;
+          break;
+        case 'http_error':
+          summary = httpStatus ? `工作流“${flowLabel}”请求失败（HTTP ${httpStatus}）` : `请求工作流“${flowLabel}”失败`;
+          break;
+        default:
+          summary = `请求工作流“${flowLabel}”失败`;
+          break;
+      }
+      break;
+    case 'merge':
+      summary = successfulAttempts.length > 0 ? '工作流响应已返回，但在合并结果时失败' : '工作流结果合并失败';
+      break;
+    case 'commit':
+      summary = '工作流结果已生成，但写回世界书或控制器时失败';
+      break;
+    case 'cancelled':
+      summary = '本轮工作流已被手动终止';
+      break;
+    case 'config':
+      summary = '工作流在执行前的配置检查阶段失败';
+      break;
+    case 'unknown':
+    default:
+      summary = '工作流执行失败';
+      break;
+  }
+
+  return {
+    stage,
+    kind,
+    summary,
+    detail: reason,
+    suggestion: inferFailureSuggestion(stage, kind, reason),
+    request_id: requestId,
+    flow_id: flowId,
+    flow_name: flowName,
+    api_preset_name: primaryAttempt?.api_preset_name ?? '',
+    http_status: extractHttpStatus(reason),
+    retry_count: 0,
+    attempted_flow_count: attempts.length,
+    successful_flow_count: successfulAttempts.length,
+    failed_flow_count: failedAttempts.length,
+    partial_success: failedAttempts.length > 0 && successfulAttempts.length > 0,
+    whole_workflow_failed: attempts.length > 0 && failedAttempts.length === 0 && stage !== 'dispatch',
+  };
+}
 
 function toPreview(value: unknown, maxLen = 3000): string {
   try {
@@ -90,6 +359,10 @@ function saveIoSummary(requestId: string, chatId: string, mode: 'auto' | 'manual
       ok: attempt.ok,
       elapsed_ms: attempt.elapsed_ms,
       error: attempt.error ?? '',
+      error_stage: attempt.error ? classifyDispatchFlowFailure(attempt.error).stage : 'unknown',
+      error_kind: attempt.error ? classifyDispatchFlowFailure(attempt.error).kind : 'unknown',
+      error_suggestion: attempt.error ? classifyDispatchFlowFailure(attempt.error).suggestion : '',
+      error_status: attempt.error ? classifyDispatchFlowFailure(attempt.error).httpStatus : null,
       request_preview: buildAttemptRequestPreview(attempt),
       response_preview: attempt.response ? toPreview(attempt.response) : '',
     })),
@@ -150,6 +423,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
       'unknown',
   );
   let attempts: DispatchFlowAttempt[] = [];
+  let currentStage: WorkflowExecutionStage = 'preparing';
 
   try {
     throwIfWorkflowCancelled(input);
@@ -203,6 +477,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
     }
 
     throwIfWorkflowCancelled(input);
+    currentStage = 'dispatch';
     input.onProgress?.({
       phase: 'dispatching',
       request_id: requestId,
@@ -230,6 +505,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
 
     const results = [...preservedResults, ...dispatchOutput.results];
 
+    currentStage = 'merge';
     input.onProgress?.({
       phase: 'merging',
       request_id: requestId,
@@ -249,6 +525,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
       });
     }
     throwIfWorkflowCancelled(input);
+    currentStage = 'commit';
     input.onProgress?.({
       phase: 'committing',
       request_id: requestId,
@@ -280,6 +557,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
       request_id: requestId,
       message: '工作流处理完成。',
     });
+    currentStage = 'completed';
 
     return {
       ok: true,
@@ -287,6 +565,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
       diagnostics: mergedPlan.diagnostics,
       attempts,
       results,
+      failure: null,
     };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
@@ -302,6 +581,28 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
       saveIoSummary(requestId, currentChatId, input.mode, []);
     }
 
+    const failureStage: WorkflowFailureDiagnostic['stage'] = (() => {
+      if (/workflow cancelled by user/i.test(reason)) {
+        return 'cancelled';
+      }
+      if (error instanceof DispatchFlowsError || currentStage === 'dispatch') {
+        return 'dispatch';
+      }
+      if (currentStage === 'merge') {
+        return 'merge';
+      }
+      if (currentStage === 'commit') {
+        return 'commit';
+      }
+      return attempts.length === 0 ? 'config' : 'unknown';
+    })();
+    const failure = buildWorkflowFailureDiagnostic({
+      stage: failureStage,
+      reason,
+      requestId,
+      attempts,
+    });
+
     const summary = RunSummarySchema.parse({
       at: Date.now(),
       ok: false,
@@ -315,9 +616,10 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
       elapsed_ms: Date.now() - startedAt,
       mode: input.mode,
       diagnostics: {},
+      failure,
     });
     setLastRun(summary);
 
-    return { ok: false, reason, request_id: requestId, attempts, results: preservedResults };
+    return { ok: false, reason, request_id: requestId, attempts, results: preservedResults, failure };
   }
 }

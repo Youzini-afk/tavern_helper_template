@@ -270,7 +270,7 @@ export const EwSettingsSchema = z.object({
   parallel_dispatch_interval_seconds: z.coerce.number().min(0).default(10),
   serial_dispatch_interval_seconds: z.coerce.number().min(0).default(2),
   workflow_timing: z.enum(['after_reply', 'before_reply']).default('after_reply'),
-  reroll_scope: z.enum(['all', 'failed_only']).default('all'),
+  reroll_scope: z.enum(['all', 'failed_only', 'queued_failed']).default('all'),
   failure_policy: z
     .enum(['stop_generation', 'continue_generation', 'retry_once', 'notify_only', 'allow_partial_success'])
     .default('stop_generation'),
@@ -328,6 +328,49 @@ export const RunSummarySchema = z.object({
   elapsed_ms: z.coerce.number().int().default(0),
   mode: z.enum(['auto', 'manual']).default('auto'),
   diagnostics: z.record(z.string(), z.any()).default({}),
+  failure: z
+    .object({
+      stage: z.enum(['dispatch', 'merge', 'commit', 'cancelled', 'config', 'unknown']).default('unknown'),
+      kind: z
+        .enum([
+          'http_error',
+          'auth_error',
+          'permission_error',
+          'not_found',
+          'rate_limit',
+          'tls_error',
+          'connection_reset',
+          'timeout',
+          'empty_response',
+          'response_parse',
+          'regex_extract',
+          'schema_invalid',
+          'template_invalid',
+          'config_invalid',
+          'worldbook_missing',
+          'merge_failed',
+          'commit_failed',
+          'cancelled',
+          'unknown',
+        ])
+        .default('unknown'),
+      summary: z.string().default(''),
+      detail: z.string().default(''),
+      suggestion: z.string().default(''),
+      request_id: z.string().default(''),
+      flow_id: z.string().default(''),
+      flow_name: z.string().default(''),
+      api_preset_name: z.string().default(''),
+      http_status: z.coerce.number().int().nullable().default(null),
+      retry_count: z.coerce.number().int().min(0).default(0),
+      attempted_flow_count: z.coerce.number().int().min(0).default(0),
+      successful_flow_count: z.coerce.number().int().min(0).default(0),
+      failed_flow_count: z.coerce.number().int().min(0).default(0),
+      partial_success: z.boolean().default(false),
+      whole_workflow_failed: z.boolean().default(false),
+    })
+    .nullable()
+    .default(null),
 });
 
 export const FlowIoSummarySchema = z.object({
@@ -339,6 +382,32 @@ export const FlowIoSummarySchema = z.object({
   ok: z.boolean().default(false),
   elapsed_ms: z.coerce.number().int().default(0),
   error: z.string().default(''),
+  error_stage: z.enum(['dispatch', 'merge', 'commit', 'cancelled', 'config', 'unknown']).default('unknown'),
+  error_kind: z
+    .enum([
+      'http_error',
+      'auth_error',
+      'permission_error',
+      'not_found',
+      'rate_limit',
+      'tls_error',
+      'connection_reset',
+      'timeout',
+      'empty_response',
+      'response_parse',
+      'regex_extract',
+      'schema_invalid',
+      'template_invalid',
+      'config_invalid',
+      'worldbook_missing',
+      'merge_failed',
+      'commit_failed',
+      'cancelled',
+      'unknown',
+    ])
+    .default('unknown'),
+  error_suggestion: z.string().default(''),
+  error_status: z.coerce.number().int().nullable().default(null),
   request_preview: z.string().default(''),
   response_preview: z.string().default(''),
 });
@@ -360,6 +429,7 @@ export type EwFlowPromptTriggerType = z.infer<typeof EwFlowPromptTriggerTypeSche
 export type EwSettings = z.infer<typeof EwSettingsSchema>;
 export type RunSummary = z.infer<typeof RunSummarySchema>;
 export type LastIoSummary = z.infer<typeof LastIoSummarySchema>;
+export type WorkflowFailureDiagnostic = NonNullable<RunSummary['failure']>;
 
 export type DispatchFlowResult = {
   flow: EwFlowConfig;

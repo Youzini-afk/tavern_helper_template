@@ -4,10 +4,10 @@ import { disposeFloorBindingEvents, initFloorBindingEvents, rollbackBeforeFloor 
 import { runIncrementalHideCheck } from './hide-engine';
 import { markIntercepted, resetInterceptGuard, wasRecentlyIntercepted } from './intercept-guard';
 import { runWorkflow } from './pipeline';
-import { getSettings } from './settings';
+import { getSettings, patchSettings } from './settings';
 import {
-  clearAfterReplyPending,
-  clearSendContext,
+  clearAfterReplyPendingIfMatches,
+  clearSendContextIfMatches,
   getRuntimeState,
   isQuietLike,
   markAfterReplyHandled,
@@ -20,7 +20,7 @@ import {
   shouldHandleGenerationAfter,
   wasAfterReplyHandled,
 } from './state';
-import { DispatchFlowResult, EwSettings, WorkflowProgressUpdate } from './types';
+import { DispatchFlowResult, EwSettings, WorkflowFailureDiagnostic, WorkflowProgressUpdate } from './types';
 
 const EW_FLOOR_WORKFLOW_EXECUTION_KEY = 'ew_workflow_execution';
 
@@ -32,8 +32,18 @@ type FloorWorkflowStoredResult = {
 type FloorWorkflowExecutionState = {
   at: number;
   request_id: string;
+  attempted_flow_ids: string[];
   successful_results: FloorWorkflowStoredResult[];
   failed_flow_ids: string[];
+  workflow_failed: boolean;
+};
+
+type FailedAfterReplyQueueJob = {
+  chat_key: string;
+  message_id: number;
+  user_input: string;
+  generation_type: string;
+  failed_at: number;
 };
 
 const listenerStops: EventOnReturn[] = [];
@@ -44,6 +54,15 @@ let sendIntentRetryTimer: ReturnType<typeof setTimeout> | null = null;
 let tavernHelperRetryTimer: ReturnType<typeof setTimeout> | null = null;
 const NON_SEND_GENERATION_TYPES = new Set(['continue', 'regenerate', 'swipe']);
 const WORKFLOW_NOTICE_COLLAPSE_MS = 5000;
+const workflowTaskQueue: Array<{
+  label: string;
+  run: () => Promise<unknown>;
+  resolve: (value: unknown) => void;
+  reject: (reason?: unknown) => void;
+}> = [];
+const queuedAfterReplyJobKeys = new Set<string>();
+const failedAfterReplyJobsByChat = new Map<string, FailedAfterReplyQueueJob[]>();
+let workflowTaskDrainPromise: Promise<void> | null = null;
 
 function getHostWindow(): Window & typeof globalThis {
   try {
@@ -60,6 +79,79 @@ function getHostWindow(): Window & typeof globalThis {
 function getChatDocument(): Document {
   const hostWindow = getHostWindow() as Record<string, any>;
   return hostWindow.SillyTavern?.Chat?.document ?? hostWindow.document ?? document;
+}
+
+function getCurrentChatKey(): string {
+  try {
+    return String(SillyTavern?.getCurrentChatId?.() ?? (SillyTavern as any)?.chatId ?? 'unknown');
+  } catch {
+    return 'unknown';
+  }
+}
+
+function clearQueuedWorkflowTasks(reason: string) {
+  for (const task of workflowTaskQueue.splice(0, workflowTaskQueue.length)) {
+    task.reject(new Error(reason));
+  }
+  queuedAfterReplyJobKeys.clear();
+}
+
+function enqueueWorkflowTask<T>(label: string, run: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    workflowTaskQueue.push({
+      label,
+      run: run as () => Promise<unknown>,
+      resolve: value => resolve(value as T),
+      reject,
+    });
+
+    if (!workflowTaskDrainPromise) {
+      workflowTaskDrainPromise = (async () => {
+        while (workflowTaskQueue.length > 0) {
+          const task = workflowTaskQueue.shift();
+          if (!task) {
+            continue;
+          }
+
+          try {
+            task.resolve(await task.run());
+          } catch (error) {
+            task.reject(error);
+          }
+        }
+      })().finally(() => {
+        workflowTaskDrainPromise = null;
+      });
+    }
+  });
+}
+
+function getFailedAfterReplyJobs(chatKey: string): FailedAfterReplyQueueJob[] {
+  return [...(failedAfterReplyJobsByChat.get(chatKey) ?? [])].sort((left, right) => left.failed_at - right.failed_at);
+}
+
+function upsertFailedAfterReplyJob(job: FailedAfterReplyQueueJob): void {
+  const current = failedAfterReplyJobsByChat.get(job.chat_key) ?? [];
+  const next = current.filter(item => item.message_id !== job.message_id);
+  next.push(job);
+  failedAfterReplyJobsByChat.set(
+    job.chat_key,
+    next.sort((left, right) => left.failed_at - right.failed_at),
+  );
+}
+
+function removeFailedAfterReplyJob(chatKey: string, messageId: number): void {
+  const current = failedAfterReplyJobsByChat.get(chatKey);
+  if (!current?.length) {
+    return;
+  }
+
+  const next = current.filter(item => item.message_id !== messageId);
+  if (next.length > 0) {
+    failedAfterReplyJobsByChat.set(chatKey, next);
+  } else {
+    failedAfterReplyJobsByChat.delete(chatKey);
+  }
 }
 
 function scheduleSendIntentHooksRetry() {
@@ -239,6 +331,88 @@ function formatReasonForDisplay(reason: string | undefined, maxLen = 160): strin
   return `${text.slice(0, maxLen)}...`;
 }
 
+function getFailureStageLabel(stage: WorkflowFailureDiagnostic['stage'] | undefined): string {
+  switch (stage) {
+    case 'dispatch':
+      return '请求阶段';
+    case 'merge':
+      return '合并阶段';
+    case 'commit':
+      return '写回阶段';
+    case 'cancelled':
+      return '已取消';
+    case 'config':
+      return '配置阶段';
+    case 'unknown':
+    default:
+      return '未知阶段';
+  }
+}
+
+function buildFailureNoticeMessage(
+  failure: WorkflowFailureDiagnostic | null | undefined,
+  fallbackReason: string | undefined,
+  options?: { includeReleaseHint?: boolean; retrying?: boolean },
+): string {
+  if (!failure) {
+    return options?.retrying
+      ? `首次处理失败，正在重试… ${formatReasonForDisplay(fallbackReason, 120)}`
+      : `工作流失败：${formatReasonForDisplay(fallbackReason)}`;
+  }
+
+  const lines = [
+    options?.retrying ? `首次处理失败，正在重试：${failure.summary}` : `工作流失败：${failure.summary}`,
+    `阶段：${getFailureStageLabel(failure.stage)}`,
+  ];
+
+  if (failure.flow_name || failure.flow_id) {
+    lines.push(`工作流：${failure.flow_name || failure.flow_id}`);
+  }
+  if (failure.api_preset_name) {
+    lines.push(`接口：${failure.api_preset_name}`);
+  }
+  if (failure.suggestion) {
+    lines.push(`建议：${failure.suggestion}`);
+  }
+  if (options?.includeReleaseHint) {
+    lines.push('原消息是否继续发送取决于当前放行策略。');
+  }
+
+  return lines.join('\n');
+}
+
+function buildFailureToastMessage(
+  failure: WorkflowFailureDiagnostic | null | undefined,
+  fallbackReason: string | undefined,
+): string {
+  if (!failure) {
+    return formatReasonForDisplay(fallbackReason);
+  }
+
+  const parts = [failure.summary, getFailureStageLabel(failure.stage)];
+  if (failure.flow_name || failure.flow_id) {
+    parts.push(failure.flow_name || failure.flow_id);
+  }
+  if (failure.suggestion) {
+    parts.push(failure.suggestion);
+  }
+  return parts.join(' · ');
+}
+
+function buildFailureNoticeAction(failure: WorkflowFailureDiagnostic | null | undefined) {
+  if (!failure) {
+    return undefined;
+  }
+
+  return {
+    label: '打开面板',
+    kind: 'neutral' as const,
+    onClick: () => {
+      patchSettings({ ui_open: true });
+    },
+  };
+}
+
 function normalizeFloorWorkflowExecutionState(raw: unknown): FloorWorkflowExecutionState | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return null;
@@ -263,11 +437,17 @@ function normalizeFloorWorkflowExecutionState(raw: unknown): FloorWorkflowExecut
     ? obj.failed_flow_ids.map(value => String(value ?? '').trim()).filter(Boolean)
     : [];
 
+  const attemptedFlowIds = Array.isArray(obj.attempted_flow_ids)
+    ? obj.attempted_flow_ids.map(value => String(value ?? '').trim()).filter(Boolean)
+    : [];
+
   return {
     at: Number(obj.at ?? 0),
     request_id: String(obj.request_id ?? '').trim(),
+    attempted_flow_ids: _.uniq(attemptedFlowIds),
     successful_results: successfulResults,
     failed_flow_ids: _.uniq(failedFlowIds),
+    workflow_failed: Boolean(obj.workflow_failed),
   };
 }
 
@@ -305,18 +485,22 @@ async function writeFloorWorkflowExecution(
 function buildFloorWorkflowExecutionState(
   requestId: string,
   attempts: Array<{ flow: { id: string }; ok: boolean; response?: Record<string, any> }>,
+  workflowFailed: boolean,
   preservedResults: FloorWorkflowStoredResult[] = [],
 ): FloorWorkflowExecutionState {
   const successfulResults = new Map<string, FloorWorkflowStoredResult>(
     preservedResults.map(result => [result.flow_id, result]),
   );
   const failedFlowIds = new Set<string>();
+  const attemptedFlowIds = new Set<string>();
 
   for (const attempt of attempts) {
     const flowId = String(attempt.flow.id ?? '').trim();
     if (!flowId) {
       continue;
     }
+
+    attemptedFlowIds.add(flowId);
 
     if (attempt.ok && attempt.response) {
       successfulResults.set(flowId, {
@@ -333,9 +517,98 @@ function buildFloorWorkflowExecutionState(
   return {
     at: Date.now(),
     request_id: requestId,
+    attempted_flow_ids: [...attemptedFlowIds],
     successful_results: [...successfulResults.values()],
     failed_flow_ids: [...failedFlowIds],
+    workflow_failed: workflowFailed,
   };
+}
+
+type FailedOnlyRerollResolution =
+  | {
+      ok: true;
+      flowIds: string[];
+      preservedResults: FloorWorkflowStoredResult[];
+      fallbackToAll?: boolean;
+    }
+  | {
+      ok: false;
+      reason: string;
+    };
+
+async function resolveFailedOnlyRerollTarget(
+  settings: EwSettings,
+  messageId: number,
+): Promise<FailedOnlyRerollResolution> {
+  const executionState = readFloorWorkflowExecution(messageId);
+  if (!executionState) {
+    return { ok: false, reason: '当前楼还没有可用的失败执行记录' };
+  }
+
+  if (executionState.failed_flow_ids.length === 0) {
+    if (executionState.workflow_failed && executionState.attempted_flow_ids.length > 0) {
+      const effectiveFlows = await getEffectiveFlows(settings);
+      const flowMap = new Map(effectiveFlows.map(flow => [flow.id, flow]));
+      const flowIds = executionState.attempted_flow_ids.filter(flowId => flowMap.has(flowId));
+
+      if (flowIds.length === 0) {
+        return { ok: false, reason: '当前楼失败时涉及的工作流已被禁用或删除' };
+      }
+
+      return {
+        ok: true,
+        flowIds,
+        preservedResults: [],
+        fallbackToAll: true,
+      };
+    }
+
+    return { ok: false, reason: '当前楼没有失败的工作流可供重跑' };
+  }
+
+  const effectiveFlows = await getEffectiveFlows(settings);
+  const flowMap = new Map(effectiveFlows.map(flow => [flow.id, flow]));
+  const flowIds = executionState.failed_flow_ids.filter(flowId => flowMap.has(flowId));
+  if (flowIds.length === 0) {
+    return { ok: false, reason: '当前楼记录中的失败工作流已被禁用或删除' };
+  }
+
+  return {
+    ok: true,
+    flowIds,
+    preservedResults: executionState.successful_results.filter(result => {
+      return flowMap.has(result.flow_id) && !flowIds.includes(result.flow_id);
+    }),
+  };
+}
+
+function syncAfterReplyFailureQueue(
+  options: ExecuteWorkflowOptions,
+  executionState: FloorWorkflowExecutionState | null,
+  workflowSucceeded: boolean,
+): void {
+  if (options.trigger.timing !== 'after_reply') {
+    return;
+  }
+
+  const chatKey = getCurrentChatKey();
+  const assistantMessageId = options.trigger.assistant_message_id ?? options.messageId;
+  if (
+    workflowSucceeded ||
+    !executionState ||
+    (!executionState.workflow_failed && executionState.failed_flow_ids.length === 0)
+  ) {
+    removeFailedAfterReplyJob(chatKey, assistantMessageId);
+    return;
+  }
+
+  upsertFailedAfterReplyJob({
+    chat_key: chatKey,
+    message_id: assistantMessageId,
+    user_input: String(options.userInput ?? ''),
+    generation_type: options.trigger.generation_type,
+    failed_at: executionState.at || Date.now(),
+  });
 }
 
 async function buildPreservedDispatchResults(
@@ -545,6 +818,7 @@ async function executeWorkflowWithPolicy(
   let reminderSettled = false;
   let currentPreservedStoredResults = [...(options.preservedResults ?? [])];
   let currentPreservedDispatchResults = await buildPreservedDispatchResults(settings, currentPreservedStoredResults);
+  let lastAfterReplyExecutionState: FloorWorkflowExecutionState | null = null;
 
   const trimPreview = (text: string | undefined, maxLength: number) => {
     const normalized = String(text ?? '')
@@ -753,9 +1027,11 @@ async function executeWorkflowWithPolicy(
     const executionState = buildFloorWorkflowExecutionState(
       result.request_id,
       result.attempts,
+      !result.ok,
       currentPreservedStoredResults,
     );
     await writeFloorWorkflowExecution(assistantMessageId, executionState);
+    lastAfterReplyExecutionState = executionState;
     currentPreservedStoredResults = executionState.successful_results;
     currentPreservedDispatchResults = await buildPreservedDispatchResults(settings, currentPreservedStoredResults);
   }
@@ -765,9 +1041,9 @@ async function executeWorkflowWithPolicy(
 
     if (policy === 'retry_once') {
       console.warn('[EW] retry_once: first attempt failed — retrying.');
-      const retryReason = formatReasonForDisplay(result.reason, 120);
-      processingReminder.update(buildAbortableReminder(`首次处理失败，正在重试… ${retryReason}`, 'warning'));
-      toastr.warning(`工作流首次失败，正在重试… (${retryReason})`, 'Evolution World');
+      const retryMessage = buildFailureNoticeMessage(result.failure, result.reason, { retrying: true });
+      processingReminder.update(buildAbortableReminder(retryMessage, 'warning'));
+      toastr.warning(buildFailureToastMessage(result.failure, result.reason), 'Evolution World');
       try {
         result = await runWorkflow({
           message_id: options.messageId,
@@ -799,31 +1075,35 @@ async function executeWorkflowWithPolicy(
         const executionState = buildFloorWorkflowExecutionState(
           result.request_id,
           result.attempts,
+          !result.ok,
           currentPreservedStoredResults,
         );
         await writeFloorWorkflowExecution(assistantMessageId, executionState);
+        lastAfterReplyExecutionState = executionState;
         currentPreservedStoredResults = executionState.successful_results;
         currentPreservedDispatchResults = await buildPreservedDispatchResults(settings, currentPreservedStoredResults);
       }
     }
 
     if (!result.ok) {
-      const displayReason = formatReasonForDisplay(result.reason);
+      const displayReason = buildFailureNoticeMessage(result.failure, result.reason);
+      const toastReason = buildFailureToastMessage(result.failure, result.reason);
+      const noticeAction = buildFailureNoticeAction(result.failure);
       switch (policy) {
         case 'continue_generation':
           reminderSettled = true;
           stopCarousel();
           processingReminder.update({
             title: 'Evolution World',
-            message: `工作流失败：${displayReason}。原消息是否继续发送取决于放行策略。`,
+            message: buildFailureNoticeMessage(result.failure, result.reason, { includeReleaseHint: true }),
             level: 'warning',
             persist: false,
             busy: false,
-            action: undefined,
+            action: noticeAction,
             collapse_after_ms: 0,
             duration_ms: 5500,
           });
-          toastr.warning(`工作流失败，原消息是否继续发送取决于放行策略: ${displayReason}`, 'Evolution World');
+          toastr.warning(`工作流失败，原消息是否继续发送取决于放行策略: ${toastReason}`, 'Evolution World');
           break;
         case 'allow_partial_success':
         case 'notify_only':
@@ -831,39 +1111,42 @@ async function executeWorkflowWithPolicy(
           stopCarousel();
           processingReminder.update({
             title: 'Evolution World',
-            message: `工作流失败：${displayReason}`,
+            message: displayReason,
             level: 'warning',
             persist: false,
             busy: false,
-            action: undefined,
+            action: noticeAction,
             collapse_after_ms: 0,
             duration_ms: 5500,
           });
-          toastr.info(`工作流失败: ${displayReason}`, 'Evolution World');
+          toastr.info(`工作流失败: ${toastReason}`, 'Evolution World');
           break;
         case 'stop_generation':
         case 'retry_once':
         default:
+          syncAfterReplyFailureQueue(options, lastAfterReplyExecutionState, false);
           reminderSettled = true;
           stopCarousel();
           processingReminder.update({
             title: 'Evolution World',
-            message: `动态世界流程失败，本轮已中止：${displayReason}`,
+            message: displayReason,
             level: 'error',
             persist: false,
             busy: false,
-            action: undefined,
+            action: noticeAction,
             collapse_after_ms: 0,
             duration_ms: 5500,
           });
           stopGenerationNow();
-          toastr.error(`动态世界流程失败，本轮已中止: ${displayReason}`, 'Evolution World');
+          toastr.error(`动态世界流程失败，本轮已中止: ${toastReason}`, 'Evolution World');
           return {
             shouldAbortGeneration: true,
             workflowSucceeded: false,
             abortedByUser: false,
           };
       }
+
+      syncAfterReplyFailureQueue(options, lastAfterReplyExecutionState, false);
 
       return {
         shouldAbortGeneration: false,
@@ -873,6 +1156,7 @@ async function executeWorkflowWithPolicy(
     }
   }
 
+  syncAfterReplyFailureQueue(options, lastAfterReplyExecutionState, true);
   reminderSettled = true;
   stopCarousel();
   processingReminder.update({
@@ -918,7 +1202,7 @@ function installTavernHelperHook() {
     }
 
     const settings = getSettings();
-    if (!settings.enabled || !hasFlowsForTiming(settings, 'before_reply') || getRuntimeState().is_processing) {
+    if (!settings.enabled || !hasFlowsForTiming(settings, 'before_reply')) {
       return win._ew_originalGenerate.apply(this, args);
     }
 
@@ -945,27 +1229,31 @@ function installTavernHelperHook() {
       workflowSucceeded: false,
       abortedByUser: false,
     };
-    setProcessing(true);
     try {
-      workflowOutcome = await executeWorkflowWithPolicy(settings, {
-        messageId,
-        userInput,
-        injectReply: true,
-        timingFilter: 'before_reply',
-        trigger: {
-          timing: 'before_reply',
-          source: 'tavernhelper',
-          generation_type: genType,
-          user_message_id: getRuntimeState().last_send?.message_id,
-        },
-        reminderMessage: '正在读取上下文并处理本轮工作流，请稍后…',
-        successMessage: '动态世界流程处理完成，已更新本轮上下文。',
+      workflowOutcome = await enqueueWorkflowTask(`before_reply:tavernhelper:${messageId}`, async () => {
+        setProcessing(true);
+        try {
+          return await executeWorkflowWithPolicy(settings, {
+            messageId,
+            userInput,
+            injectReply: true,
+            timingFilter: 'before_reply',
+            trigger: {
+              timing: 'before_reply',
+              source: 'tavernhelper',
+              generation_type: genType,
+              user_message_id: messageId,
+            },
+            reminderMessage: '正在读取上下文并处理本轮工作流，请稍后…',
+            successMessage: '动态世界流程处理完成，已更新本轮上下文。',
+          });
+        } finally {
+          clearSendContextIfMatches(messageId, userInput);
+          setProcessing(false);
+        }
       });
     } catch (e) {
       console.error('[Evolution World] Error in TavernHelper.generate hook:', e);
-    } finally {
-      setProcessing(false);
-      clearSendContext();
     }
 
     // If workflow failed with stop_generation policy, do NOT call original generate
@@ -1051,30 +1339,34 @@ async function onGenerationAfterCommands(
     return;
   }
 
-  clearSendContext();
-
   console.debug('[Evolution World] GENERATION_AFTER_COMMANDS executing workflow (fallback path)');
-  setProcessing(true);
   try {
-    // Return value (shouldAbort) is only relevant for the primary path;
-    // in the fallback path, stopGenerationNow() inside executeWorkflowWithPolicy
-    // handles abort directly since generation is already in progress.
-    await executeWorkflowWithPolicy(settings, {
-      messageId,
-      userInput,
-      injectReply: true,
-      timingFilter: 'before_reply',
-      trigger: {
-        timing: 'before_reply',
-        source: 'generation_after_commands',
-        generation_type: genType || type,
-        user_message_id: getRuntimeState().last_send?.message_id,
-      },
-      reminderMessage: '正在读取上下文并处理本轮工作流，请稍后…',
-      successMessage: '动态世界流程处理完成，已更新本轮上下文。',
+    await enqueueWorkflowTask(`before_reply:fallback:${messageId}`, async () => {
+      setProcessing(true);
+      try {
+        // Return value (shouldAbort) is only relevant for the primary path;
+        // in the fallback path, stopGenerationNow() inside executeWorkflowWithPolicy
+        // handles abort directly since generation is already in progress.
+        await executeWorkflowWithPolicy(settings, {
+          messageId,
+          userInput,
+          injectReply: true,
+          timingFilter: 'before_reply',
+          trigger: {
+            timing: 'before_reply',
+            source: 'generation_after_commands',
+            generation_type: genType || type,
+            user_message_id: getRuntimeState().last_send?.message_id ?? messageId,
+          },
+          reminderMessage: '正在读取上下文并处理本轮工作流，请稍后…',
+          successMessage: '动态世界流程处理完成，已更新本轮上下文。',
+        });
+      } finally {
+        clearSendContextIfMatches(messageId, userInput);
+        setProcessing(false);
+      }
     });
   } finally {
-    setProcessing(false);
   }
 }
 
@@ -1119,29 +1411,134 @@ async function onAfterReplyMessage(messageId: number, type: string, source: 'mes
   const runtimeState = getRuntimeState();
   const generationType = runtimeState.after_reply.pending_generation_type || runtimeState.last_generation?.type || type;
   const userInput = resolveAfterReplyUserInput();
+  const pendingUserMessageId =
+    runtimeState.after_reply.pending_user_message_id ?? runtimeState.last_send?.message_id ?? null;
+  const queueKey = `${getCurrentChatKey()}:${messageId}`;
 
-  setProcessing(true);
+  if (queuedAfterReplyJobKeys.has(queueKey)) {
+    return;
+  }
+
+  queuedAfterReplyJobKeys.add(queueKey);
+  await enqueueWorkflowTask(`after_reply:${messageId}`, async () => {
+    setProcessing(true);
+    try {
+      await executeWorkflowWithPolicy(settings, {
+        messageId,
+        userInput,
+        injectReply: false,
+        timingFilter: 'after_reply',
+        trigger: {
+          timing: 'after_reply',
+          source,
+          generation_type: generationType,
+          user_message_id: pendingUserMessageId,
+          assistant_message_id: messageId,
+        },
+        reminderMessage: '正在根据最新回复更新动态世界，请稍后…',
+        successMessage: '动态世界已根据最新回复完成更新。',
+      });
+      markAfterReplyHandled(messageId, messageText);
+    } finally {
+      clearAfterReplyPendingIfMatches(pendingUserMessageId);
+      clearSendContextIfMatches(pendingUserMessageId, userInput);
+      queuedAfterReplyJobKeys.delete(queueKey);
+      setProcessing(false);
+    }
+  });
+}
+
+async function rerollQueuedFailedAfterReplyWorkflows(settings: EwSettings): Promise<{ ok: boolean; reason?: string }> {
+  const chatKey = getCurrentChatKey();
+  const jobs = getFailedAfterReplyJobs(chatKey);
+  if (jobs.length === 0) {
+    return { ok: false, reason: '当前聊天没有失败队列可供重跑' };
+  }
+
   try {
-    await executeWorkflowWithPolicy(settings, {
-      messageId,
-      userInput,
-      injectReply: false,
-      timingFilter: 'after_reply',
-      trigger: {
-        timing: 'after_reply',
-        source,
-        generation_type: generationType,
-        user_message_id: runtimeState.after_reply.pending_user_message_id ?? runtimeState.last_send?.message_id,
-        assistant_message_id: messageId,
-      },
-      reminderMessage: '正在根据最新回复更新动态世界，请稍后…',
-      successMessage: '动态世界已根据最新回复完成更新。',
+    const outcome = await enqueueWorkflowTask(`reroll_failed_queue:${chatKey}`, async () => {
+      setProcessing(true);
+      try {
+        let retriedCount = 0;
+        let successCount = 0;
+        let failedCount = 0;
+        let skippedCount = 0;
+
+        for (let index = 0; index < jobs.length; index += 1) {
+          const job = jobs[index];
+          const resolved = await resolveFailedOnlyRerollTarget(settings, job.message_id);
+          if (!resolved.ok) {
+            removeFailedAfterReplyJob(chatKey, job.message_id);
+            skippedCount += 1;
+            continue;
+          }
+
+          retriedCount += 1;
+          if (settings.floor_binding_enabled) {
+            await rollbackBeforeFloor(settings, job.message_id);
+          }
+
+          const outcome = await executeWorkflowWithPolicy(settings, {
+            messageId: job.message_id,
+            userInput: job.user_input,
+            injectReply: false,
+            flowIds: resolved.flowIds,
+            timingFilter: 'after_reply',
+            preservedResults: resolved.preservedResults,
+            trigger: {
+              timing: 'after_reply',
+              source: 'queued_failed_reroll',
+              generation_type: job.generation_type,
+              assistant_message_id: job.message_id,
+            },
+            reminderMessage: `正在重跑失败队列 ${index + 1}/${jobs.length}，请稍后…`,
+            successMessage: `失败队列 ${index + 1}/${jobs.length} 已处理完成。`,
+          });
+
+          if (outcome.abortedByUser) {
+            return {
+              ok: false,
+              reason: `已终止失败队列重跑，已完成 ${successCount}/${retriedCount} 条。`,
+            };
+          }
+
+          if (outcome.workflowSucceeded) {
+            const messageText = getMessageText(job.message_id);
+            if (messageText.trim()) {
+              markAfterReplyHandled(job.message_id, messageText);
+            }
+            successCount += 1;
+          } else {
+            failedCount += 1;
+          }
+        }
+
+        if (retriedCount === 0) {
+          return { ok: false, reason: '失败队列中的楼层记录已失效，已自动清理。' };
+        }
+
+        if (failedCount > 0) {
+          return {
+            ok: false,
+            reason: `失败队列已重跑 ${retriedCount} 条，其中 ${successCount} 条成功，${failedCount} 条仍失败${skippedCount > 0 ? `，${skippedCount} 条已跳过` : ''}。`,
+          };
+        }
+
+        return {
+          ok: true,
+          reason:
+            skippedCount > 0
+              ? `失败队列已重跑完成，共成功 ${successCount} 条，另有 ${skippedCount} 条失效记录已跳过。`
+              : `失败队列已重跑完成，共成功 ${successCount} 条。`,
+        };
+      } finally {
+        setProcessing(false);
+      }
     });
-    markAfterReplyHandled(messageId, messageText);
-  } finally {
-    clearAfterReplyPending();
-    clearSendContext();
-    setProcessing(false);
+
+    return outcome;
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -1153,10 +1550,6 @@ export async function rerollCurrentAfterReplyWorkflow(): Promise<{ ok: boolean; 
   if (!settings.enabled) {
     return { ok: false, reason: 'workflow disabled' };
   }
-  if (getRuntimeState().is_processing) {
-    return { ok: false, reason: 'workflow already processing' };
-  }
-
   const messageId = getLastMessageId();
   if (!Number.isFinite(messageId) || messageId < 0) {
     return { ok: false, reason: 'no current floor found' };
@@ -1175,56 +1568,63 @@ export async function rerollCurrentAfterReplyWorkflow(): Promise<{ ok: boolean; 
   const userInput = resolveAfterReplyUserInput();
   const rerollScope = settings.reroll_scope ?? 'all';
 
-  let flowIds: string[] | undefined;
-  let preservedResults: FloorWorkflowStoredResult[] = [];
-
-  if (rerollScope === 'failed_only') {
-    const executionState = readFloorWorkflowExecution(messageId);
-    if (executionState?.failed_flow_ids.length) {
-      const effectiveFlows = await getEffectiveFlows(settings);
-      const flowMap = new Map(effectiveFlows.map(flow => [flow.id, flow]));
-
-      flowIds = executionState.failed_flow_ids.filter(flowId => flowMap.has(flowId));
-      preservedResults = executionState.successful_results.filter(result => {
-        return flowMap.has(result.flow_id) && !flowIds?.includes(result.flow_id);
-      });
-
-      if (flowIds.length === 0) {
-        return { ok: false, reason: '当前楼记录中的失败工作流已被禁用或删除' };
-      }
-    } else if (executionState && executionState.failed_flow_ids.length === 0) {
-      return { ok: false, reason: '当前楼没有失败的工作流可供重跑' };
-    }
+  if (rerollScope === 'queued_failed') {
+    return rerollQueuedFailedAfterReplyWorkflows(settings);
   }
 
-  setProcessing(true);
-  try {
-    if (settings.floor_binding_enabled) {
-      await rollbackBeforeFloor(settings, messageId);
+  let flowIds: string[] | undefined;
+  let preservedResults: FloorWorkflowStoredResult[] = [];
+  let failedOnlyFallbackToAll = false;
+
+  if (rerollScope === 'failed_only') {
+    const resolved = await resolveFailedOnlyRerollTarget(settings, messageId);
+    if (!resolved.ok) {
+      return { ok: false, reason: resolved.reason };
     }
 
-    const outcome = await executeWorkflowWithPolicy(settings, {
-      messageId,
-      userInput,
-      injectReply: false,
-      flowIds,
-      timingFilter: 'after_reply',
-      preservedResults,
-      trigger: {
-        timing: 'after_reply',
-        source: 'fab_double_click',
-        generation_type: generationType,
-        user_message_id: runtimeState.after_reply.pending_user_message_id ?? runtimeState.last_send?.message_id,
-        assistant_message_id: messageId,
-      },
-      reminderMessage:
-        rerollScope === 'failed_only' && flowIds?.length
-          ? `正在重跑当前楼失败的 ${flowIds.length} 条工作流，请稍后…`
-          : '正在重跑当前楼的回复后工作流，请稍后…',
-      successMessage:
-        rerollScope === 'failed_only' && flowIds?.length
-          ? '当前楼失败的工作流已重跑完成。'
-          : '当前楼的动态世界工作流已重跑完成。',
+    flowIds = resolved.flowIds;
+    preservedResults = resolved.preservedResults;
+    failedOnlyFallbackToAll = Boolean(resolved.fallbackToAll);
+  }
+
+  try {
+    const outcome = await enqueueWorkflowTask(`reroll_after_reply:${messageId}`, async () => {
+      setProcessing(true);
+      try {
+        if (settings.floor_binding_enabled) {
+          await rollbackBeforeFloor(settings, messageId);
+        }
+
+        return await executeWorkflowWithPolicy(settings, {
+          messageId,
+          userInput,
+          injectReply: false,
+          flowIds,
+          timingFilter: 'after_reply',
+          preservedResults,
+          trigger: {
+            timing: 'after_reply',
+            source: 'fab_double_click',
+            generation_type: generationType,
+            user_message_id: runtimeState.after_reply.pending_user_message_id ?? runtimeState.last_send?.message_id,
+            assistant_message_id: messageId,
+          },
+          reminderMessage:
+            rerollScope === 'failed_only' && flowIds?.length
+              ? failedOnlyFallbackToAll
+                ? `当前楼上次失败发生在合并或写回阶段，正在回退重跑该楼关联的 ${flowIds.length} 条工作流，请稍后…`
+                : `正在重跑当前楼失败的 ${flowIds.length} 条工作流，请稍后…`
+              : '正在重跑当前楼的回复后工作流，请稍后…',
+          successMessage:
+            rerollScope === 'failed_only' && flowIds?.length
+              ? failedOnlyFallbackToAll
+                ? '当前楼因整轮失败而回退重跑的工作流已完成。'
+                : '当前楼失败的工作流已重跑完成。'
+              : '当前楼的动态世界工作流已重跑完成。',
+        });
+      } finally {
+        setProcessing(false);
+      }
     });
 
     if (outcome.workflowSucceeded) {
@@ -1240,7 +1640,6 @@ export async function rerollCurrentAfterReplyWorkflow(): Promise<{ ok: boolean; 
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : String(error) };
   } finally {
-    setProcessing(false);
   }
 }
 
@@ -1289,6 +1688,7 @@ export function initRuntimeEvents() {
 
   listenerStops.push(
     eventOn(tavern_events.CHAT_CHANGED, () => {
+      clearQueuedWorkflowTasks('workflow queue cleared because chat changed');
       resetRuntimeState();
       resetInterceptGuard();
       setTimeout(() => {

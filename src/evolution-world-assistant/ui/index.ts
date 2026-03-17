@@ -317,7 +317,7 @@ function createFab(): void {
     if (!result.ok) {
       showEwNotice({
         title: 'Evolution World',
-        message: `重跑当前楼失败: ${result.reason ?? 'unknown error'}`,
+        message: `重roll执行失败: ${result.reason ?? 'unknown error'}`,
         level: 'warning',
       });
     }

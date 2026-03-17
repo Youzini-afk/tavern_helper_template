@@ -106,11 +106,32 @@ export function clearSendContext() {
   state.last_send_intent = null;
 }
 
+export function clearSendContextIfMatches(message_id: number | null, user_input?: string) {
+  if (message_id !== null && state.last_send?.message_id === message_id) {
+    state.last_send = null;
+  }
+
+  const nextHash = String(user_input ?? '').trim() ? simpleHash(String(user_input)) : '';
+  if (nextHash && state.last_send_intent?.hash === nextHash) {
+    state.last_send_intent = null;
+  }
+}
+
 export function clearAfterReplyPending() {
   state.after_reply.pending_user_message_id = null;
   state.after_reply.pending_user_input = '';
   state.after_reply.pending_generation_type = '';
   state.after_reply.pending_at = 0;
+}
+
+export function clearAfterReplyPendingIfMatches(message_id: number | null) {
+  if (message_id === null) {
+    return;
+  }
+
+  if (state.after_reply.pending_user_message_id === message_id) {
+    clearAfterReplyPending();
+  }
 }
 
 export function markAfterReplyHandled(message_id: number, content: string) {
@@ -162,9 +183,6 @@ export function shouldHandleGenerationAfter(
   if (!settings.enabled) {
     return { ok: false, reason: 'disabled' };
   }
-  if (state.is_processing) {
-    return { ok: false, reason: 'already_processing' };
-  }
   if (dry_run) {
     return { ok: false, reason: 'dry_run' };
   }
@@ -206,9 +224,6 @@ export function shouldHandleAfterReply(
 ): { ok: boolean; reason: string } {
   if (!settings.enabled) {
     return { ok: false, reason: 'disabled' };
-  }
-  if (state.is_processing) {
-    return { ok: false, reason: 'already_processing' };
   }
   if (type === 'quiet' || type === 'impersonate' || type === 'command' || type === 'extension') {
     return { ok: false, reason: `unsupported_type:${type}` };

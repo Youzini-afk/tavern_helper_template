@@ -63,7 +63,7 @@
                       :title="rerollButtonTitle"
                       @click="onRerollCurrentFloor"
                     >
-                      重roll当前楼
+                      {{ rerollButtonText }}
                     </button>
                   </div>
                 </EwFieldRow>
@@ -238,6 +238,7 @@
                   <select v-model="store.settings.reroll_scope">
                     <option value="all">全部工作流</option>
                     <option value="failed_only">仅失败工作流</option>
+                    <option value="queued_failed">失败队列</option>
                   </select>
                 </EwFieldRow>
                 <EwFieldRow label="原消息放行策略" :help="help('intercept_release_policy')">
@@ -692,6 +693,17 @@ const enabledFlowCount = computed(() => store.settings.flows.filter(flow => flow
 const canRerollCurrentFloor = computed(() => {
   return store.settings.enabled && store.settings.workflow_timing === 'after_reply' && !store.busy;
 });
+const rerollButtonText = computed(() => {
+  switch (store.settings.reroll_scope) {
+    case 'failed_only':
+      return '重roll当前层失败';
+    case 'queued_failed':
+      return '重roll队列失败';
+    case 'all':
+    default:
+      return '重roll当前楼';
+  }
+});
 const rerollButtonTitle = computed(() => {
   if (store.busy) {
     return '当前有任务正在执行';
@@ -702,9 +714,26 @@ const rerollButtonTitle = computed(() => {
   if (store.settings.workflow_timing !== 'after_reply') {
     return '仅在“回复后更新”模式下可用';
   }
-  return store.settings.reroll_scope === 'failed_only'
-    ? '仅重跑当前楼上次失败的回复后工作流'
-    : '重跑当前楼的全部回复后工作流';
+  switch (store.settings.reroll_scope) {
+    case 'failed_only':
+      return '仅重跑当前楼上次失败的回复后工作流';
+    case 'queued_failed':
+      return '批量重跑当前聊天里所有仍失败的回复后工作流';
+    case 'all':
+    default:
+      return '重跑当前楼的全部回复后工作流';
+  }
+});
+const rerollSuccessMessage = computed(() => {
+  switch (store.settings.reroll_scope) {
+    case 'failed_only':
+      return '当前楼失败的回复后工作流已重跑完成。';
+    case 'queued_failed':
+      return '失败队列已重跑完成。';
+    case 'all':
+    default:
+      return '当前楼的回复后工作流已重跑完成。';
+  }
 });
 const bindCountByPresetId = computed<Record<string, number>>(() => {
   const counts: Record<string, number> = {};
@@ -753,7 +782,7 @@ async function onRerollCurrentFloor() {
   if (result.ok) {
     showEwNotice({
       title: 'Evolution World',
-      message: '当前楼的回复后工作流已重跑完成。',
+      message: result.reason ?? rerollSuccessMessage.value,
       level: 'success',
     });
     return;
@@ -761,7 +790,7 @@ async function onRerollCurrentFloor() {
 
   showEwNotice({
     title: 'Evolution World',
-    message: `重跑当前楼失败: ${result.reason ?? 'unknown error'}`,
+    message: `重roll执行失败: ${result.reason ?? 'unknown error'}`,
     level: 'warning',
   });
 }
