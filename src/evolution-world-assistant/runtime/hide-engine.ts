@@ -49,23 +49,6 @@ function getChat(): any[] | null {
   }
 }
 
-function getContextFns(): {
-  clearChat?: () => void;
-  addOneMessage?: (msg: any, opts: any) => void;
-  swipe?: { refresh: () => void };
-} {
-  try {
-    const ctx = typeof SillyTavern !== 'undefined' ? SillyTavern?.getContext() : undefined;
-    return {
-      clearChat: ctx?.clearChat,
-      addOneMessage: ctx?.addOneMessage,
-      swipe: ctx?.swipe,
-    };
-  } catch {
-    return {};
-  }
-}
-
 function syncSystemAttribute(indices: number[], value: 'true' | 'false'): void {
   if (indices.length === 0 || typeof $ === 'undefined') {
     return;
@@ -74,23 +57,35 @@ function syncSystemAttribute(indices: number[], value: 'true' | 'false'): void {
   $(sel).attr('is_system', value);
 }
 
-function rerenderChatSlice(startIdx: number): void {
-  const { clearChat, addOneMessage, swipe } = getContextFns();
-  const chat = getChat();
-  if (!chat || !clearChat || !addOneMessage) {
+function syncLimiterVisibility(startIdx: number | null): void {
+  if (typeof $ === 'undefined') {
     return;
   }
 
-  if (typeof $ !== 'undefined' && $('#chat .edit_textarea').length > 0) {
+  const $chat = $('#chat');
+  if ($chat.length === 0 || $('#chat .edit_textarea').length > 0) {
     return;
   }
 
-  clearChat();
-  for (let i = Math.max(0, startIdx); i < chat.length; i++) {
-    addOneMessage(chat[i], { scroll: false, forceId: i });
-  }
+  const $messages = $chat.children('.mes');
+  $messages.each((_, element) => {
+    const $message = $(element);
+    const mesId = Number($message.attr('mesid'));
+    const shouldShow = startIdx == null || !Number.isFinite(mesId) || mesId >= startIdx;
 
-  swipe?.refresh?.();
+    if (shouldShow) {
+      if ($message.attr('data-ew-limiter-hidden') === 'true') {
+        $message.css('display', '');
+        $message.removeAttr('data-ew-limiter-hidden');
+      }
+      return;
+    }
+
+    if ($message.attr('data-ew-limiter-hidden') !== 'true') {
+      $message.css('display', 'none');
+      $message.attr('data-ew-limiter-hidden', 'true');
+    }
+  });
 }
 
 // ── 1. Full hide check ───────────────────────────────────────────────
@@ -269,7 +264,7 @@ export function applyFloorLimit(settings: HideSettings): void {
   if (!settings.limiter_enabled) {
     // If was active, restore
     if (typeof $ !== 'undefined' && $('#chat').attr('data-limiter-active')) {
-      rerenderChatSlice(0);
+      syncLimiterVisibility(null);
       $('#chat').removeAttr('data-limiter-active');
     }
     return;
@@ -281,9 +276,9 @@ export function applyFloorLimit(settings: HideSettings): void {
   const chat = getChat();
   if (!chat) return;
 
-  rerenderChatSlice(Math.max(0, chat.length - limit));
-  $('#chat').attr('data-limiter-active', 'true');
   const startIdx = Math.max(0, chat.length - limit);
+  syncLimiterVisibility(startIdx);
+  $('#chat').attr('data-limiter-active', 'true');
   console.log(`[EW Hide] Limiter: displaying ${chat.length - startIdx}/${chat.length} messages`);
 }
 
