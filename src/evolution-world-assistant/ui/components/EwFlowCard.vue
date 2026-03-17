@@ -15,10 +15,21 @@
       </div>
 
       <div class="ew-flow-card__actions">
-        <label class="ew-checkbox ew-flow-card__enabled">
-          <input :checked="flow.enabled" type="checkbox" @change="setEnabled" />
-          <span>启用</span>
-        </label>
+        <div class="ew-toggle-item ew-flow-card__enabled-toggle">
+          <button
+            type="button"
+            class="ew-switch"
+            role="switch"
+            :aria-checked="flow.enabled ? 'true' : 'false'"
+            :title="flow.enabled ? '点击停用工作流' : '点击启用工作流'"
+            @click="toggleEnabled"
+          >
+            <span class="ew-switch__track" :data-enabled="flow.enabled ? '1' : '0'">
+              <span class="ew-switch__thumb" />
+            </span>
+          </button>
+          <span class="ew-toggle-item__label">启用</span>
+        </div>
         <button type="button" class="ew-flow-card__action" @click="$emit('toggle-expand')">
           {{ expanded ? '收起' : '编辑' }}
         </button>
@@ -802,8 +813,8 @@ function toNumber(raw: string, fallback: number) {
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
-function setEnabled(event: Event) {
-  patch({ enabled: (event.target as HTMLInputElement).checked });
+function toggleEnabled() {
+  patch({ enabled: !flow.value.enabled });
 }
 function setText(
   key: 'name' | 'id' | 'request_template' | 'response_extract_regex' | 'response_remove_regex',

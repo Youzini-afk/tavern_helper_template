@@ -326,6 +326,37 @@
                     placeholder="0 表示不隐藏"
                   />
                 </EwFieldRow>
+                <EwFieldRow label="限制楼层渲染">
+                  <div style="display: flex; align-items: center; gap: 0.6rem">
+                    <button
+                      type="button"
+                      class="ew-switch"
+                      role="switch"
+                      :aria-checked="store.settings.hide_settings.limiter_enabled ? 'true' : 'false'"
+                      @click="
+                        store.settings.hide_settings.limiter_enabled = !store.settings.hide_settings.limiter_enabled
+                      "
+                    >
+                      <span
+                        class="ew-switch__track"
+                        :data-enabled="store.settings.hide_settings.limiter_enabled ? '1' : '0'"
+                      >
+                        <span class="ew-switch__thumb" />
+                      </span>
+                      <span class="ew-switch__text">{{
+                        store.settings.hide_settings.limiter_enabled ? '已开启' : '已关闭'
+                      }}</span>
+                    </button>
+                    <input
+                      v-model.number="store.settings.hide_settings.limiter_count"
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="仅渲染最新 M 条"
+                      style="flex: 1; min-width: 80px"
+                    />
+                  </div>
+                </EwFieldRow>
                 <EwFieldRow label="隐藏限制工作流上下文" :help="help('hide_settings.affect_workflow_context')">
                   <button
                     type="button"
@@ -347,36 +378,6 @@
                       store.settings.hide_settings.affect_workflow_context ? '已开启' : '仅主回复生效'
                     }}</span>
                   </button>
-                </EwFieldRow>
-                <EwFieldRow label="限制楼层渲染">
-                  <button
-                    type="button"
-                    class="ew-switch"
-                    role="switch"
-                    :aria-checked="store.settings.hide_settings.limiter_enabled ? 'true' : 'false'"
-                    @click="
-                      store.settings.hide_settings.limiter_enabled = !store.settings.hide_settings.limiter_enabled
-                    "
-                  >
-                    <span
-                      class="ew-switch__track"
-                      :data-enabled="store.settings.hide_settings.limiter_enabled ? '1' : '0'"
-                    >
-                      <span class="ew-switch__thumb" />
-                    </span>
-                    <span class="ew-switch__text">{{
-                      store.settings.hide_settings.limiter_enabled ? '已开启' : '已关闭'
-                    }}</span>
-                  </button>
-                </EwFieldRow>
-                <EwFieldRow label="仅渲染最新 M 条">
-                  <input
-                    v-model.number="store.settings.hide_settings.limiter_count"
-                    type="number"
-                    min="1"
-                    step="1"
-                    placeholder="例如 20"
-                  />
                 </EwFieldRow>
               </div>
               <div class="ew-actions-wrap" style="margin-top: 0.75rem">
