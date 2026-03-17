@@ -355,6 +355,30 @@ function sanitizeWorkflowExtensionPrompt(content: string, blockedContents: strin
   return sanitized;
 }
 
+const WORKFLOW_IMAGE_BLOCK_PATTERNS = [
+  /<image>\s*[\s\S]*?image###[\s\S]*?###\s*<\/image>/gi,
+  /<image>[\s\S]*?<\/image>/gi,
+];
+
+function stripWorkflowImageBlocks(content: string): { content: string; removedCount: number } {
+  if (!content.trim()) {
+    return { content, removedCount: 0 };
+  }
+
+  let nextContent = content;
+  let removedCount = 0;
+
+  for (const pattern of WORKFLOW_IMAGE_BLOCK_PATTERNS) {
+    nextContent = nextContent.replace(pattern, match => {
+      removedCount += 1;
+      return match.includes('\n\n') ? '\n\n' : '\n';
+    });
+  }
+
+  nextContent = nextContent.replace(/\n{3,}/g, '\n\n').trim();
+  return { content: nextContent, removedCount };
+}
+
 function formatAttempt(attempt: PromptDiagnosticAttempt): string {
   const base = `${attempt.label}: ${attempt.hasValue ? `hit (${attempt.length})` : 'miss (0)'}`;
   return attempt.detail ? `${base} [${attempt.detail}]` : base;
@@ -673,14 +697,28 @@ export async function collectPromptComponents(flow: EwFlowConfig, settings?: EwS
         length: Array.isArray(msgs) ? msgs.length : 0,
         detail: `range=0-${lastId}; hide_state=${shouldRespectHideState ? 'unhidden' : 'all'}`,
       });
+      let strippedImageBlockCount = 0;
       components.chatMessages = msgs
         .slice(-flow.context_turns)
-        .map((msg: any) => ({
-          role: msg.role as 'system' | 'user' | 'assistant',
-          content: msg.message ?? '',
-          name: msg.name,
-        }))
+        .map((msg: any) => {
+          const sanitized = stripWorkflowImageBlocks(String(msg.message ?? ''));
+          strippedImageBlockCount += sanitized.removedCount;
+          return {
+            role: msg.role as 'system' | 'user' | 'assistant',
+            content: sanitized.content,
+            name: msg.name,
+          };
+        })
         .filter((msg: any) => Boolean(msg.content.trim()));
+
+      if (strippedImageBlockCount > 0) {
+        chatHistoryAttempts.push({
+          label: 'stripWorkflowImageBlocks()',
+          hasValue: true,
+          length: strippedImageBlockCount,
+          detail: `removed=${strippedImageBlockCount}`,
+        });
+      }
     }
 
     components.diagnostics.chatHistory = {
