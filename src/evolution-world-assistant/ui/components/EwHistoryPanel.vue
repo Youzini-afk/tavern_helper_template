@@ -5,6 +5,12 @@
       <span class="hist-stats"> {{ hasSnapshotCount }} / {{ store.floorSnapshots.length }} 楼层有快照 </span>
     </div>
 
+    <div v-if="store.busy" class="hist-info">正在扫描当前聊天的楼层快照…</div>
+
+    <div v-else-if="store.floorSnapshots.length > 0 && hasSnapshotCount === 0" class="hist-info hist-info--warning">
+      已扫描到聊天楼层，但没有发现任何快照。请优先检查是否开启了“楼层绑定”，以及当前聊天的旧快照是否需要点击“同步快照”迁移。
+    </div>
+
     <div v-if="store.floorSnapshots.length > 0" class="hist-grid-wrap">
       <div class="hist-grid">
         <div
@@ -61,6 +67,10 @@ const selectedFloorId = ref(0);
 
 const hasSnapshotCount = computed(() => store.floorSnapshots.filter(f => f.snapshot !== null).length);
 
+onMounted(() => {
+  void store.loadFloorSnapshots();
+});
+
 const selectedSnapshot = computed<SnapshotData | null>(() => {
   const floor = store.floorSnapshots.find(f => f.messageId === selectedFloorId.value);
   return floor?.snapshot ?? null;
@@ -110,6 +120,22 @@ function openFloor(messageId: number) {
 .hist-stats {
   font-size: 0.78rem;
   color: color-mix(in srgb, var(--SmartThemeBodyColor) 55%, transparent);
+}
+
+.hist-info {
+  margin-bottom: 0.75rem;
+  padding: 0.65rem 0.8rem;
+  border-radius: 0.65rem;
+  font-size: 0.78rem;
+  border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 22%, transparent);
+  background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 10%, rgba(0, 0, 0, 0.08));
+  color: color-mix(in srgb, var(--SmartThemeBodyColor) 75%, transparent);
+}
+
+.hist-info--warning {
+  border-color: color-mix(in srgb, #f59e0b 35%, transparent);
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+  color: color-mix(in srgb, #fcd34d 88%, white 12%);
 }
 
 /* ── Grid ── */

@@ -281,8 +281,8 @@
                 <EwFieldRow label="快照存储方式" :help="help('snapshot_storage')">
                   <div style="display: flex; gap: 8px; align-items: center">
                     <select v-model="store.settings.snapshot_storage" style="flex: 1">
-                      <option value="message_data">消息数据（默认）</option>
-                      <option value="file">服务器文件</option>
+                      <option value="message_data">消息数据</option>
+                      <option value="file">服务器文件（默认）</option>
                     </select>
                     <button
                       type="button"

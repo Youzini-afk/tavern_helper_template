@@ -118,6 +118,13 @@ const FIELD_HELP_LIST: FieldHelpMeta[] = [
     detailHelp: '开启后，在 CHAT_CHANGED 事件触发时会扫描世界书，移除不再与任何楼层关联的孤儿条目。',
   },
   {
+    key: 'snapshot_storage',
+    label: '快照存储方式',
+    shortHelp: '控制楼层快照写在消息 data 字段里，还是写到服务器文件里。',
+    detailHelp:
+      '服务器文件模式更适合长聊天，当前也是实际默认模式；消息数据模式更直观，排查时更容易直接在消息数据里看到快照。切换后可点击“同步快照”迁移当前聊天已有数据。',
+  },
+  {
     key: 'hide_settings.affect_workflow_context',
     label: '隐藏限制工作流上下文',
     shortHelp: '控制“保留最新 N 条”是否同时限制工作流读取到的聊天楼层。',
