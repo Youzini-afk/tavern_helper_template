@@ -1130,11 +1130,13 @@ async function executeFlow(
 
   // Collect prompt components once — shared by buildFlowRequest (metadata) and assembler (messages)
   const promptComponentsPromise = collectPromptComponents(flow, settings);
+  let request: FlowRequestV1 | undefined;
+  let requestDebug: Record<string, any> | undefined;
 
   try {
     throwIfDispatchAborted(abortSignal, isCancelled);
     const promptComponents = await promptComponentsPromise;
-    const request = await buildFlowRequest({
+    request = await buildFlowRequest({
       settings,
       flow,
       message_id: messageId,
@@ -1156,7 +1158,7 @@ async function executeFlow(
       assembled_messages: orderedPrompts,
     };
     let response: NonNullable<DispatchFlowAttempt['response']>;
-    let requestDebug = requestDebugBase as Record<string, any>;
+    requestDebug = requestDebugBase as Record<string, any>;
 
     if (shouldUseGenerateRawCustomApi(apiPreset)) {
       if (streamEnabled) {
@@ -1274,7 +1276,7 @@ async function executeFlow(
       api_preset_name: apiPreset.name,
       api_url: attemptApiUrl,
       request,
-      request_debug: {
+      request_debug: requestDebug ?? {
         flow_request: request,
       },
       ok: false,
