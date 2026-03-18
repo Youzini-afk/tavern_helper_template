@@ -8,6 +8,7 @@
  * (flat layout — ST file API doesn't support subdirectories)
  */
 
+import { buildMessageVersionKey } from './helpers';
 import type { ControllerEntrySnapshot } from './types';
 
 export type SnapshotData = {
@@ -17,6 +18,12 @@ export type SnapshotData = {
   swipe_id?: number;
   /** assistant 消息当前可见文本的哈希，检测 edit/update */
   content_hash?: string;
+};
+
+export type SnapshotVersionStore = {
+  version: 'ew-snapshot/v2';
+  updated_at: number;
+  versions: Record<string, SnapshotData>;
 };
 
 /**
@@ -52,6 +59,8 @@ export function upgradeSnapshotData(raw: any): SnapshotData | null {
         legacy: key === 'legacy',
       })),
       dyn_entries: Array.isArray(raw.dyn_entries) ? raw.dyn_entries : [],
+      swipe_id: typeof raw.swipe_id === 'number' ? raw.swipe_id : undefined,
+      content_hash: typeof raw.content_hash === 'string' ? raw.content_hash : undefined,
     };
   }
 
@@ -61,11 +70,56 @@ export function upgradeSnapshotData(raw: any): SnapshotData | null {
         ? [{ entry_name: '', flow_name: 'Legacy Controller', content: raw.controller, legacy: true }]
         : [],
       dyn_entries: Array.isArray(raw.dyn_entries) ? raw.dyn_entries : [],
+      swipe_id: typeof raw.swipe_id === 'number' ? raw.swipe_id : undefined,
+      content_hash: typeof raw.content_hash === 'string' ? raw.content_hash : undefined,
     };
   }
 
   // Unknown format
   return null;
+}
+
+function snapshotVersionKey(data: SnapshotData): string {
+  return buildMessageVersionKey(Number(data.swipe_id ?? 0), String(data.content_hash ?? '').trim());
+}
+
+function normalizeSnapshotVersionStore(raw: any): SnapshotVersionStore | null {
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+
+  if (
+    raw.version === 'ew-snapshot/v2' &&
+    raw.versions &&
+    typeof raw.versions === 'object' &&
+    !Array.isArray(raw.versions)
+  ) {
+    const versions: Record<string, SnapshotData> = {};
+    for (const [key, value] of Object.entries(raw.versions as Record<string, unknown>)) {
+      const upgraded = upgradeSnapshotData(value);
+      if (upgraded) {
+        versions[String(key)] = upgraded;
+      }
+    }
+    return {
+      version: 'ew-snapshot/v2',
+      updated_at: Number(raw.updated_at ?? Date.now()),
+      versions,
+    };
+  }
+
+  const upgraded = upgradeSnapshotData(raw);
+  if (!upgraded) {
+    return null;
+  }
+
+  return {
+    version: 'ew-snapshot/v2',
+    updated_at: Date.now(),
+    versions: {
+      [snapshotVersionKey(upgraded)]: upgraded,
+    },
+  };
 }
 
 // ── 辅助函数 ──────────────────────────────────────────────────
@@ -75,9 +129,8 @@ function sanitizeSegment(s: string): string {
   return s.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60);
 }
 
-function buildFileName(charName: string, chatId: string, messageId: number, swipeId?: number): string {
-  const versionSuffix = swipeId != null && swipeId > 0 ? `_sw-${swipeId}` : '';
-  return `ew__${sanitizeSegment(charName)}__${sanitizeSegment(chatId)}__msg-${messageId}${versionSuffix}.json`;
+function buildFileName(charName: string, chatId: string, messageId: number): string {
+  return `ew__${sanitizeSegment(charName)}__${sanitizeSegment(chatId)}__msg-${messageId}.json`;
 }
 
 function buildFilePrefix(charName: string, chatId: string): string {
@@ -100,15 +153,8 @@ async function getHeaders(): Promise<Record<string, string>> {
 
 // ── 写入 ────────────────────────────────────────────────────
 
-export async function writeSnapshot(
-  charName: string,
-  chatId: string,
-  messageId: number,
-  data: SnapshotData,
-  swipeId?: number,
-): Promise<string> {
-  const fileName = buildFileName(charName, chatId, messageId, swipeId);
-  const jsonContent = JSON.stringify(data);
+async function persistSnapshotStore(fileName: string, store: SnapshotVersionStore): Promise<void> {
+  const jsonContent = JSON.stringify(store);
   const base64Content = btoa(unescape(encodeURIComponent(jsonContent)));
 
   const response = await fetch('/api/files/upload', {
@@ -120,6 +166,32 @@ export async function writeSnapshot(
   if (!response.ok) {
     throw new Error(`[EW] Failed to write snapshot file "${fileName}": ${response.status} ${response.statusText}`);
   }
+}
+
+export async function writeSnapshotStore(fileName: string, store: SnapshotVersionStore): Promise<void> {
+  await persistSnapshotStore(fileName, {
+    version: 'ew-snapshot/v2',
+    updated_at: Date.now(),
+    versions: { ...store.versions },
+  });
+}
+
+export async function writeSnapshot(
+  charName: string,
+  chatId: string,
+  messageId: number,
+  data: SnapshotData,
+): Promise<string> {
+  const fileName = buildFileName(charName, chatId, messageId);
+  const currentStore = (await readSnapshotStore(fileName)) ?? {
+    version: 'ew-snapshot/v2' as const,
+    updated_at: Date.now(),
+    versions: {},
+  };
+  currentStore.updated_at = Date.now();
+  currentStore.versions[snapshotVersionKey(data)] = data;
+
+  await persistSnapshotStore(fileName, currentStore);
 
   console.debug(`[Evolution World] Snapshot written: ${fileName}`);
   return fileName;
@@ -127,7 +199,7 @@ export async function writeSnapshot(
 
 // ── 读取 ─────────────────────────────────────────────────────
 
-export async function readSnapshot(fileName: string): Promise<SnapshotData | null> {
+export async function readSnapshotStore(fileName: string): Promise<SnapshotVersionStore | null> {
   try {
     const response = await fetch(`/user/files/${fileName}`);
     if (!response.ok) {
@@ -135,11 +207,25 @@ export async function readSnapshot(fileName: string): Promise<SnapshotData | nul
       return null;
     }
     const data = await response.json();
-    return upgradeSnapshotData(data);
+    return normalizeSnapshotVersionStore(data);
   } catch (e) {
     console.warn(`[Evolution World] Failed to read snapshot: ${fileName}`, e);
     return null;
   }
+}
+
+export async function readSnapshot(fileName: string, versionKey?: string): Promise<SnapshotData | null> {
+  const store = await readSnapshotStore(fileName);
+  if (!store) {
+    return null;
+  }
+
+  if (versionKey) {
+    return store.versions[versionKey] ?? null;
+  }
+
+  const values = Object.values(store.versions);
+  return values.length === 1 ? values[0] : null;
 }
 
 // ── 删除 ───────────────────────────────────────────────────

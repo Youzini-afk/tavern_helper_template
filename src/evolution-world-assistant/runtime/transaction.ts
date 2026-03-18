@@ -1,5 +1,5 @@
 import { markFloorEntries } from './floor-binding';
-import { simpleHash } from './helpers';
+import { getMessageVersionInfo } from './helpers';
 import { saveControllerBackup } from './settings';
 import { ControllerEntrySnapshot, ControllerTemplateSlot, EwSettings, MergedPlan } from './types';
 import { ensureDefaultEntry, resolveTargetWorldbook } from './worldbook-runtime';
@@ -161,10 +161,9 @@ export async function commitMergedPlan(
     const dynSnapshots = collectManagedDynSnapshots(nextEntries, settings);
     const controllerSnapshots = collectManagedControllerSnapshots(nextEntries, settings);
 
-    // 读取当前消息的 swipe_id 和内容哈希用于版本标识
+    // 读取当前消息的版本信息用于版本标识
     const targetMsg = getChatMessages(messageId)[0];
-    const swipeId = Number((targetMsg as any)?.swipe_id ?? 0);
-    const contentHash = simpleHash(String((targetMsg as any)?.mes ?? ''));
+    const versionInfo = getMessageVersionInfo(targetMsg);
 
     await markFloorEntries(
       settings,
@@ -172,8 +171,8 @@ export async function commitMergedPlan(
       dynSnapshots.map(entry => entry.name),
       controllerSnapshots,
       dynSnapshots,
-      swipeId,
-      contentHash,
+      versionInfo.swipe_id,
+      versionInfo.content_hash,
     );
   }
 

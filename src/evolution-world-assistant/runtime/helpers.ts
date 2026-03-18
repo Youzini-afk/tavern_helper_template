@@ -34,6 +34,38 @@ export function simpleHash(input: string): string {
   return `h${(hash >>> 0).toString(16)}`;
 }
 
+export type MessageVersionInfo = {
+  swipe_id: number;
+  content_hash: string;
+  version_key: string;
+};
+
+export function resolveMessageTextForVersioning(message: any): string {
+  const candidates = [message?.mes, message?.message, message?.text];
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.length > 0) {
+      return value;
+    }
+  }
+  return '';
+}
+
+export function buildMessageVersionKey(swipeId: number, contentHash: string): string {
+  const normalizedSwipeId = Math.max(0, Math.trunc(Number(swipeId) || 0));
+  const normalizedContentHash = String(contentHash ?? '').trim() || simpleHash('');
+  return `sw:${normalizedSwipeId}|${normalizedContentHash}`;
+}
+
+export function getMessageVersionInfo(message: any): MessageVersionInfo {
+  const swipe_id = Math.max(0, Math.trunc(Number(message?.swipe_id ?? 0) || 0));
+  const content_hash = simpleHash(resolveMessageTextForVersioning(message));
+  return {
+    swipe_id,
+    content_hash,
+    version_key: buildMessageVersionKey(swipe_id, content_hash),
+  };
+}
+
 export function now(): number {
   return Date.now();
 }

@@ -1,7 +1,8 @@
+import _ from 'lodash';
 import { EwWorkflowNoticeInput, showManagedWorkflowNotice } from '../ui/notice';
 import { getEffectiveFlows } from './char-flows';
 import { disposeFloorBindingEvents, initFloorBindingEvents, rollbackBeforeFloor } from './floor-binding';
-import { simpleHash } from './helpers';
+import { getMessageVersionInfo, simpleHash } from './helpers';
 import { resetHideState, runIncrementalHideCheck, scheduleHideSettingsApply } from './hide-engine';
 import { markIntercepted, resetInterceptGuard, wasRecentlyIntercepted } from './intercept-guard';
 import { runWorkflow, type RunWorkflowOutput } from './pipeline';
@@ -21,7 +22,13 @@ import {
   shouldHandleGenerationAfter,
   wasAfterReplyHandled,
 } from './state';
-import { DispatchFlowResult, EwSettings, WorkflowFailureDiagnostic, WorkflowProgressUpdate } from './types';
+import {
+  DispatchFlowAttempt,
+  DispatchFlowResult,
+  EwSettings,
+  WorkflowFailureDiagnostic,
+  WorkflowProgressUpdate,
+} from './types';
 
 const EW_FLOOR_WORKFLOW_EXECUTION_KEY = 'ew_workflow_execution';
 
@@ -29,6 +36,8 @@ type FloorWorkflowStoredResult = {
   flow_id: string;
   response: Record<string, any>;
 };
+
+type FloorWorkflowExecutionVersionedMap = Record<string, FloorWorkflowExecutionState>;
 
 type FloorWorkflowExecutionState = {
   at: number;
@@ -42,6 +51,10 @@ type FloorWorkflowExecutionState = {
   failed_flow_ids: string[];
   workflow_failed: boolean;
 };
+
+function buildExecutionVersionKey(state: { swipe_id?: number; content_hash?: string }): string {
+  return `sw:${Math.max(0, Math.trunc(Number(state.swipe_id ?? 0) || 0))}|${String(state.content_hash ?? '').trim()}`;
+}
 
 type FailedAfterReplyQueueJob = {
   chat_key: string;
@@ -73,13 +86,13 @@ let workflowTaskDrainPromise: Promise<void> | null = null;
 function getHostWindow(): Window & typeof globalThis {
   try {
     if (window.parent && window.parent !== window) {
-      return window.parent;
+      return window.parent as Window & typeof globalThis;
     }
   } catch {
     // ignore cross-frame access failures and fall back to current window
   }
 
-  return window;
+  return window as Window & typeof globalThis;
 }
 
 function getChatDocument(): Document {
@@ -451,6 +464,8 @@ function normalizeFloorWorkflowExecutionState(raw: unknown): FloorWorkflowExecut
   return {
     at: Number(obj.at ?? 0),
     request_id: String(obj.request_id ?? '').trim(),
+    swipe_id: typeof obj.swipe_id === 'number' ? obj.swipe_id : undefined,
+    content_hash: typeof obj.content_hash === 'string' ? obj.content_hash : undefined,
     attempted_flow_ids: _.uniq(attemptedFlowIds),
     successful_results: successfulResults,
     failed_flow_ids: _.uniq(failedFlowIds),
@@ -458,13 +473,71 @@ function normalizeFloorWorkflowExecutionState(raw: unknown): FloorWorkflowExecut
   };
 }
 
-function readFloorWorkflowExecution(messageId: number): FloorWorkflowExecutionState | null {
+function normalizeFloorWorkflowExecutionMap(raw: unknown): FloorWorkflowExecutionVersionedMap {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {};
+  }
+
+  const obj = raw as Record<string, unknown>;
+  if (
+    Array.isArray(obj.attempted_flow_ids) ||
+    Array.isArray(obj.failed_flow_ids) ||
+    Array.isArray(obj.successful_results) ||
+    typeof obj.request_id === 'string'
+  ) {
+    const upgraded = normalizeFloorWorkflowExecutionState(raw);
+    if (!upgraded) {
+      return {};
+    }
+    const versionInfo = {
+      swipe_id: Number(upgraded.swipe_id ?? 0),
+      content_hash: String(upgraded.content_hash ?? '').trim(),
+    };
+    return {
+      [buildExecutionVersionKey(versionInfo)]: upgraded,
+    };
+  }
+
+  const map: FloorWorkflowExecutionVersionedMap = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const normalized = normalizeFloorWorkflowExecutionState(value);
+    if (normalized) {
+      map[key] = normalized;
+    }
+  }
+  return map;
+}
+
+function readFloorWorkflowExecutionMap(messageId: number): FloorWorkflowExecutionVersionedMap {
   try {
     const message = getChatMessages(messageId)[0];
-    return normalizeFloorWorkflowExecutionState(message?.data?.[EW_FLOOR_WORKFLOW_EXECUTION_KEY]);
+    return normalizeFloorWorkflowExecutionMap(message?.data?.[EW_FLOOR_WORKFLOW_EXECUTION_KEY]);
   } catch {
+    return {};
+  }
+}
+
+function readFloorWorkflowExecution(messageId: number): FloorWorkflowExecutionState | null {
+  const msg = getChatMessages(messageId)[0];
+  if (!msg) {
     return null;
   }
+  const versionInfo = getMessageVersionInfo(msg);
+  const map = readFloorWorkflowExecutionMap(messageId);
+  const exact = map[versionInfo.version_key];
+  if (exact) {
+    return exact;
+  }
+
+  const values = Object.values(map);
+  if (values.length === 1) {
+    const only = values[0];
+    if (!only.content_hash) {
+      return only;
+    }
+  }
+
+  return null;
 }
 
 async function writeFloorWorkflowExecution(
@@ -481,7 +554,9 @@ async function writeFloorWorkflowExecution(
   };
 
   if (state) {
-    nextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY] = state;
+    const map = readFloorWorkflowExecutionMap(messageId);
+    map[buildExecutionVersionKey(state)] = state;
+    nextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY] = map;
   } else {
     delete nextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY];
   }
@@ -555,20 +630,7 @@ async function resolveFailedOnlyRerollTarget(
     return { ok: false, reason: '当前楼还没有可用的失败执行记录' };
   }
 
-  // 版本校验：如果执行记录的版本与当前消息版本不匹配，视为无记录
-  const msg = getChatMessages(messageId)[0];
-  if (msg) {
-    const currentSwipeId = Number((msg as any)?.swipe_id ?? 0);
-    if (executionState.swipe_id !== undefined && executionState.swipe_id !== currentSwipeId) {
-      return { ok: false, reason: '执行记录来自不同的 swipe 版本，无法重用' };
-    }
-    if (executionState.content_hash) {
-      const currentHash = simpleHash(String((msg as any)?.mes ?? ''));
-      if (executionState.content_hash !== currentHash) {
-        return { ok: false, reason: '执行记录来自已编辑/更新的版本，无法重用' };
-      }
-    }
-  }
+  // readFloorWorkflowExecution 已按当前可见版本读取；这里无需再做二次版本校验。
 
   if (executionState.failed_flow_ids.length === 0) {
     if (executionState.workflow_failed && executionState.attempted_flow_ids.length > 0) {
@@ -1141,12 +1203,8 @@ async function executeWorkflowWithPolicy(
 
     if (options.trigger.timing === 'after_reply') {
       const assistantMessageId = options.trigger.assistant_message_id ?? options.messageId;
-      // 获取当前消息版本信息
       const assistantMsg = getChatMessages(assistantMessageId)[0];
-      const versionInfo = {
-        swipe_id: Number((assistantMsg as any)?.swipe_id ?? 0),
-        content_hash: simpleHash(String((assistantMsg as any)?.mes ?? '')),
-      };
+      const versionInfo = assistantMsg ? getMessageVersionInfo(assistantMsg) : undefined;
       const executionState = buildFloorWorkflowExecutionState(
         nextResult.request_id,
         nextResult.attempts,
@@ -1539,7 +1597,8 @@ async function onGenerationAfterCommands(
         setProcessing(false);
       }
     });
-  } finally {
+  } catch (error) {
+    console.error('[Evolution World] GENERATION_AFTER_COMMANDS workflow failed:', error);
   }
 }
 
@@ -1571,12 +1630,14 @@ function appendTriggerMessageIds(
   },
   ids: { userMessageId?: number | null; assistantMessageId?: number | null },
 ) {
-  if (Number.isFinite(ids.userMessageId)) {
-    trigger.user_message_id = ids.userMessageId;
+  const userMessageId = ids.userMessageId;
+  if (typeof userMessageId === 'number' && Number.isFinite(userMessageId)) {
+    trigger.user_message_id = userMessageId;
   }
 
-  if (Number.isFinite(ids.assistantMessageId)) {
-    trigger.assistant_message_id = ids.assistantMessageId;
+  const assistantMessageId = ids.assistantMessageId;
+  if (typeof assistantMessageId === 'number' && Number.isFinite(assistantMessageId)) {
+    trigger.assistant_message_id = assistantMessageId;
   }
 
   return trigger;
@@ -1854,7 +1915,6 @@ export async function rerollCurrentAfterReplyWorkflow(): Promise<{ ok: boolean; 
     return { ok: false, reason: 'workflow failed' };
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : String(error) };
-  } finally {
   }
 }
 
