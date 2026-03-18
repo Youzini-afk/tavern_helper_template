@@ -565,6 +565,7 @@ async function populateWorldInfoComponents(components: PromptComponents, setting
 
     components.worldInfoBefore = resolved.before;
     components.worldInfoAfter = resolved.after;
+    components.activatedWorldInfoEntries = [...resolved.before, ...resolved.after, ...resolved.atDepth];
 
     // atDepth entries → depth injection system
     for (const entry of resolved.atDepth) {
@@ -673,7 +674,6 @@ export async function collectPromptComponents(flow: EwFlowConfig, settings?: EwS
   };
 
   // ── 1. Character card fields ──────────────────────────────────────────
-  components.activatedWorldInfoEntries = [...resolved.before, ...resolved.after, ...resolved.atDepth];
   try {
     const fields = getRuntimeCharacterFields();
     components.charDescription = fields.charDescription;
