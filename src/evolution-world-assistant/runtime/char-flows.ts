@@ -13,6 +13,7 @@ import { ensureDefaultEntry, resolveTargetWorldbook } from './worldbook-runtime'
 
 /** 角色卡工作流在世界书中的条目名称 */
 export const CHAR_FLOWS_ENTRY_NAME = 'EW/Flows';
+const CHAR_FLOW_DRAFT_STORAGE_PREFIX = 'ew_char_flow_draft:';
 
 /** 角色卡工作流 JSON 包装格式 */
 interface CharFlowsPayload {
@@ -29,6 +30,18 @@ function normalizeFlowName(name: string): string {
   return name.trim().toLowerCase();
 }
 
+function normalizeCharDraftName(name: string): string {
+  return name.trim();
+}
+
+function getCharFlowDraftStorageKey(charName: string): string | null {
+  const normalizedName = normalizeCharDraftName(charName);
+  if (!normalizedName) {
+    return null;
+  }
+  return `${CHAR_FLOW_DRAFT_STORAGE_PREFIX}${normalizedName}`;
+}
+
 /**
  * 从 flow 配置中去除敏感字段，返回安全的纯数据对象。
  */
@@ -40,6 +53,65 @@ function sanitizeFlow(flow: EwFlowConfig): Record<string, unknown> {
     }
   }
   return obj;
+}
+
+export function readCharFlowDraft(charName: string): EwFlowConfig[] | null {
+  const storageKey = getCharFlowDraftStorageKey(charName);
+  if (!storageKey) {
+    return null;
+  }
+
+  try {
+    const raw = globalThis.localStorage?.getItem(storageKey);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.version !== 'ew-char-flow-draft/v1' || !Array.isArray(parsed.flows)) {
+      return null;
+    }
+
+    const flows: EwFlowConfig[] = [];
+    for (const item of parsed.flows) {
+      flows.push(EwFlowConfigSchema.parse(item));
+    }
+    return flows;
+  } catch (error) {
+    console.warn('[Evolution World] Failed to read char flow draft cache:', error);
+    return null;
+  }
+}
+
+export function writeCharFlowDraft(charName: string, flows: EwFlowConfig[]): void {
+  const storageKey = getCharFlowDraftStorageKey(charName);
+  if (!storageKey) {
+    return;
+  }
+
+  try {
+    const payload = {
+      version: 'ew-char-flow-draft/v1',
+      updated_at: Date.now(),
+      flows: flows.map(sanitizeFlow),
+    };
+    globalThis.localStorage?.setItem(storageKey, JSON.stringify(payload));
+  } catch (error) {
+    console.warn('[Evolution World] Failed to write char flow draft cache:', error);
+  }
+}
+
+export function clearCharFlowDraft(charName: string): void {
+  const storageKey = getCharFlowDraftStorageKey(charName);
+  if (!storageKey) {
+    return;
+  }
+
+  try {
+    globalThis.localStorage?.removeItem(storageKey);
+  } catch (error) {
+    console.warn('[Evolution World] Failed to clear char flow draft cache:', error);
+  }
 }
 
 // ── 读取 ─────────────────────────────────────────────────────
@@ -154,7 +226,9 @@ export async function getEffectiveFlows(settings: EwSettings): Promise<EwFlowCon
 
   let charFlows: EwFlowConfig[];
   try {
-    charFlows = (await readCharFlows(settings)).filter(f => f.enabled);
+    const currentCharName = String(getCurrentCharacterName?.() ?? '').trim();
+    const draftFlows = currentCharName ? readCharFlowDraft(currentCharName) : null;
+    charFlows = (draftFlows ?? (await readCharFlows(settings))).filter(f => f.enabled);
   } catch {
     charFlows = [];
   }

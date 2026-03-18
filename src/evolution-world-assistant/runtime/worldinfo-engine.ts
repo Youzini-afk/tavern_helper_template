@@ -137,6 +137,7 @@ interface NormalizedEntry {
 
 export interface ResolvedWiEntry {
   name: string;
+  source_name?: string;
   content: string;
   role: 'system' | 'user' | 'assistant';
   position: number;
@@ -849,6 +850,7 @@ export async function resolveWorldInfo(_settings: EwSettings, chatMessages: stri
       if (entry.name.startsWith(_settings.controller_entry_prefix)) {
         const rawControllerEntry: ResolvedWiEntry = {
           name: entry.name,
+          source_name: entry.name,
           content: contentToRender,
           role: roleMap[entry.role] ?? 'system',
           position: entry.position,
@@ -862,6 +864,7 @@ export async function resolveWorldInfo(_settings: EwSettings, chatMessages: stri
           if (pulled.worldbook === entry.worldbook && pulled.name === entry.name) continue;
           targetBucket.push({
             name: pulled.comment || pulled.name,
+            source_name: pulled.name,
             content: pulled.content,
             role: roleMap[entry.role] ?? 'system',
             position: entry.position,
@@ -874,6 +877,7 @@ export async function resolveWorldInfo(_settings: EwSettings, chatMessages: stri
 
       const resolvedEntry: ResolvedWiEntry = {
         name: entry.name,
+        source_name: entry.name,
         content: rendered,
         role: roleMap[entry.role] ?? 'system',
         position: entry.position,

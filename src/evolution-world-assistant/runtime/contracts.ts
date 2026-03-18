@@ -57,6 +57,12 @@ export const FlowRequestSchema = z.object({
     turns: z.number().int().min(1).default(8),
     extract_rules: z.array(TextSliceRuleSchema).default([]),
     exclude_rules: z.array(TextSliceRuleSchema).default([]),
+    ew_dyn_entries: z
+      .object({
+        active_names: z.array(z.string().min(1)).default([]),
+        inactive_names: z.array(z.string().min(1)).default([]),
+      })
+      .default({ active_names: [], inactive_names: [] }),
   }),
   serial_results: z.array(z.record(z.string(), z.any())).default([]),
 });

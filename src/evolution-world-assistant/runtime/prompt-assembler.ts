@@ -625,6 +625,7 @@ export type PromptComponents = {
   personaDescription: string;
   worldInfoBefore: ResolvedWiEntry[];
   worldInfoAfter: ResolvedWiEntry[];
+  activatedWorldInfoEntries: ResolvedWiEntry[];
   dialogueExamples: string;
   chatMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string; name?: string }>;
   /** Extension prompts that need depth-based injection into chat history (ST position=IN_CHAT) */
@@ -662,6 +663,7 @@ export async function collectPromptComponents(flow: EwFlowConfig, settings?: EwS
     personaDescription: '',
     worldInfoBefore: [],
     worldInfoAfter: [],
+    activatedWorldInfoEntries: [],
     dialogueExamples: '',
     chatMessages: [],
     depthInjections: [],
@@ -671,6 +673,7 @@ export async function collectPromptComponents(flow: EwFlowConfig, settings?: EwS
   };
 
   // ── 1. Character card fields ──────────────────────────────────────────
+  components.activatedWorldInfoEntries = [...resolved.before, ...resolved.after, ...resolved.atDepth];
   try {
     const fields = getRuntimeCharacterFields();
     components.charDescription = fields.charDescription;

@@ -1,4 +1,10 @@
-import { readCharFlows, writeCharFlows } from '../runtime/char-flows';
+import {
+  clearCharFlowDraft,
+  readCharFlowDraft,
+  readCharFlows,
+  writeCharFlowDraft,
+  writeCharFlows,
+} from '../runtime/char-flows';
 import { createDefaultApiPreset, createDefaultFlow } from '../runtime/factory';
 import {
   collectAllFloorSnapshots,
@@ -34,8 +40,6 @@ import type { TabKey } from './help-meta';
 import { showEwNotice } from './notice';
 
 export const useEwStore = defineStore('evolution-world-store', () => {
-  const CHAR_FLOW_DRAFT_STORAGE_PREFIX = 'ew_char_flow_draft:';
-
   const settings = ref<EwSettings>(getSettings());
   const lastRun = ref<RunSummary | null>(getLastRun());
   const lastIo = ref<LastIoSummary | null>(getLastIo());
@@ -185,85 +189,6 @@ export const useEwStore = defineStore('evolution-world-store', () => {
       }
     },
   );
-
-  function normalizeCharDraftName(name: string): string {
-    return name.trim();
-  }
-
-  function getCharFlowDraftStorageKey(charName: string): string | null {
-    const normalizedName = normalizeCharDraftName(charName);
-    if (!normalizedName) {
-      return null;
-    }
-    return `${CHAR_FLOW_DRAFT_STORAGE_PREFIX}${normalizedName}`;
-  }
-
-  function sanitizeCharFlowDraft(flow: EwFlowConfig): Record<string, unknown> {
-    const copy = klona(flow) as Record<string, unknown>;
-    delete copy.api_url;
-    delete copy.api_key;
-    delete copy.headers_json;
-    return copy;
-  }
-
-  function readCharFlowDraft(charName: string): EwFlowConfig[] | null {
-    const storageKey = getCharFlowDraftStorageKey(charName);
-    if (!storageKey) {
-      return null;
-    }
-
-    try {
-      const raw = globalThis.localStorage?.getItem(storageKey);
-      if (!raw) {
-        return null;
-      }
-
-      const parsed = JSON.parse(raw);
-      if (!parsed || parsed.version !== 'ew-char-flow-draft/v1' || !Array.isArray(parsed.flows)) {
-        return null;
-      }
-
-      const flows: EwFlowConfig[] = [];
-      for (const item of parsed.flows) {
-        flows.push(EwFlowConfigSchema.parse(item));
-      }
-      return flows;
-    } catch (error) {
-      console.warn('[Evolution World] Failed to read char flow draft cache:', error);
-      return null;
-    }
-  }
-
-  function writeCharFlowDraft(charName: string, flows: EwFlowConfig[]): void {
-    const storageKey = getCharFlowDraftStorageKey(charName);
-    if (!storageKey) {
-      return;
-    }
-
-    try {
-      const payload = {
-        version: 'ew-char-flow-draft/v1',
-        updated_at: Date.now(),
-        flows: flows.map(sanitizeCharFlowDraft),
-      };
-      globalThis.localStorage?.setItem(storageKey, JSON.stringify(payload));
-    } catch (error) {
-      console.warn('[Evolution World] Failed to write char flow draft cache:', error);
-    }
-  }
-
-  function clearCharFlowDraft(charName: string): void {
-    const storageKey = getCharFlowDraftStorageKey(charName);
-    if (!storageKey) {
-      return;
-    }
-
-    try {
-      globalThis.localStorage?.removeItem(storageKey);
-    } catch (error) {
-      console.warn('[Evolution World] Failed to clear char flow draft cache:', error);
-    }
-  }
 
   watch(
     charFlows,

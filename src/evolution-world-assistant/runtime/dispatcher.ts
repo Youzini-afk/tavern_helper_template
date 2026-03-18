@@ -69,6 +69,14 @@ function resolveGenerateRaw(): ((options: Record<string, any>) => Promise<string
   return null;
 }
 
+function collectActiveDynEntryNames(promptComponents: PromptComponents, settings: EwSettings): string[] {
+  return _.uniq(
+    (promptComponents.activatedWorldInfoEntries ?? [])
+      .map(entry => entry.source_name ?? entry.name)
+      .filter(name => typeof name === 'string' && name.startsWith(settings.dynamic_entry_prefix)),
+  );
+}
+
 function getStRequestHeaders(): Record<string, string> {
   const hostRuntime = getHostRuntime();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -1123,20 +1131,20 @@ async function executeFlow(
   // Collect prompt components once — shared by buildFlowRequest (metadata) and assembler (messages)
   const promptComponentsPromise = collectPromptComponents(flow, settings);
 
-  const request = await buildFlowRequest({
-    settings,
-    flow,
-    message_id: messageId,
-    user_input: userInput,
-    trigger,
-    request_id: requestId,
-    serial_results: serialResults,
-  });
-
   try {
     throwIfDispatchAborted(abortSignal, isCancelled);
-    const body = applyTemplate(request as unknown as Record<string, any>, flow.request_template);
     const promptComponents = await promptComponentsPromise;
+    const request = await buildFlowRequest({
+      settings,
+      flow,
+      message_id: messageId,
+      user_input: userInput,
+      trigger,
+      request_id: requestId,
+      serial_results: serialResults,
+      active_dyn_entry_names: collectActiveDynEntryNames(promptComponents, settings),
+    });
+    const body = applyTemplate(request as unknown as Record<string, any>, flow.request_template);
     const orderedPrompts = await buildOrderedPromptsForFlow(flow, promptComponents, body);
     const requestDebugBase = {
       route: shouldUseGenerateRawCustomApi(apiPreset)

@@ -1,6 +1,7 @@
 import { FlowRequestSchema, FlowRequestV1, FlowTriggerV1 } from './contracts';
 import { uuidv4 } from './helpers';
 import { EwFlowConfig, EwSettings } from './types';
+import { resolveTargetWorldbook } from './worldbook-runtime';
 
 export type BuildRequestInput = {
   settings: EwSettings;
@@ -10,7 +11,37 @@ export type BuildRequestInput = {
   trigger?: FlowTriggerV1;
   request_id?: string;
   serial_results?: Record<string, any>[];
+  active_dyn_entry_names?: string[];
 };
+
+function normalizeEntryNames(names: string[] | undefined): string[] {
+  return _.uniq((names ?? []).map(name => String(name ?? '').trim()).filter(Boolean));
+}
+
+async function collectDynEntryContext(settings: EwSettings, activeNamesInput: string[] | undefined) {
+  const activeNames = normalizeEntryNames(activeNamesInput);
+
+  try {
+    const target = await resolveTargetWorldbook(settings);
+    const allManagedNames = _.uniq(
+      (target?.entries ?? [])
+        .map(entry => entry.name)
+        .filter(name => typeof name === 'string' && name.startsWith(settings.dynamic_entry_prefix)),
+    );
+
+    const activeSet = new Set(activeNames);
+    return {
+      active_names: activeNames.filter(name => allManagedNames.includes(name)),
+      inactive_names: allManagedNames.filter(name => !activeSet.has(name)),
+    };
+  } catch (error) {
+    console.debug('[Evolution World] collectDynEntryContext failed:', error);
+    return {
+      active_names: activeNames,
+      inactive_names: [],
+    };
+  }
+}
 
 function sanitizeTrigger(trigger: FlowTriggerV1 | undefined): FlowTriggerV1 | undefined {
   if (!trigger) {
@@ -41,6 +72,7 @@ export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRe
   );
   const requestId = input.request_id ?? uuidv4();
   const trigger = sanitizeTrigger(input.trigger);
+  const ewDynEntries = await collectDynEntryContext(input.settings, input.active_dyn_entry_names);
 
   const payload = FlowRequestSchema.parse({
     version: 'ew-flow/v1',
@@ -61,6 +93,7 @@ export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRe
       turns: input.flow.context_turns,
       extract_rules: input.flow.extract_rules,
       exclude_rules: input.flow.exclude_rules,
+      ew_dyn_entries: ewDynEntries,
     },
     serial_results: input.serial_results ?? [],
   });
