@@ -6,7 +6,7 @@ import {
   writeSnapshot,
   type SnapshotData,
 } from './snapshot-storage';
-import { ControllerEntrySnapshot, ControllerTemplateSlot, EwSettings } from './types';
+import { ControllerEntrySnapshot, EwSettings } from './types';
 import { ensureDefaultEntry, resolveTargetWorldbook } from './worldbook-runtime';
 
 const EW_FLOOR_DATA_KEY = 'ew_entries';
@@ -144,7 +144,7 @@ export async function markFloorEntries(
   settings: EwSettings,
   messageId: number,
   entryNames: string[],
-  controllerSnapshots?: ControllerTemplateSlot[],
+  controllerSnapshots?: ControllerEntrySnapshot[],
   dynSnapshots?: DynSnapshot[],
 ): Promise<void> {
   const messages = getChatMessages(messageId);

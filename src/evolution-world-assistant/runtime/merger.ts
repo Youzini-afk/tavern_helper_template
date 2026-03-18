@@ -59,9 +59,9 @@ export function mergeFlowResults(results: MergeInput, settings: EwSettings): Mer
     ),
   );
 
-  // Declarative: desired_entries (final state) and remove_entries (deletions).
+  // Declarative: desired_entries (final state).
+  // remove_entries is intentionally ignored so AI cannot delete managed entries.
   const desiredMap = new Map<string, Prioritized<{ content: string; enabled: boolean }>>();
-  const removeMap = new Map<string, Prioritized<null>>();
 
   // Multi-controller: each flow keeps its own controller_model, keyed by flow.id.
   const controllerModels = new Map<string, MergedPlan['controller_models'][number]>();
@@ -90,17 +90,11 @@ export function mergeFlowResults(results: MergeInput, settings: EwSettings): Mer
       }
     }
 
-    for (const removal of worldbookOps.remove_entries) {
-      const normalizedName = normalizeEntryName(
-        removal.name,
-        settings.dynamic_entry_prefix,
-        settings.controller_entry_prefix,
+    if (worldbookOps.remove_entries.length > 0) {
+      console.warn(
+        `[EW Merger] remove_entries from flow "${result.flow.id}" ignored:`,
+        worldbookOps.remove_entries.map(entry => entry.name),
       );
-      const next: Prioritized<null> = { value: null, priority, flow_order: flowOrder };
-      const current = removeMap.get(normalizedName);
-      if (shouldReplace(current, next)) {
-        removeMap.set(normalizedName, next);
-      }
     }
 
     if (result.response.operations.controller_model) {
@@ -119,20 +113,6 @@ export function mergeFlowResults(results: MergeInput, settings: EwSettings): Mer
     }
 
     diagnostics[result.flow.id] = result.response.diagnostics;
-  }
-
-  // Conflict resolution: remove wins over desired when priority is >= .
-  for (const [name, removal] of removeMap.entries()) {
-    const desired = desiredMap.get(name);
-    if (!desired) {
-      continue;
-    }
-
-    if (removal.priority >= desired.priority) {
-      desiredMap.delete(name);
-    } else {
-      removeMap.delete(name);
-    }
   }
 
   if (controllerModels.size === 0) {
@@ -176,7 +156,7 @@ export function mergeFlowResults(results: MergeInput, settings: EwSettings): Mer
   return {
     worldbook: {
       desired_entries: desiredEntries,
-      remove_entries: [...removeMap.keys()].map(name => ({ name })),
+      remove_entries: [],
     },
     controller_models: normalizedControllers,
     reply_instruction: replyParts.join('\n\n'),

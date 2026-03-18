@@ -61,6 +61,29 @@ function applyDeclarativeDiff(
   return result;
 }
 
+function collectManagedDynSnapshots(nextEntries: WorldbookEntry[], settings: EwSettings) {
+  return nextEntries
+    .filter(entry => entry.name.startsWith(settings.dynamic_entry_prefix))
+    .map(entry => ({
+      name: entry.name,
+      content: entry.content,
+      enabled: false,
+    }));
+}
+
+function collectManagedControllerSnapshots(
+  nextEntries: WorldbookEntry[],
+  settings: EwSettings,
+): ControllerEntrySnapshot[] {
+  return nextEntries
+    .filter(entry => entry.name.startsWith(settings.controller_entry_prefix))
+    .map(entry => ({
+      entry_name: entry.name,
+      content: entry.content,
+    }))
+    .filter(entry => entry.content);
+}
+
 export async function commitMergedPlan(
   settings: EwSettings,
   mergedPlan: MergedPlan,
@@ -134,25 +157,16 @@ export async function commitMergedPlan(
 
   // 标记楼层绑定：记录 EW/Dyn 条目、其内容快照和 Controller 快照。
   if (settings.floor_binding_enabled && messageId >= 0) {
-    const dynDesired = mergedPlan.worldbook.desired_entries.filter(entry =>
-      entry.name.startsWith(settings.dynamic_entry_prefix),
+    const dynSnapshots = collectManagedDynSnapshots(nextEntries, settings);
+    const controllerSnapshots = collectManagedControllerSnapshots(nextEntries, settings);
+
+    await markFloorEntries(
+      settings,
+      messageId,
+      dynSnapshots.map(entry => entry.name),
+      controllerSnapshots,
+      dynSnapshots,
     );
-
-    const dynSnapshots = dynDesired.map(entry => ({
-      name: entry.name,
-      content: entry.content,
-      enabled: false,
-    }));
-
-    if (dynSnapshots.length > 0 || controllerTemplates.length > 0) {
-      await markFloorEntries(
-        settings,
-        messageId,
-        dynDesired.map(e => e.name),
-        controllerTemplates,
-        dynSnapshots,
-      );
-    }
   }
 
   return {
