@@ -1,9 +1,10 @@
 import { EwWorkflowNoticeInput, showManagedWorkflowNotice } from '../ui/notice';
 import { getEffectiveFlows } from './char-flows';
 import { disposeFloorBindingEvents, initFloorBindingEvents, rollbackBeforeFloor } from './floor-binding';
+import { simpleHash } from './helpers';
 import { resetHideState, runIncrementalHideCheck, scheduleHideSettingsApply } from './hide-engine';
 import { markIntercepted, resetInterceptGuard, wasRecentlyIntercepted } from './intercept-guard';
-import { runWorkflow } from './pipeline';
+import { runWorkflow, type RunWorkflowOutput } from './pipeline';
 import { getSettings, patchSettings } from './settings';
 import {
   clearAfterReplyPendingIfMatches,
@@ -61,6 +62,7 @@ const workflowTaskQueue: Array<{
   reject: (reason?: unknown) => void;
 }> = [];
 const queuedAfterReplyJobKeys = new Set<string>();
+const queuedAfterReplyDedupKeys = new Set<string>();
 const failedAfterReplyJobsByChat = new Map<string, FailedAfterReplyQueueJob[]>();
 let workflowTaskDrainPromise: Promise<void> | null = null;
 
@@ -94,6 +96,7 @@ function clearQueuedWorkflowTasks(reason: string) {
     task.reject(new Error(reason));
   }
   queuedAfterReplyJobKeys.clear();
+  queuedAfterReplyDedupKeys.clear();
 }
 
 function enqueueWorkflowTask<T>(label: string, run: () => Promise<T>): Promise<T> {
@@ -639,6 +642,55 @@ async function buildPreservedDispatchResults(
     .filter((result): result is DispatchFlowResult => Boolean(result));
 }
 
+function collectSuccessfulDispatchResultsFromAttempts(attempts: DispatchFlowAttempt[]): DispatchFlowResult[] {
+  return attempts
+    .filter(attempt => attempt.ok && attempt.response)
+    .map(attempt => ({
+      flow: attempt.flow,
+      flow_order: attempt.flow_order,
+      response: attempt.response as any,
+    }));
+}
+
+function mergePreservedDispatchResults(
+  current: DispatchFlowResult[],
+  next: DispatchFlowResult[],
+): DispatchFlowResult[] {
+  const resultByFlowId = new Map<string, DispatchFlowResult>();
+
+  for (const item of current) {
+    resultByFlowId.set(item.flow.id, item);
+  }
+
+  for (const item of next) {
+    resultByFlowId.set(item.flow.id, item);
+  }
+
+  return [...resultByFlowId.values()].sort((left, right) => left.flow_order - right.flow_order);
+}
+
+function resolveAutoRerollTarget(
+  result: RunWorkflowOutput,
+): { ok: true; flowIds: string[] } | { ok: false; reason: string } {
+  const failedFlowIds = _.uniq(
+    result.attempts
+      .filter(attempt => !attempt.ok)
+      .map(attempt => String(attempt.flow.id ?? '').trim())
+      .filter(Boolean),
+  );
+
+  if (failedFlowIds.length > 0) {
+    return { ok: true, flowIds: failedFlowIds };
+  }
+
+  const stage = result.failure?.stage;
+  if (stage === 'merge' || stage === 'commit') {
+    return { ok: false, reason: '失败发生在合并/写回阶段；自动重roll已跳过，避免重复请求已成功的工作流。' };
+  }
+
+  return { ok: false, reason: '未定位到失败工作流；自动重roll已跳过。' };
+}
+
 function createProcessingReminder(onAbort: () => void) {
   let state: EwWorkflowNoticeInput = {
     title: 'Evolution World',
@@ -819,6 +871,7 @@ async function executeWorkflowWithPolicy(
   let currentPreservedStoredResults = [...(options.preservedResults ?? [])];
   let currentPreservedDispatchResults = await buildPreservedDispatchResults(settings, currentPreservedStoredResults);
   let lastAfterReplyExecutionState: FloorWorkflowExecutionState | null = null;
+  let currentFlowIds = options.flowIds ? [...options.flowIds] : undefined;
 
   const trimPreview = (text: string | undefined, maxLength: number) => {
     const normalized = String(text ?? '')
@@ -837,6 +890,19 @@ async function executeWorkflowWithPolicy(
   let carouselTimer: ReturnType<typeof setInterval> | null = null;
   let totalFlowCount = 0;
   let completedFlowCount = 0;
+  let failedFlowCount = 0;
+
+  const buildFlowProgress = () => {
+    if (totalFlowCount <= 0) {
+      return undefined;
+    }
+
+    return {
+      completed: completedFlowCount,
+      total: totalFlowCount,
+      failed: failedFlowCount,
+    };
+  };
 
   const getRotatedIsland = (): { entry_name?: string; content?: string; extra_count: number } => {
     const flows = [...activeFlows.values()].sort((a, b) => a.flow_order - b.flow_order);
@@ -898,13 +964,13 @@ async function executeWorkflowWithPolicy(
           level: 'info',
           persist: true,
           busy: true,
-          flow_progress: totalFlowCount > 0 ? { completed: completedFlowCount, total: totalFlowCount } : undefined,
+          flow_progress: buildFlowProgress(),
         });
         break;
       case 'merging':
       case 'committing':
         // All flows complete — clear active flows
-        completedFlowCount = activeFlows.size;
+        completedFlowCount = totalFlowCount > 0 ? totalFlowCount : activeFlows.size;
         activeFlows.clear();
         stopCarousel();
         processingReminder.update({
@@ -913,7 +979,7 @@ async function executeWorkflowWithPolicy(
           persist: true,
           busy: true,
           island: { extra_count: 0 },
-          flow_progress: totalFlowCount > 0 ? { completed: completedFlowCount, total: totalFlowCount } : undefined,
+          flow_progress: buildFlowProgress(),
         });
         break;
       case 'flow_started': {
@@ -936,7 +1002,33 @@ async function executeWorkflowWithPolicy(
           level: 'info',
           island: getRotatedIsland(),
           workflow_name: update.flow_name?.trim() || undefined,
-          flow_progress: totalFlowCount > 0 ? { completed: completedFlowCount, total: totalFlowCount } : undefined,
+          flow_progress: buildFlowProgress(),
+        });
+        break;
+      }
+      case 'flow_finished': {
+        const flowId = update.flow_id ?? '';
+        if (flowId) {
+          activeFlows.delete(flowId);
+        }
+
+        completedFlowCount += 1;
+        if (update.flow_ok === false) {
+          failedFlowCount += 1;
+        }
+
+        if (activeFlows.size <= 1) {
+          stopCarousel();
+        }
+
+        processingReminder.update({
+          message: update.message ?? options.reminderMessage,
+          persist: true,
+          busy: true,
+          level: update.flow_ok === false ? 'warning' : 'info',
+          island: getRotatedIsland(),
+          workflow_name: update.flow_name?.trim() || undefined,
+          flow_progress: buildFlowProgress(),
         });
         break;
       }
@@ -959,11 +1051,21 @@ async function executeWorkflowWithPolicy(
           level: 'info',
           island: getRotatedIsland(),
           workflow_name: update.flow_name?.trim() || undefined,
-          flow_progress: totalFlowCount > 0 ? { completed: completedFlowCount, total: totalFlowCount } : undefined,
+          flow_progress: buildFlowProgress(),
         });
         break;
       }
       case 'completed':
+        completedFlowCount = totalFlowCount > 0 ? totalFlowCount : completedFlowCount;
+        processingReminder.update({
+          message: update.message ?? options.successMessage,
+          persist: true,
+          busy: true,
+          level: 'info',
+          island: { extra_count: 0 },
+          flow_progress: buildFlowProgress(),
+        });
+        break;
       case 'failed':
       default:
         break;
@@ -1002,13 +1104,18 @@ async function executeWorkflowWithPolicy(
       trigger: options.trigger,
       mode: 'auto',
       inject_reply: options.injectReply,
-      flow_ids: options.flowIds,
+      flow_ids: currentFlowIds,
       timing_filter: options.timingFilter,
       preserved_results: currentPreservedDispatchResults,
       abortSignal: workflowAbortController.signal,
       isCancelled: () => abortedByUser,
       onProgress: handleWorkflowProgress,
     });
+
+    currentPreservedDispatchResults = mergePreservedDispatchResults(
+      currentPreservedDispatchResults,
+      collectSuccessfulDispatchResultsFromAttempts(nextResult.attempts),
+    );
 
     if (options.trigger.timing === 'after_reply') {
       const assistantMessageId = options.trigger.assistant_message_id ?? options.messageId;
@@ -1062,9 +1169,18 @@ async function executeWorkflowWithPolicy(
     const autoRerollMaxAttempts = Math.max(1, Math.trunc(Number(settings.auto_reroll_max_attempts ?? 1) || 1));
     const autoRerollIntervalMs = Math.max(0, Math.round((settings.auto_reroll_interval_seconds ?? 0) * 1000));
     let autoRerollCount = 0;
+    let autoRerollSkippedReason = '';
 
     if (policy === 'retry_once') {
       while (!result.ok && autoRerollCount < autoRerollMaxAttempts) {
+        const rerollTarget = resolveAutoRerollTarget(result);
+        if (!rerollTarget.ok) {
+          autoRerollSkippedReason = rerollTarget.reason;
+          console.warn(`[EW] auto reroll skipped: ${rerollTarget.reason}`);
+          break;
+        }
+
+        currentFlowIds = rerollTarget.flowIds;
         const nextAttemptNumber = autoRerollCount + 1;
         const retryMessageBase = buildFailureNoticeMessage(result.failure, result.reason, { retrying: true });
         const intervalHint =
@@ -1100,8 +1216,18 @@ async function executeWorkflowWithPolicy(
     }
 
     if (!result.ok) {
-      const exhaustedAutoRerollSuffix =
-        policy === 'retry_once' && autoRerollCount > 0 ? `\n已自动重roll ${autoRerollCount} 次，仍未成功。` : '';
+      const exhaustedAutoRerollSuffix = (() => {
+        if (policy !== 'retry_once') {
+          return '';
+        }
+        if (autoRerollSkippedReason) {
+          return `\n${autoRerollSkippedReason}`;
+        }
+        if (autoRerollCount > 0) {
+          return `\n已自动重roll ${autoRerollCount} 次，仍未成功。`;
+        }
+        return '';
+      })();
       const displayReason = `${buildFailureNoticeMessage(result.failure, result.reason)}${exhaustedAutoRerollSuffix}`;
       const toastReason = `${buildFailureToastMessage(result.failure, result.reason)}${
         policy === 'retry_once' && autoRerollCount > 0 ? `（已自动重roll ${autoRerollCount} 次）` : ''
@@ -1427,6 +1553,15 @@ function appendTriggerMessageIds(
   return trigger;
 }
 
+function buildAfterReplyDedupKey(messageText: string, pendingUserMessageId: number | null): string {
+  const normalizedText = String(messageText ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const contentHash = simpleHash(normalizedText);
+  const userMessagePart = Number.isFinite(pendingUserMessageId) ? `user:${pendingUserMessageId}` : 'user:unknown';
+  return `${getCurrentChatKey()}:${userMessagePart}:${contentHash}`;
+}
+
 async function onAfterReplyMessage(messageId: number, type: string, source: 'message_received' | 'generation_ended') {
   const settings = getSettings();
   if (!hasFlowsForTiming(settings, 'after_reply')) {
@@ -1453,12 +1588,15 @@ async function onAfterReplyMessage(messageId: number, type: string, source: 'mes
   const pendingUserMessageId =
     runtimeState.after_reply.pending_user_message_id ?? runtimeState.last_send?.message_id ?? null;
   const queueKey = `${getCurrentChatKey()}:${messageId}`;
+  const dedupKey = buildAfterReplyDedupKey(messageText, pendingUserMessageId);
 
-  if (queuedAfterReplyJobKeys.has(queueKey)) {
+  if (queuedAfterReplyJobKeys.has(queueKey) || queuedAfterReplyDedupKeys.has(dedupKey)) {
+    console.debug(`[Evolution World] after_reply skipped as duplicate (${source}): ${dedupKey}`);
     return;
   }
 
   queuedAfterReplyJobKeys.add(queueKey);
+  queuedAfterReplyDedupKeys.add(dedupKey);
   await enqueueWorkflowTask(`after_reply:${messageId}`, async () => {
     setProcessing(true);
     try {
@@ -1486,6 +1624,7 @@ async function onAfterReplyMessage(messageId: number, type: string, source: 'mes
       clearAfterReplyPendingIfMatches(pendingUserMessageId);
       clearSendContextIfMatches(pendingUserMessageId, userInput);
       queuedAfterReplyJobKeys.delete(queueKey);
+      queuedAfterReplyDedupKeys.delete(dedupKey);
       setProcessing(false);
     }
   });

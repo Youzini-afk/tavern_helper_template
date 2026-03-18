@@ -24,7 +24,7 @@ export type EwWorkflowNoticeInput = EwNoticeInput & {
     extra_count?: number;
   };
   workflow_name?: string;
-  flow_progress?: { completed: number; total: number };
+  flow_progress?: { completed: number; total: number; failed?: number };
 };
 
 export type EwNoticeHandle = {
@@ -977,7 +977,11 @@ function applyWorkflowNoticeState(item: HTMLElement, input: EwWorkflowNoticeInpu
     let text = input.message;
     if (input.flow_progress && input.flow_progress.total > 0) {
       const wfName = input.workflow_name?.trim() || '工作流';
-      text += `\n━━━ ${wfName}  ·  ${input.flow_progress.completed}/${input.flow_progress.total} 流已完成`;
+      const failed = Math.max(0, Math.trunc(Number(input.flow_progress.failed ?? 0) || 0));
+      text += `\n━━━ ${wfName}  ·  已完成 ${input.flow_progress.completed}/${input.flow_progress.total}`;
+      if (failed > 0) {
+        text += `，其中 ${failed} 条失败`;
+      }
     }
     message.textContent = text;
   }

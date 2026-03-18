@@ -1224,6 +1224,17 @@ async function executeFlow(
 
     throwIfDispatchAborted(abortSignal, isCancelled);
 
+    onProgress?.({
+      phase: 'flow_finished',
+      request_id: requestId,
+      flow_id: flow.id,
+      flow_name: flow.name,
+      flow_order: flowOrder,
+      flow_ok: true,
+      generation_id: generationId,
+      message: flow.name.trim() ? `工作流「${flow.name}」已完成。` : `工作流 ${flow.id} 已完成。`,
+    });
+
     return {
       flow,
       flow_order: flowOrder,
@@ -1237,6 +1248,17 @@ async function executeFlow(
       elapsed_ms: Date.now() - startedAt,
     };
   } catch (error) {
+    onProgress?.({
+      phase: 'flow_finished',
+      request_id: requestId,
+      flow_id: flow.id,
+      flow_name: flow.name,
+      flow_order: flowOrder,
+      flow_ok: false,
+      generation_id: generationId,
+      message: flow.name.trim() ? `工作流「${flow.name}」执行失败。` : `工作流 ${flow.id} 执行失败。`,
+    });
+
     return {
       flow,
       flow_order: flowOrder,

@@ -466,6 +466,7 @@ export type WorkflowProgressPhase =
   | 'preparing'
   | 'dispatching'
   | 'flow_started'
+  | 'flow_finished'
   | 'streaming'
   | 'merging'
   | 'committing'
@@ -484,6 +485,7 @@ export type WorkflowProgressUpdate = {
   flow_id?: string;
   flow_name?: string;
   flow_order?: number;
+  flow_ok?: boolean;
   generation_id?: string;
   stream_enabled?: boolean;
   stream_text?: string;
