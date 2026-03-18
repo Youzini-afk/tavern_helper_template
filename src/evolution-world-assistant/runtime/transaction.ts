@@ -160,12 +160,17 @@ export async function commitMergedPlan(
     const dynSnapshots = collectManagedDynSnapshots(nextEntries, settings);
     const controllerSnapshots = collectManagedControllerSnapshots(nextEntries, settings);
 
+    // 读取当前消息的 swipe_id 用于版本标识
+    const targetMsg = getChatMessages(messageId)[0];
+    const swipeId = Number((targetMsg as any)?.swipe_id ?? 0);
+
     await markFloorEntries(
       settings,
       messageId,
       dynSnapshots.map(entry => entry.name),
       controllerSnapshots,
       dynSnapshots,
+      swipeId,
     );
   }
 

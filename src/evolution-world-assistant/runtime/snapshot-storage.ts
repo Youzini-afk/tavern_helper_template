@@ -13,6 +13,8 @@ import type { ControllerEntrySnapshot } from './types';
 export type SnapshotData = {
   controllers: ControllerEntrySnapshot[];
   dyn_entries: Array<{ name: string; content: string; enabled: boolean }>;
+  /** 写入快照时 assistant 消息的 swipe_id，用于版本校验 */
+  swipe_id?: number;
 };
 
 /**
@@ -34,6 +36,7 @@ export function upgradeSnapshotData(raw: any): SnapshotData | null {
         }))
         .filter((entry: ControllerEntrySnapshot) => entry.content),
       dyn_entries: Array.isArray(raw.dyn_entries) ? raw.dyn_entries : [],
+      swipe_id: typeof raw.swipe_id === 'number' ? raw.swipe_id : undefined,
     };
   }
 

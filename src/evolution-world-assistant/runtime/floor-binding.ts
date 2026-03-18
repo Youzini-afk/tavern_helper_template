@@ -146,9 +146,11 @@ export async function markFloorEntries(
   entryNames: string[],
   controllerSnapshots?: ControllerEntrySnapshot[],
   dynSnapshots?: DynSnapshot[],
+  swipeId?: number,
 ): Promise<void> {
   const messages = getChatMessages(messageId);
   if (messages.length === 0) {
+    console.warn(`[Evolution World] markFloorEntries: message #${messageId} not found, snapshot DROPPED`);
     return;
   }
 
@@ -194,6 +196,7 @@ export async function markFloorEntries(
     const snapshotData: SnapshotData = {
       controllers: normalizedControllerSnapshots,
       dyn_entries: normalizedDynSnapshots,
+      swipe_id: swipeId ?? 0,
     };
     try {
       const fileName = await writeSnapshot(getCharName(), getChatId(), messageId, snapshotData);
@@ -268,6 +271,13 @@ export async function collectLatestSnapshots(): Promise<{
     if (snapshotFile) {
       const fileData = await readSnapshot(snapshotFile);
       if (fileData) {
+        // 版本校验：如果快照有 swipe_id 且与当前消息的 swipe_id 不匹配，跳过
+        if (fileData.swipe_id !== undefined && fileData.swipe_id !== Number((msg as any).swipe_id ?? 0)) {
+          console.info(
+            `[EW] Snapshot at floor #${msg.message_id} skipped: swipe_id mismatch (snapshot=${fileData.swipe_id}, current=${(msg as any).swipe_id ?? 0})`,
+          );
+          continue;
+        }
         const dynMap = new Map<string, DynSnapshot>();
         for (const snap of fileData.dyn_entries) {
           if (snap.name && typeof snap.content === 'string') {
@@ -283,6 +293,13 @@ export async function collectLatestSnapshots(): Promise<{
 
     const inlineSnapshot = readInlineSnapshot(msg.data);
     if (inlineSnapshot) {
+      // 版本校验：内联快照同样检查 swipe_id
+      if (inlineSnapshot.swipe_id !== undefined && inlineSnapshot.swipe_id !== Number((msg as any).swipe_id ?? 0)) {
+        console.info(
+          `[EW] Inline snapshot at floor #${msg.message_id} skipped: swipe_id mismatch (snapshot=${inlineSnapshot.swipe_id}, current=${(msg as any).swipe_id ?? 0})`,
+        );
+        continue;
+      }
       const dynMap = new Map<string, DynSnapshot>();
       for (const snap of inlineSnapshot.dyn_entries) {
         if (snap.name && typeof snap.content === 'string') {
@@ -317,6 +334,14 @@ export async function purgeAndRestoreForChat(settings: EwSettings): Promise<void
     return;
   }
 
+  // 安全检查：先收集快照，如果没有任何快照可恢复，
+  // 保持 worldbook 现状不动，避免破坏性清除后无法恢复。
+  const { controllers: controllerSnapshots, dyn: dynSnapshots } = await collectLatestSnapshots();
+  if (dynSnapshots.size === 0 && controllerSnapshots.length === 0) {
+    console.info('[Evolution World] purgeAndRestore: no valid snapshots found, keeping current worldbook state');
+    return;
+  }
+
   // Step 1: Remove all EW/Dyn/* entries and clear all EW/Controller/* entries.
   const nextEntries = klona(target.entries).filter(entry => !entry.name.startsWith(settings.dynamic_entry_prefix));
 
@@ -327,8 +352,7 @@ export async function purgeAndRestoreForChat(settings: EwSettings): Promise<void
     entry.enabled = false;
   }
 
-  // Step 2: Restore from current chat's latest surviving snapshots.
-  const { controllers: controllerSnapshots, dyn: dynSnapshots } = await collectLatestSnapshots();
+  // Step 2: Restore from snapshot (already collected above).
 
   for (const snap of dynSnapshots.values()) {
     const normalizedSnap = normalizeDynSnapshot(snap);
@@ -567,6 +591,14 @@ export async function rollbackToFloor(settings: EwSettings, targetMessageId: num
 }
 
 export async function rollbackBeforeFloor(settings: EwSettings, messageId: number): Promise<void> {
+  // 安全检查：如果目标楼层之前没有任何快照，跳过回退，
+  // 避免清空全部条目后无法恢复。
+  const allFloors = await collectAllFloorSnapshots();
+  const hasSnapshotBefore = allFloors.some(f => f.messageId < messageId && f.snapshot !== null);
+  if (!hasSnapshotBefore) {
+    console.info(`[EW] No snapshot found before floor #${messageId}, skipping rollback to preserve current state`);
+    return;
+  }
   await restoreWorldbookFromSnapshots(settings, floor => floor.messageId < messageId);
   console.info(`[Evolution World] Rolled back to state before floor #${messageId}`);
 }
@@ -673,6 +705,16 @@ export function initFloorBindingEvents(getSettings: () => EwSettings): void {
       if (currentSettings.enabled && currentSettings.floor_binding_enabled) {
         // Let SillyTavern finish mutating the chat array before reading snapshots.
         scheduleFloorBindingRestore(getSettings, 180);
+      }
+    }),
+  );
+
+  // swipe 后楼层快照可能失配，需要重新校验和恢复
+  floorBindingListenerStops.push(
+    eventOn(tavern_events.MESSAGE_SWIPED, () => {
+      const currentSettings = getSettings();
+      if (currentSettings.enabled && currentSettings.floor_binding_enabled) {
+        scheduleFloorBindingRestore(getSettings, 300);
       }
     }),
   );
