@@ -47,7 +47,7 @@ const LOCAL_STORAGE_KEY = 'evolution_world_assistant';
 const settingsListeners = new Set<SettingsListener>();
 const runListeners = new Set<RunListener>();
 const ioListeners = new Set<IoListener>();
-const SHARED_SETTINGS_WRITE_DELAY_MS = 240;
+const SHARED_SETTINGS_WRITE_DELAY_MS = 120;
 const MAX_WORKFLOW_ROUND_COUNTER_CHATS = 40;
 
 let cachedSettings: EwSettings | null = null;
@@ -57,6 +57,7 @@ let sharedSettingsHydrationPromise: Promise<EwSettings> | null = null;
 let sharedSettingsWriteTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingSharedSettings: EwSettings | null = null;
 let sharedSettingsWritePromise: Promise<void> = Promise.resolve();
+let hydrationComplete = false;
 
 // M-3: 使用 factory.ts 中的共享工厂函数。
 const makeDefaultApiPreset = createDefaultApiPreset;
@@ -378,6 +379,7 @@ export async function hydrateSharedSettings(): Promise<EwSettings> {
         if (changed) {
           emitSettings(klona(normalized));
         }
+        hydrationComplete = true;
         console.info('[Evolution World] Shared settings loaded from server file');
         return klona(normalized);
       }
@@ -385,6 +387,7 @@ export async function hydrateSharedSettings(): Promise<EwSettings> {
       cachedSettings = localNormalized;
       await writeSharedSettings(localNormalized);
       persistLocalSettings(localNormalized);
+      hydrationComplete = true;
       console.info(
         localStorage.settings
           ? '[Evolution World] Migrated legacy local settings to shared server file'
@@ -395,6 +398,7 @@ export async function hydrateSharedSettings(): Promise<EwSettings> {
       console.warn('[Evolution World] Shared settings hydration failed, using local cache:', error);
       cachedSettings = localNormalized;
       persistLocalSettings(localNormalized);
+      hydrationComplete = true;
       return klona(localNormalized);
     }
   })();
@@ -409,11 +413,15 @@ export function getSettings(): EwSettings {
   return klona(cachedSettings);
 }
 
+export function isHydrationComplete(): boolean {
+  return hydrationComplete;
+}
+
 export function replaceSettings(nextSettings: EwSettings): EwSettings {
   const normalized = normalizeSettings(nextSettings);
   cachedSettings = normalized;
-  persistLocalSettings(normalized);
   queueSharedSettingsPersist(normalized);
+  persistLocalSettings(normalized);
   emitSettings(klona(normalized));
   return klona(normalized);
 }
@@ -421,8 +429,8 @@ export function replaceSettings(nextSettings: EwSettings): EwSettings {
 export function persistSettingsDraft(nextSettings: EwSettings) {
   const draft = klona(nextSettings);
   cachedSettings = draft;
-  persistLocalSettings(draft);
   queueSharedSettingsPersist(draft);
+  persistLocalSettings(draft);
 }
 
 export function patchSettings(partial: Partial<EwSettings>): EwSettings {
