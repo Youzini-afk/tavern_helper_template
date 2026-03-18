@@ -82,6 +82,9 @@ const queuedAfterReplyJobKeys = new Set<string>();
 const queuedAfterReplyDedupKeys = new Set<string>();
 const failedAfterReplyJobsByChat = new Map<string, FailedAfterReplyQueueJob[]>();
 let workflowTaskDrainPromise: Promise<void> | null = null;
+/** Time-windowed dedup: prevents onAfterReplyMessage re-triggering within MIN_AFTER_REPLY_INTERVAL_MS */
+const lastAfterReplyTriggerByChatKey = new Map<string, number>();
+const MIN_AFTER_REPLY_INTERVAL_MS = 3000;
 
 function getHostWindow(): Window & typeof globalThis {
   try {
@@ -114,6 +117,7 @@ function clearQueuedWorkflowTasks(reason: string) {
   }
   queuedAfterReplyJobKeys.clear();
   queuedAfterReplyDedupKeys.clear();
+  lastAfterReplyTriggerByChatKey.clear();
 }
 
 function enqueueWorkflowTask<T>(label: string, run: () => Promise<T>): Promise<T> {
@@ -1692,11 +1696,22 @@ async function onAfterReplyMessage(messageId: number, type: string, source: 'mes
   const queueKey = `${getCurrentChatKey()}:${messageId}`;
   const dedupKey = buildAfterReplyDedupKey(messageText, pendingUserMessageId);
 
+  // Time-windowed dedup: if we already triggered for this chat within the interval, skip.
+  // This catches cases where MESSAGE_RECEIVED and GENERATION_ENDED both fire but with
+  // slightly different messageId values or when the key-based dedup keys have been cleaned up.
+  const chatKey = getCurrentChatKey();
+  const lastTriggerAt = lastAfterReplyTriggerByChatKey.get(chatKey) ?? 0;
+  if (Date.now() - lastTriggerAt < MIN_AFTER_REPLY_INTERVAL_MS) {
+    console.debug(`[Evolution World] after_reply skipped: time-windowed dedup (${source}, ${Date.now() - lastTriggerAt}ms since last)`);
+    return;
+  }
+
   if (queuedAfterReplyJobKeys.has(queueKey) || queuedAfterReplyDedupKeys.has(dedupKey)) {
     console.debug(`[Evolution World] after_reply skipped as duplicate (${source}): ${dedupKey}`);
     return;
   }
 
+  lastAfterReplyTriggerByChatKey.set(chatKey, Date.now());
   queuedAfterReplyJobKeys.add(queueKey);
   queuedAfterReplyDedupKeys.add(dedupKey);
   await enqueueWorkflowTask(`after_reply:${messageId}`, async () => {
