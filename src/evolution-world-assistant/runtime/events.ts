@@ -1201,7 +1201,7 @@ async function executeWorkflowWithPolicy(
       collectSuccessfulDispatchResultsFromAttempts(nextResult.attempts),
     );
 
-    if (options.trigger.timing === 'after_reply') {
+    if (options.trigger.timing === 'after_reply' && !nextResult.skipped) {
       const assistantMessageId = options.trigger.assistant_message_id ?? options.messageId;
       const assistantMsg = getChatMessages(assistantMessageId)[0];
       const versionInfo = assistantMsg ? getMessageVersionInfo(assistantMsg) : undefined;
@@ -1249,6 +1249,18 @@ async function executeWorkflowWithPolicy(
 
   if (abortedByUser) {
     return finalizeUserAbort();
+  }
+
+  // 本轮跳过（run_every_n_floors 计数未到），静默成功不显示 UI
+  if (result.skipped) {
+    reminderSettled = true;
+    stopCarousel();
+    processingReminder.dismiss();
+    return {
+      shouldAbortGeneration: false,
+      workflowSucceeded: true,
+      abortedByUser: false,
+    } satisfies WorkflowExecutionOutcome;
   }
 
   if (!result.ok) {

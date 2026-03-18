@@ -40,6 +40,8 @@ export type RunWorkflowOutput = {
   attempts: DispatchFlowAttempt[];
   results: DispatchFlowResult[];
   failure: WorkflowFailureDiagnostic | null;
+  /** true when the round was skipped (no flows scheduled due to run_every_n_floors or timing filter). */
+  skipped?: boolean;
 };
 
 function extractHttpStatus(reason: string): number | null {
@@ -472,6 +474,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
           attempts: [],
           results: [],
           failure: null,
+          skipped: true,
         };
       }
     }
@@ -486,6 +489,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
           attempts: [],
           results: [],
           failure: null,
+          skipped: true,
         };
       }
       throw new Error('no enabled flows');
