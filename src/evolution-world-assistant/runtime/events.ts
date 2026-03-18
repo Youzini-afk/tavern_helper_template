@@ -33,6 +33,10 @@ type FloorWorkflowStoredResult = {
 type FloorWorkflowExecutionState = {
   at: number;
   request_id: string;
+  /** 写入时 assistant 消息的 swipe_id，用于版本校验 */
+  swipe_id?: number;
+  /** 写入时 assistant 消息的内容哈希，检测 edit/update */
+  content_hash?: string;
   attempted_flow_ids: string[];
   successful_results: FloorWorkflowStoredResult[];
   failed_flow_ids: string[];
@@ -490,6 +494,7 @@ function buildFloorWorkflowExecutionState(
   attempts: Array<{ flow: { id: string }; ok: boolean; response?: Record<string, any> }>,
   workflowFailed: boolean,
   preservedResults: FloorWorkflowStoredResult[] = [],
+  versionInfo?: { swipe_id?: number; content_hash?: string },
 ): FloorWorkflowExecutionState {
   const successfulResults = new Map<string, FloorWorkflowStoredResult>(
     preservedResults.map(result => [result.flow_id, result]),
@@ -520,6 +525,8 @@ function buildFloorWorkflowExecutionState(
   return {
     at: Date.now(),
     request_id: requestId,
+    swipe_id: versionInfo?.swipe_id,
+    content_hash: versionInfo?.content_hash,
     attempted_flow_ids: [...attemptedFlowIds],
     successful_results: [...successfulResults.values()],
     failed_flow_ids: [...failedFlowIds],
@@ -546,6 +553,21 @@ async function resolveFailedOnlyRerollTarget(
   const executionState = readFloorWorkflowExecution(messageId);
   if (!executionState) {
     return { ok: false, reason: '当前楼还没有可用的失败执行记录' };
+  }
+
+  // 版本校验：如果执行记录的版本与当前消息版本不匹配，视为无记录
+  const msg = getChatMessages(messageId)[0];
+  if (msg) {
+    const currentSwipeId = Number((msg as any)?.swipe_id ?? 0);
+    if (executionState.swipe_id !== undefined && executionState.swipe_id !== currentSwipeId) {
+      return { ok: false, reason: '执行记录来自不同的 swipe 版本，无法重用' };
+    }
+    if (executionState.content_hash) {
+      const currentHash = simpleHash(String((msg as any)?.mes ?? ''));
+      if (executionState.content_hash !== currentHash) {
+        return { ok: false, reason: '执行记录来自已编辑/更新的版本，无法重用' };
+      }
+    }
   }
 
   if (executionState.failed_flow_ids.length === 0) {
@@ -1119,11 +1141,18 @@ async function executeWorkflowWithPolicy(
 
     if (options.trigger.timing === 'after_reply') {
       const assistantMessageId = options.trigger.assistant_message_id ?? options.messageId;
+      // 获取当前消息版本信息
+      const assistantMsg = getChatMessages(assistantMessageId)[0];
+      const versionInfo = {
+        swipe_id: Number((assistantMsg as any)?.swipe_id ?? 0),
+        content_hash: simpleHash(String((assistantMsg as any)?.mes ?? '')),
+      };
       const executionState = buildFloorWorkflowExecutionState(
         nextResult.request_id,
         nextResult.attempts,
         !nextResult.ok,
         currentPreservedStoredResults,
+        versionInfo,
       );
       await writeFloorWorkflowExecution(assistantMessageId, executionState);
       lastAfterReplyExecutionState = executionState;

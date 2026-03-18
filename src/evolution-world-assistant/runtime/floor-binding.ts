@@ -1,4 +1,4 @@
-import { resolveControllerSnapshotEntryName } from './helpers';
+import { resolveControllerSnapshotEntryName, simpleHash } from './helpers';
 import {
   cleanupSnapshotFiles,
   deleteSnapshot,
@@ -14,6 +14,8 @@ const EW_CONTROLLER_DATA_KEY = 'ew_controller';
 const EW_CONTROLLERS_DATA_KEY = 'ew_controllers';
 const EW_DYN_SNAPSHOTS_KEY = 'ew_dyn_snapshots';
 const EW_SNAPSHOT_FILE_KEY = 'ew_snapshot_file';
+const EW_SWIPE_ID_KEY = 'ew_snapshot_swipe_id';
+const EW_CONTENT_HASH_KEY = 'ew_snapshot_content_hash';
 
 export type DynSnapshot = { name: string; content: string; enabled: boolean };
 
@@ -62,6 +64,8 @@ function clearInlineSnapshotFields(data: Record<string, unknown>) {
   delete data[EW_CONTROLLER_DATA_KEY];
   delete data[EW_CONTROLLERS_DATA_KEY];
   delete data[EW_DYN_SNAPSHOTS_KEY];
+  delete data[EW_SWIPE_ID_KEY];
+  delete data[EW_CONTENT_HASH_KEY];
 }
 
 function clearFloorSnapshotFields(data: Record<string, unknown>) {
@@ -90,10 +94,14 @@ function readInlineSnapshot(data: Record<string, unknown>): SnapshotData | null 
   const snapshots = _.get(data, EW_DYN_SNAPSHOTS_KEY) as DynSnapshot[] | undefined;
 
   const controllersArray = _.get(data, EW_CONTROLLERS_DATA_KEY) as ControllerEntrySnapshot[] | undefined;
+  const inlineSwipeId = typeof data[EW_SWIPE_ID_KEY] === 'number' ? (data[EW_SWIPE_ID_KEY] as number) : undefined;
+  const inlineContentHash = typeof data[EW_CONTENT_HASH_KEY] === 'string' ? (data[EW_CONTENT_HASH_KEY] as string) : undefined;
   if (Array.isArray(controllersArray)) {
     return {
       controllers: controllersArray.map(normalizeControllerSnapshot).filter(entry => entry.content),
       dyn_entries: Array.isArray(snapshots) ? snapshots : [],
+      swipe_id: inlineSwipeId,
+      content_hash: inlineContentHash,
     };
   }
 
@@ -147,6 +155,7 @@ export async function markFloorEntries(
   controllerSnapshots?: ControllerEntrySnapshot[],
   dynSnapshots?: DynSnapshot[],
   swipeId?: number,
+  contentHash?: string,
 ): Promise<void> {
   const messages = getChatMessages(messageId);
   if (messages.length === 0) {
@@ -197,9 +206,10 @@ export async function markFloorEntries(
       controllers: normalizedControllerSnapshots,
       dyn_entries: normalizedDynSnapshots,
       swipe_id: swipeId ?? 0,
+      content_hash: contentHash,
     };
     try {
-      const fileName = await writeSnapshot(getCharName(), getChatId(), messageId, snapshotData);
+      const fileName = await writeSnapshot(getCharName(), getChatId(), messageId, snapshotData, swipeId);
       nextData[EW_SNAPSHOT_FILE_KEY] = fileName;
       if (typeof previousSnapshotFile === 'string' && previousSnapshotFile && previousSnapshotFile !== fileName) {
         await deleteSnapshot(previousSnapshotFile);
@@ -210,6 +220,8 @@ export async function markFloorEntries(
         nextData[EW_CONTROLLERS_DATA_KEY] = normalizedControllerSnapshots;
       }
       nextData[EW_DYN_SNAPSHOTS_KEY] = normalizedDynSnapshots;
+      nextData[EW_SWIPE_ID_KEY] = swipeId ?? 0;
+      if (contentHash) nextData[EW_CONTENT_HASH_KEY] = contentHash;
       if (typeof previousSnapshotFile === 'string' && previousSnapshotFile) {
         await deleteSnapshot(previousSnapshotFile);
       }
@@ -220,6 +232,8 @@ export async function markFloorEntries(
       nextData[EW_CONTROLLERS_DATA_KEY] = normalizedControllerSnapshots;
     }
     nextData[EW_DYN_SNAPSHOTS_KEY] = normalizedDynSnapshots;
+    nextData[EW_SWIPE_ID_KEY] = swipeId ?? 0;
+    if (contentHash) nextData[EW_CONTENT_HASH_KEY] = contentHash;
     if (typeof previousSnapshotFile === 'string' && previousSnapshotFile) {
       await deleteSnapshot(previousSnapshotFile);
     }
@@ -278,6 +292,11 @@ export async function collectLatestSnapshots(): Promise<{
           );
           continue;
         }
+        // 内容哈希校验：检测 edit/update 后快照失配
+        if (fileData.content_hash && fileData.content_hash !== simpleHash(String((msg as any).mes ?? ''))) {
+          console.info(`[EW] Snapshot at floor #${msg.message_id} skipped: content_hash mismatch`);
+          continue;
+        }
         const dynMap = new Map<string, DynSnapshot>();
         for (const snap of fileData.dyn_entries) {
           if (snap.name && typeof snap.content === 'string') {
@@ -298,6 +317,11 @@ export async function collectLatestSnapshots(): Promise<{
         console.info(
           `[EW] Inline snapshot at floor #${msg.message_id} skipped: swipe_id mismatch (snapshot=${inlineSnapshot.swipe_id}, current=${(msg as any).swipe_id ?? 0})`,
         );
+        continue;
+      }
+      // 内容哈希校验
+      if (inlineSnapshot.content_hash && inlineSnapshot.content_hash !== simpleHash(String((msg as any).mes ?? ''))) {
+        console.info(`[EW] Inline snapshot at floor #${msg.message_id} skipped: content_hash mismatch`);
         continue;
       }
       const dynMap = new Map<string, DynSnapshot>();
@@ -431,6 +455,8 @@ export async function migrateSnapshots(direction: 'to_file' | 'to_message_data')
       const snapshotData: SnapshotData = {
         controllers: inlineSnapshot.controllers,
         dyn_entries: inlineSnapshot.dyn_entries,
+        swipe_id: inlineSnapshot.swipe_id,
+        content_hash: inlineSnapshot.content_hash,
       };
 
       const fileName = await writeSnapshot(charName, chatId, msg.message_id, snapshotData);
@@ -460,6 +486,12 @@ export async function migrateSnapshots(direction: 'to_file' | 'to_message_data')
         }
         if (fileData.dyn_entries.length > 0) {
           nextData[EW_DYN_SNAPSHOTS_KEY] = fileData.dyn_entries;
+        }
+        if (fileData.swipe_id !== undefined) {
+          nextData[EW_SWIPE_ID_KEY] = fileData.swipe_id;
+        }
+        if (fileData.content_hash !== undefined) {
+          nextData[EW_CONTENT_HASH_KEY] = fileData.content_hash;
         }
       }
 
@@ -622,14 +654,18 @@ async function restoreWorldbookFromSnapshots(
     break;
   }
 
-  if (latestSnapshot) {
-    for (const snapshot of latestSnapshot.controllers.map(normalizeControllerSnapshot)) {
-      controllers.set(controllerSnapshotKey(snapshot), snapshot);
-    }
-    for (const snap of latestSnapshot.dyn_entries) {
-      if (snap.name && typeof snap.content === 'string') {
-        dynMerged.set(snap.name, snap);
-      }
+  // 核心安全防护：没有找到有效快照时，禁止破坏性写回
+  if (!latestSnapshot) {
+    console.info('[EW] restoreWorldbookFromSnapshots: no matching snapshot found, skipping destructive restore');
+    return;
+  }
+
+  for (const snapshot of latestSnapshot.controllers.map(normalizeControllerSnapshot)) {
+    controllers.set(controllerSnapshotKey(snapshot), snapshot);
+  }
+  for (const snap of latestSnapshot.dyn_entries) {
+    if (snap.name && typeof snap.content === 'string') {
+      dynMerged.set(snap.name, snap);
     }
   }
 
@@ -712,6 +748,25 @@ export function initFloorBindingEvents(getSettings: () => EwSettings): void {
   // swipe 后楼层快照可能失配，需要重新校验和恢复
   floorBindingListenerStops.push(
     eventOn(tavern_events.MESSAGE_SWIPED, () => {
+      const currentSettings = getSettings();
+      if (currentSettings.enabled && currentSettings.floor_binding_enabled) {
+        scheduleFloorBindingRestore(getSettings, 300);
+      }
+    }),
+  );
+
+  // 编辑/更新后快照 content_hash 可能失配
+  floorBindingListenerStops.push(
+    eventOn(tavern_events.MESSAGE_EDITED, () => {
+      const currentSettings = getSettings();
+      if (currentSettings.enabled && currentSettings.floor_binding_enabled) {
+        scheduleFloorBindingRestore(getSettings, 300);
+      }
+    }),
+  );
+
+  floorBindingListenerStops.push(
+    eventOn(tavern_events.MESSAGE_UPDATED, () => {
       const currentSettings = getSettings();
       if (currentSettings.enabled && currentSettings.floor_binding_enabled) {
         scheduleFloorBindingRestore(getSettings, 300);

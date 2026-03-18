@@ -15,6 +15,8 @@ export type SnapshotData = {
   dyn_entries: Array<{ name: string; content: string; enabled: boolean }>;
   /** 写入快照时 assistant 消息的 swipe_id，用于版本校验 */
   swipe_id?: number;
+  /** assistant 消息当前可见文本的哈希，检测 edit/update */
+  content_hash?: string;
 };
 
 /**
@@ -37,6 +39,7 @@ export function upgradeSnapshotData(raw: any): SnapshotData | null {
         .filter((entry: ControllerEntrySnapshot) => entry.content),
       dyn_entries: Array.isArray(raw.dyn_entries) ? raw.dyn_entries : [],
       swipe_id: typeof raw.swipe_id === 'number' ? raw.swipe_id : undefined,
+      content_hash: typeof raw.content_hash === 'string' ? raw.content_hash : undefined,
     };
   }
 
@@ -72,8 +75,9 @@ function sanitizeSegment(s: string): string {
   return s.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60);
 }
 
-function buildFileName(charName: string, chatId: string, messageId: number): string {
-  return `ew__${sanitizeSegment(charName)}__${sanitizeSegment(chatId)}__msg-${messageId}.json`;
+function buildFileName(charName: string, chatId: string, messageId: number, swipeId?: number): string {
+  const versionSuffix = swipeId != null && swipeId > 0 ? `_sw-${swipeId}` : '';
+  return `ew__${sanitizeSegment(charName)}__${sanitizeSegment(chatId)}__msg-${messageId}${versionSuffix}.json`;
 }
 
 function buildFilePrefix(charName: string, chatId: string): string {
@@ -101,8 +105,9 @@ export async function writeSnapshot(
   chatId: string,
   messageId: number,
   data: SnapshotData,
+  swipeId?: number,
 ): Promise<string> {
-  const fileName = buildFileName(charName, chatId, messageId);
+  const fileName = buildFileName(charName, chatId, messageId, swipeId);
   const jsonContent = JSON.stringify(data);
   const base64Content = btoa(unescape(encodeURIComponent(jsonContent)));
 
