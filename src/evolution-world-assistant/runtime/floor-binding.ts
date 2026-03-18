@@ -257,44 +257,46 @@ export async function collectLatestSnapshots(): Promise<{
   }
 
   const allMessages = getChatMessages(`0-${lastId}`);
-  const dynMerged = new Map<string, DynSnapshot>();
-  const mergedControllers = new Map<string, ControllerEntrySnapshot>();
 
-  // Iterate oldest to newest: latest wins.
-  for (const msg of allMessages) {
+  // 从最新楼层向前查找第一个有快照的楼层，直接使用其完整状态。
+  // 每个快照已经是当时 worldbook 全部 EW 条目的完整备份，无需跨楼层合并。
+  // 旧的累加合并策略会导致被后续工作流删除的条目从更早楼层的快照中复活。
+  for (let i = allMessages.length - 1; i >= 0; i--) {
+    const msg = allMessages[i];
     const snapshotFile: string | undefined = _.get(msg.data, EW_SNAPSHOT_FILE_KEY);
 
     if (snapshotFile) {
-      // File mode snapshot: read from file.
       const fileData = await readSnapshot(snapshotFile);
       if (fileData) {
-        for (const snapshot of fileData.controllers.map(normalizeControllerSnapshot)) {
-          mergedControllers.set(controllerSnapshotKey(snapshot), snapshot);
-        }
+        const dynMap = new Map<string, DynSnapshot>();
         for (const snap of fileData.dyn_entries) {
           if (snap.name && typeof snap.content === 'string') {
-            dynMerged.set(snap.name, snap);
+            dynMap.set(snap.name, snap);
           }
         }
-        continue; // File snapshot found, skip message data for this message.
+        return {
+          controllers: fileData.controllers.map(normalizeControllerSnapshot).filter(e => e.content),
+          dyn: dynMap,
+        };
       }
     }
 
-    // Message data mode (or file read failed — fallback).
     const inlineSnapshot = readInlineSnapshot(msg.data);
     if (inlineSnapshot) {
-      for (const snapshot of inlineSnapshot.controllers.map(normalizeControllerSnapshot)) {
-        mergedControllers.set(controllerSnapshotKey(snapshot), snapshot);
-      }
+      const dynMap = new Map<string, DynSnapshot>();
       for (const snap of inlineSnapshot.dyn_entries) {
         if (snap.name && typeof snap.content === 'string') {
-          dynMerged.set(snap.name, snap);
+          dynMap.set(snap.name, snap);
         }
       }
+      return {
+        controllers: inlineSnapshot.controllers.map(normalizeControllerSnapshot).filter(e => e.content),
+        dyn: dynMap,
+      };
     }
   }
 
-  return { controllers: [...mergedControllers.values()], dyn: dynMerged };
+  return { controllers: [], dyn: new Map() };
 }
 
 // ── Unified Purge + Restore ─────────────────────────────────
@@ -577,15 +579,22 @@ async function restoreWorldbookFromSnapshots(
   const dynMerged = new Map<string, DynSnapshot>();
   const controllers = new Map<string, ControllerEntrySnapshot>();
 
-  // Merge snapshots selected by caller.
-  for (const floor of allFloors) {
+  // 在 predicate 范围内找到**最新**有快照的楼层，直接使用其完整状态。
+  // 每个快照已是全量备份，跨楼层累加合并会导致被后续工作流删除的条目复活。
+  let latestSnapshot: SnapshotData | null = null;
+  for (let i = allFloors.length - 1; i >= 0; i--) {
+    const floor = allFloors[i];
     if (!predicate(floor)) continue;
     if (!floor.snapshot) continue;
+    latestSnapshot = floor.snapshot;
+    break;
+  }
 
-    for (const snapshot of floor.snapshot.controllers.map(normalizeControllerSnapshot)) {
+  if (latestSnapshot) {
+    for (const snapshot of latestSnapshot.controllers.map(normalizeControllerSnapshot)) {
       controllers.set(controllerSnapshotKey(snapshot), snapshot);
     }
-    for (const snap of floor.snapshot.dyn_entries) {
+    for (const snap of latestSnapshot.dyn_entries) {
       if (snap.name && typeof snap.content === 'string') {
         dynMerged.set(snap.name, snap);
       }
