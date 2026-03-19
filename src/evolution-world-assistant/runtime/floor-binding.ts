@@ -1109,7 +1109,12 @@ export async function markFloorEntries(
   const previousSnapshotFileOwned = previousSnapshotFileName
     ? isSnapshotStoreOwnedByCurrentChat(previousSnapshotFileName, previousSnapshotStore)
     : false;
-  const versionKey = buildMessageVersionKey(Number(swipeId ?? 0), String(contentHash ?? '').trim());
+  const currentVersionInfo = getMessageVersionInfo(msg);
+  const effectiveSwipeId = Number.isFinite(currentVersionInfo.swipe_id)
+    ? currentVersionInfo.swipe_id
+    : Number(swipeId ?? 0);
+  const effectiveContentHash = String(currentVersionInfo.content_hash ?? '').trim() || String(contentHash ?? '').trim();
+  const versionKey = buildMessageVersionKey(effectiveSwipeId, effectiveContentHash);
   const normalizedEntryNames = _.uniq(entryNames.filter(name => typeof name === 'string' && name.trim()));
   const normalizedDynSnapshots = (dynSnapshots ?? [])
     .filter(snap => snap.name && typeof snap.content === 'string')
@@ -1177,26 +1182,26 @@ export async function markFloorEntries(
     const snapshotData: SnapshotData = {
       controllers: normalizedControllerSnapshots,
       dyn_entries: normalizedDynSnapshots,
-      swipe_id: swipeId ?? 0,
-      content_hash: contentHash,
+      swipe_id: effectiveSwipeId,
+      content_hash: effectiveContentHash,
     };
     try {
       const fileName = await writeSnapshot(getCharName(), getChatId(), messageId, snapshotData);
       nextData[EW_SNAPSHOT_FILE_KEY] = fileName;
-      nextData[EW_SWIPE_ID_KEY] = swipeId ?? 0;
-      if (contentHash) nextData[EW_CONTENT_HASH_KEY] = contentHash;
+      nextData[EW_SWIPE_ID_KEY] = effectiveSwipeId;
+      if (effectiveContentHash) nextData[EW_CONTENT_HASH_KEY] = effectiveContentHash;
     } catch (e) {
       console.warn('[Evolution World] File snapshot write failed, falling back to message data:', e);
       const inlineVersions = readInlineSnapshotVersions(msg.data ?? {});
       inlineVersions[versionKey] = {
         controllers: normalizedControllerSnapshots,
         dyn_entries: normalizedDynSnapshots,
-        swipe_id: swipeId ?? 0,
-        content_hash: contentHash,
+        swipe_id: effectiveSwipeId,
+        content_hash: effectiveContentHash,
       };
       writeInlineSnapshotVersions(nextData, inlineVersions);
-      nextData[EW_SWIPE_ID_KEY] = swipeId ?? 0;
-      if (contentHash) nextData[EW_CONTENT_HASH_KEY] = contentHash;
+      nextData[EW_SWIPE_ID_KEY] = effectiveSwipeId;
+      if (effectiveContentHash) nextData[EW_CONTENT_HASH_KEY] = effectiveContentHash;
     }
   } else {
     // Message data mode: persist all known versions inline and pin current version in msg.data.
@@ -1204,17 +1209,22 @@ export async function markFloorEntries(
     inlineVersions[versionKey] = {
       controllers: normalizedControllerSnapshots,
       dyn_entries: normalizedDynSnapshots,
-      swipe_id: swipeId ?? 0,
-      content_hash: contentHash,
+      swipe_id: effectiveSwipeId,
+      content_hash: effectiveContentHash,
     };
     writeInlineSnapshotVersions(nextData, inlineVersions);
-    nextData[EW_SWIPE_ID_KEY] = swipeId ?? 0;
-    if (contentHash) nextData[EW_CONTENT_HASH_KEY] = contentHash;
+    nextData[EW_SWIPE_ID_KEY] = effectiveSwipeId;
+    if (effectiveContentHash) nextData[EW_CONTENT_HASH_KEY] = effectiveContentHash;
     if (previousSnapshotFileName && previousSnapshotFileOwned) {
       await deleteSnapshot(previousSnapshotFileName);
     }
   }
 
+  if (versionKey !== buildMessageVersionKey(Number(swipeId ?? 0), String(contentHash ?? '').trim())) {
+    console.debug(
+      `[Evolution World] markFloorEntries: version source drift detected for floor #${messageId}, using current visible version ${versionKey}`,
+    );
+  }
   observedMessageVersionKeys.set(messageId, versionKey);
   await setChatMessages([{ message_id: messageId, data: nextData }], { refresh: 'none' });
 }

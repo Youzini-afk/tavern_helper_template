@@ -88,6 +88,7 @@ function buildExecutionVersionKey(state: { swipe_id?: number; content_hash?: str
 type FailedAfterReplyQueueJob = {
   chat_key: string;
   message_id: number;
+  user_message_id?: number;
   user_input: string;
   generation_type: string;
   failed_at: number;
@@ -586,6 +587,16 @@ export function readFloorWorkflowExecution(messageId: number): FloorWorkflowExec
   return null;
 }
 
+function buildArchivedVersionedKey<T>(baseKey: string, map: Record<string, T>): string {
+  let candidate = `${baseKey}@rev:${Date.now()}`;
+  let counter = 0;
+  while (map[candidate]) {
+    counter += 1;
+    candidate = `${baseKey}@rev:${Date.now()}_${counter}`;
+  }
+  return candidate;
+}
+
 async function writeFloorWorkflowExecution(
   messageId: number,
   state: FloorWorkflowExecutionState | null,
@@ -607,7 +618,7 @@ async function writeFloorWorkflowExecution(
       const existingJson = JSON.stringify(existing);
       const nextJson = JSON.stringify(state);
       if (existingJson !== nextJson) {
-        map[`${versionKey}@rev:${Date.now()}`] = existing;
+        map[buildArchivedVersionedKey(versionKey, map)] = existing;
       }
     }
     map[versionKey] = state;
@@ -732,6 +743,14 @@ async function writeWorkflowReplayCapsule(
   }
 
   const map = readWorkflowReplayCapsuleMap(messageId);
+  const existing = map[key];
+  if (existing) {
+    const existingJson = JSON.stringify(existing);
+    const nextJson = JSON.stringify(capsule);
+    if (existingJson !== nextJson) {
+      map[buildArchivedVersionedKey(key, map)] = existing;
+    }
+  }
   map[key] = capsule;
   const nextData: Record<string, unknown> = {
     ...(message.data ?? {}),
@@ -1122,6 +1141,9 @@ function syncAfterReplyFailureQueue(
   upsertFailedAfterReplyJob({
     chat_key: chatKey,
     message_id: assistantMessageId,
+    user_message_id: Number.isFinite(options.trigger.user_message_id)
+      ? Number(options.trigger.user_message_id)
+      : undefined,
     user_input: String(options.userInput ?? ''),
     generation_type: options.trigger.generation_type,
     failed_at: executionState.at || Date.now(),
@@ -2369,6 +2391,7 @@ async function rerollQueuedFailedAfterReplyWorkflows(settings: EwSettings): Prom
               timing: 'after_reply',
               source: 'queued_failed_reroll',
               generation_type: job.generation_type,
+              user_message_id: Number.isFinite(job.user_message_id) ? Number(job.user_message_id) : undefined,
               assistant_message_id: job.message_id,
             },
             reminderMessage: `正在重跑失败队列 ${index + 1}/${jobs.length}，请稍后…`,
@@ -2475,6 +2498,20 @@ function resolveBeforeReplyPair(messageId: number): { source_message_id: number;
   return { source_message_id: messageId };
 }
 
+function resolveAssistantSourceUserMessageId(messageId: number): number | null {
+  const pair = resolveBeforeReplyPair(messageId);
+  if (Number.isFinite(pair.assistant_message_id) && Number(pair.assistant_message_id) === messageId) {
+    return Number.isFinite(pair.source_message_id) ? Number(pair.source_message_id) : null;
+  }
+
+  const previousMessage = getChatMessages(messageId - 1)[0];
+  if (previousMessage?.role === 'user') {
+    return Number(previousMessage.message_id);
+  }
+
+  return null;
+}
+
 async function writeRederiveMeta(
   messageId: number,
   meta: {
@@ -2567,11 +2604,18 @@ export async function rederiveWorkflowAtFloor(input: RederiveWorkflowInput): Pro
   const oldSnapshot = oldSnapshotRead?.snapshot ?? null;
 
   const sourceUserText = String(getChatMessages(beforeReplySourceMessageId)[0]?.message ?? '');
+  const afterReplySourceUserMessageId =
+    timing === 'after_reply' ? resolveAssistantSourceUserMessageId(anchorMessageId) : null;
+  const afterReplySourceUserText = String(
+    Number.isFinite(afterReplySourceUserMessageId)
+      ? (getChatMessages(Number(afterReplySourceUserMessageId))[0]?.message ?? '')
+      : '',
+  );
   const userInput =
     timing === 'before_reply'
       ? sourceUserText
       : timing === 'after_reply'
-        ? resolveAfterReplyUserInput() || getMessageText(anchorMessageId)
+        ? afterReplySourceUserText || getMessageText(anchorMessageId)
         : sourceUserText || getMessageText(sourceMessageId);
 
   try {
@@ -2600,7 +2644,12 @@ export async function rederiveWorkflowAtFloor(input: RederiveWorkflowInput): Pro
                 generation_type: getRuntimeState().last_generation?.type || 'manual',
               },
               {
-                userMessageId: timing === 'before_reply' ? beforeReplySourceMessageId : undefined,
+                userMessageId:
+                  timing === 'before_reply'
+                    ? beforeReplySourceMessageId
+                    : timing === 'after_reply'
+                      ? afterReplySourceUserMessageId
+                      : undefined,
                 assistantMessageId:
                   timing === 'before_reply'
                     ? assistantMessageId
