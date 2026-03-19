@@ -566,18 +566,33 @@
             </p>
 
             <div class="ew-flow-card__subsection">
-              <h5>基础字段</h5>
+              <h5>基本设置</h5>
               <div class="ew-grid ew-grid--two">
-                <EwFieldRow label="注释" :help="help('flow.dyn_write.profile.comment')">
-                  <input :value="flow.dyn_write.profile.comment" type="text" @input="setDynComment" />
+                <EwFieldRow label="备注说明" :help="help('flow.dyn_write.profile.comment')">
+                  <input
+                    :value="flow.dyn_write.profile.comment"
+                    type="text"
+                    placeholder="给自己看的备注，不会直接写进正文"
+                    @input="setDynComment"
+                  />
                 </EwFieldRow>
-                <EwFieldRow label="策略类型" :help="help('flow.dyn_write.profile.strategy.type')">
-                  <input :value="flow.dyn_write.profile.strategy.type" type="text" @input="setDynStrategyType" />
+                <EwFieldRow label="触发方式" :help="help('flow.dyn_write.profile.strategy.type')">
+                  <input
+                    :value="flow.dyn_write.profile.strategy.type"
+                    type="text"
+                    placeholder="例如：constant（常驻）"
+                    @input="setDynStrategyType"
+                  />
                 </EwFieldRow>
-                <EwFieldRow label="扫描深度" :help="help('flow.dyn_write.profile.strategy.scan_depth')">
-                  <input :value="String(flow.dyn_write.profile.strategy.scan_depth)" type="text" @input="setDynScanDepth" />
+                <EwFieldRow label="扫描范围" :help="help('flow.dyn_write.profile.strategy.scan_depth')">
+                  <input
+                    :value="String(flow.dyn_write.profile.strategy.scan_depth)"
+                    type="text"
+                    placeholder="same_as_global（跟随全局）"
+                    @input="setDynScanDepth"
+                  />
                 </EwFieldRow>
-                <EwFieldRow label="概率" :help="help('flow.dyn_write.profile.probability')">
+                <EwFieldRow label="命中概率(%)" :help="help('flow.dyn_write.profile.probability')">
                   <input
                     :value="flow.dyn_write.profile.probability"
                     type="number"
@@ -588,22 +603,30 @@
                   />
                 </EwFieldRow>
               </div>
+              <p class="ew-flow-card__hint-text">
+                常用写法：`constant` 表示常驻条目；`same_as_global` 表示扫描范围跟随酒馆全局设置。
+              </p>
             </div>
 
             <div class="ew-flow-card__subsection">
-              <h5>位置</h5>
+              <h5>注入位置</h5>
               <div class="ew-grid ew-grid--two">
-                <EwFieldRow label="位置类型" :help="help('flow.dyn_write.profile.position.type')">
-                  <input :value="flow.dyn_write.profile.position.type" type="text" @input="setDynPositionType" />
+                <EwFieldRow label="位置代码" :help="help('flow.dyn_write.profile.position.type')">
+                  <input
+                    :value="flow.dyn_write.profile.position.type"
+                    type="text"
+                    placeholder="例如：before_character_definition"
+                    @input="setDynPositionType"
+                  />
                 </EwFieldRow>
-                <EwFieldRow label="注入角色" :help="help('flow.dyn_write.profile.position.role')">
+                <EwFieldRow label="注入身份" :help="help('flow.dyn_write.profile.position.role')">
                   <select :value="flow.dyn_write.profile.position.role" @change="setDynPositionRole">
-                    <option value="system">system</option>
-                    <option value="user">user</option>
-                    <option value="assistant">assistant</option>
+                    <option value="system">系统(system)</option>
+                    <option value="user">用户(user)</option>
+                    <option value="assistant">助手(assistant)</option>
                   </select>
                 </EwFieldRow>
-                <EwFieldRow label="Depth" :help="help('flow.dyn_write.profile.position.depth')">
+                <EwFieldRow label="插入深度" :help="help('flow.dyn_write.profile.position.depth')">
                   <input
                     :value="flow.dyn_write.profile.position.depth"
                     type="number"
@@ -612,7 +635,7 @@
                     @input="setDynPositionDepth"
                   />
                 </EwFieldRow>
-                <EwFieldRow label="Order" :help="help('flow.dyn_write.profile.position.order')">
+                <EwFieldRow label="排序权重" :help="help('flow.dyn_write.profile.position.order')">
                   <input
                     :value="flow.dyn_write.profile.position.order"
                     type="number"
@@ -621,12 +644,15 @@
                   />
                 </EwFieldRow>
               </div>
+              <p class="ew-flow-card__hint-text">
+                常用位置：`before_character_definition` 表示插在角色卡前面；身份一般选“系统(system)”。
+              </p>
             </div>
 
             <div class="ew-flow-card__subsection">
-              <h5>关键词与分组</h5>
+              <h5>触发词与分组</h5>
               <div class="ew-grid ew-grid--two">
-                <EwFieldRow label="主关键词" :help="help('flow.dyn_write.profile.strategy.keys')">
+                <EwFieldRow label="主触发词" :help="help('flow.dyn_write.profile.strategy.keys')">
                   <textarea
                     :value="flow.dyn_write.profile.strategy.keys.join(', ')"
                     rows="3"
@@ -634,7 +660,7 @@
                     @input="setDynPrimaryKeys"
                   />
                 </EwFieldRow>
-                <EwFieldRow label="次关键词" :help="help('flow.dyn_write.profile.strategy.keys_secondary.keys')">
+                <EwFieldRow label="辅助触发词" :help="help('flow.dyn_write.profile.strategy.keys_secondary.keys')">
                   <textarea
                     :value="flow.dyn_write.profile.strategy.keys_secondary.keys.join(', ')"
                     rows="3"
@@ -642,15 +668,15 @@
                     @input="setDynSecondaryKeys"
                   />
                 </EwFieldRow>
-                <EwFieldRow label="次关键词逻辑" :help="help('flow.dyn_write.profile.strategy.keys_secondary.logic')">
+                <EwFieldRow label="辅助词匹配规则" :help="help('flow.dyn_write.profile.strategy.keys_secondary.logic')">
                   <select :value="flow.dyn_write.profile.strategy.keys_secondary.logic" @change="setDynSecondaryLogic">
-                    <option value="and_any">and_any</option>
-                    <option value="and_all">and_all</option>
-                    <option value="not_any">not_any</option>
-                    <option value="not_all">not_all</option>
+                    <option value="and_any">包含任一(and_any)</option>
+                    <option value="and_all">包含全部(and_all)</option>
+                    <option value="not_any">排除任一(not_any)</option>
+                    <option value="not_all">全部排除(not_all)</option>
                   </select>
                 </EwFieldRow>
-                <EwFieldRow label="分组" :help="help('flow.dyn_write.profile.extra.group')">
+                <EwFieldRow label="分组名" :help="help('flow.dyn_write.profile.extra.group')">
                   <input :value="flow.dyn_write.profile.extra.group" type="text" @input="setDynGroup" />
                 </EwFieldRow>
                 <EwFieldRow label="分组权重" :help="help('flow.dyn_write.profile.extra.groupWeight')">
@@ -665,9 +691,9 @@
             </div>
 
             <div class="ew-flow-card__subsection">
-              <h5>效果与匹配</h5>
+              <h5>持续效果与匹配细节</h5>
               <div class="ew-grid ew-grid--two">
-                <EwFieldRow label="Sticky" :help="help('flow.dyn_write.profile.effect.sticky')">
+                <EwFieldRow label="持续轮数" :help="help('flow.dyn_write.profile.effect.sticky')">
                   <input
                     :value="nullableNumberInput(flow.dyn_write.profile.effect.sticky)"
                     type="number"
@@ -676,7 +702,7 @@
                     @input="setDynEffectSticky"
                   />
                 </EwFieldRow>
-                <EwFieldRow label="Cooldown" :help="help('flow.dyn_write.profile.effect.cooldown')">
+                <EwFieldRow label="冷却轮数" :help="help('flow.dyn_write.profile.effect.cooldown')">
                   <input
                     :value="nullableNumberInput(flow.dyn_write.profile.effect.cooldown)"
                     type="number"
@@ -685,7 +711,7 @@
                     @input="setDynEffectCooldown"
                   />
                 </EwFieldRow>
-                <EwFieldRow label="Delay" :help="help('flow.dyn_write.profile.effect.delay')">
+                <EwFieldRow label="延迟生效轮数" :help="help('flow.dyn_write.profile.effect.delay')">
                   <input
                     :value="nullableNumberInput(flow.dyn_write.profile.effect.delay)"
                     type="number"
