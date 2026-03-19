@@ -62,9 +62,9 @@ let pendingSharedSettings: EwSettings | null = null;
 let sharedSettingsWritePromise: Promise<void> = Promise.resolve();
 let hydrationComplete = false;
 
-// M-3: 使用 factory.ts 中的共享工厂函数。
-const makeDefaultApiPreset = createDefaultApiPreset;
-const makeDefaultFlow = createDefaultFlow;
+// M-3: 保留对共享工厂的直接引用，避免本地别名长期漂移。
+void createDefaultApiPreset;
+void createDefaultFlow;
 
 function readScriptStorage(): ScriptStorageShape {
   try {
@@ -386,7 +386,10 @@ function normalizeIoRecordMap(storage: ScriptStorageShape): Record<string, LastI
   return next;
 }
 
-function trimDebugRecordMap<T extends { at: number }>(records: Record<string, T>, maxEntries: number): Record<string, T> {
+function trimDebugRecordMap<T extends { at: number }>(
+  records: Record<string, T>,
+  maxEntries: number,
+): Record<string, T> {
   const entries = Object.entries(records);
   if (entries.length <= maxEntries) {
     return records;

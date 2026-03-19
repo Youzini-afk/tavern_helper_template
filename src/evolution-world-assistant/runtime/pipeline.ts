@@ -456,7 +456,12 @@ function saveIoSummary(requestId: string, chatId: string, mode: 'auto' | 'manual
   });
 }
 
-function persistIoSummarySafe(requestId: string, chatId: string, mode: 'auto' | 'manual', attempts: DispatchFlowAttempt[]) {
+function persistIoSummarySafe(
+  requestId: string,
+  chatId: string,
+  mode: 'auto' | 'manual',
+  attempts: DispatchFlowAttempt[],
+) {
   try {
     saveIoSummary(requestId, chatId, mode, attempts);
   } catch (error) {
@@ -609,7 +614,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
         flows: enabledFlows,
         message_id: input.message_id,
         user_input: input.user_input,
-        trigger: input.trigger,
+        trigger: input.trigger as import('./contracts').FlowTriggerV1 | undefined,
         request_id: requestId,
         context_cursor: input.context_cursor,
         job_type: input.job_type,

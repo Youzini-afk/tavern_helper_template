@@ -39,6 +39,40 @@ const DynSecondaryLogicSchema = z.enum(['and_any', 'and_all', 'not_any', 'not_al
 const DynPositionRoleSchema = z.enum(['system', 'user', 'assistant']);
 const DynScanDepthSchema = z.union([z.literal('same_as_global'), z.coerce.number().int().min(0), z.string().min(1)]);
 
+const DEFAULT_DYN_POSITION = {
+  type: 'before_character_definition',
+  role: 'system' as const,
+  depth: 0,
+  order: 100,
+};
+
+const DEFAULT_DYN_SECONDARY = {
+  logic: 'and_any' as const,
+  keys: [] as string[],
+};
+
+const DEFAULT_DYN_STRATEGY = {
+  type: 'constant',
+  keys: [] as string[],
+  keys_secondary: DEFAULT_DYN_SECONDARY,
+  scan_depth: 'same_as_global' as const,
+};
+
+const DEFAULT_DYN_EFFECT = {
+  sticky: null,
+  cooldown: null,
+  delay: null,
+};
+
+const DEFAULT_DYN_EXTRA = {
+  caseSensitive: false,
+  matchWholeWords: false,
+  group: '',
+  groupOverride: false,
+  groupWeight: 100,
+  useGroupScoring: false,
+};
+
 export const DynWorldbookProfileSchema = z.object({
   comment: z.string().default(''),
   position: z
@@ -48,12 +82,7 @@ export const DynWorldbookProfileSchema = z.object({
       depth: z.coerce.number().int().min(0).default(0),
       order: z.coerce.number().int().default(100),
     })
-    .default(() => ({
-      type: 'before_character_definition',
-      role: 'system',
-      depth: 0,
-      order: 100,
-    })),
+    .default(DEFAULT_DYN_POSITION),
   strategy: z
     .object({
       type: z.string().default('constant'),
@@ -63,15 +92,10 @@ export const DynWorldbookProfileSchema = z.object({
           logic: DynSecondaryLogicSchema.default('and_any'),
           keys: z.array(z.string()).default([]),
         })
-        .default(() => ({ logic: 'and_any', keys: [] })),
+        .default(DEFAULT_DYN_SECONDARY),
       scan_depth: DynScanDepthSchema.default('same_as_global'),
     })
-    .default(() => ({
-      type: 'constant',
-      keys: [],
-      keys_secondary: { logic: 'and_any', keys: [] },
-      scan_depth: 'same_as_global',
-    })),
+    .default(DEFAULT_DYN_STRATEGY),
   probability: z.coerce.number().min(0).max(100).default(100),
   effect: z
     .object({
@@ -79,7 +103,7 @@ export const DynWorldbookProfileSchema = z.object({
       cooldown: z.coerce.number().int().min(0).nullable().default(null),
       delay: z.coerce.number().int().min(0).nullable().default(null),
     })
-    .default(() => ({ sticky: null, cooldown: null, delay: null })),
+    .default(DEFAULT_DYN_EFFECT),
   extra: z
     .object({
       caseSensitive: z.boolean().default(false),
@@ -89,14 +113,7 @@ export const DynWorldbookProfileSchema = z.object({
       groupWeight: z.coerce.number().default(100),
       useGroupScoring: z.boolean().default(false),
     })
-    .default(() => ({
-      caseSensitive: false,
-      matchWholeWords: false,
-      group: '',
-      groupOverride: false,
-      groupWeight: 100,
-      useGroupScoring: false,
-    })),
+    .default(DEFAULT_DYN_EXTRA),
 });
 
 export const DynWriteConfigSchema = z.object({
@@ -534,7 +551,7 @@ export type DispatchFlowAttempt = {
   api_preset_id: string;
   api_preset_name: string;
   api_url: string;
-  request: import('./contracts').FlowRequestV1;
+  request?: import('./contracts').FlowRequestV1;
   request_debug?: Record<string, any>;
   response?: import('./contracts').FlowResponseV1;
   ok: boolean;

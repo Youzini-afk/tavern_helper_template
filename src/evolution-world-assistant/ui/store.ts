@@ -11,7 +11,6 @@ import {
   collectAllFloorSnapshots,
   collectLatestSnapshots,
   rollbackToFloor,
-  type DynSnapshot,
   type FloorSnapshot,
 } from '../runtime/floor-binding';
 import { runWorkflow } from '../runtime/pipeline';
@@ -39,6 +38,7 @@ import {
   LastIoSummary,
   RunSummary,
   type ControllerEntrySnapshot,
+  type DynSnapshot,
 } from '../runtime/types';
 import { convertStPresetToFlow, isSillyTavernPreset } from './convertStPreset';
 import type { TabKey } from './help-meta';
@@ -242,7 +242,9 @@ export const useEwStore = defineStore('evolution-world-store', () => {
 
   watch(
     () => [settings.value.ui_open, activeTab.value, flowScope.value] as const,
-    ([uiOpen, tab, scope], [prevUiOpen, prevTab, prevScope]) => {
+    (nextState, prevState) => {
+      const [uiOpen, tab, scope] = nextState;
+      const [prevUiOpen, prevTab, prevScope] = prevState ?? [false, undefined, undefined];
       scheduleCharFlowRefreshWatch();
 
       if (uiOpen && tab === 'debug' && (!prevUiOpen || prevTab !== 'debug')) {

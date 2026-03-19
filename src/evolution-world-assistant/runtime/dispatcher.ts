@@ -1,5 +1,5 @@
 import { buildFlowRequest } from './context-builder';
-import { FlowResponseSchema, FlowTriggerV1 } from './contracts';
+import { FlowRequestV1, FlowResponseSchema, FlowTriggerV1 } from './contracts';
 import { assembleOrderedPrompts, collectPromptComponents, PromptComponents } from './prompt-assembler';
 import {
   ContextCursor,

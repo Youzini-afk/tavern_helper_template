@@ -411,7 +411,9 @@ export async function pinMessageSnapshotToCurrentVersion(messageId: number): Pro
     }
 
     const isOwnedByCurrentChat = isSnapshotStoreOwnedByCurrentChat(sourceFileName, sourceStore);
-    const writableFileName = isOwnedByCurrentChat ? sourceFileName : buildFileName(getCharName(), getChatId(), messageId);
+    const writableFileName = isOwnedByCurrentChat
+      ? sourceFileName
+      : buildFileName(getCharName(), getChatId(), messageId);
     const writableStore: SnapshotVersionStore = {
       version: 'ew-snapshot/v2',
       updated_at: Date.now(),
@@ -526,7 +528,9 @@ export async function rebindFloorSnapshotToMessage(
   const dynSnapshots = sourceSnapshot.dyn_entries
     .filter(snapshot => snapshot.name && typeof snapshot.content === 'string')
     .map(normalizeDynSnapshot);
-  const controllerSnapshots = sourceSnapshot.controllers.map(normalizeControllerSnapshot).filter(entry => entry.content);
+  const controllerSnapshots = sourceSnapshot.controllers
+    .map(normalizeControllerSnapshot)
+    .filter(entry => entry.content);
 
   await markFloorEntries(
     settings,
@@ -698,7 +702,11 @@ async function migrateExecutionBetweenMessages(
   return { migrated: true };
 }
 
-async function writeBindingMetaPair(sourceMessageId: number, targetMessageId: number, requestId: string): Promise<void> {
+async function writeBindingMetaPair(
+  sourceMessageId: number,
+  targetMessageId: number,
+  requestId: string,
+): Promise<void> {
   const sourceMsg = getChatMessages(sourceMessageId)[0];
   const targetMsg = getChatMessages(targetMessageId)[0];
   if (!sourceMsg || !targetMsg) {
@@ -754,7 +762,8 @@ async function markLegacyUserAnchor(messageId: number, reason: string): Promise<
 function buildLocalizationSignature(messages: any[]): string {
   return messages
     .map(msg => {
-      const fileRef = typeof msg?.data?.[EW_SNAPSHOT_FILE_KEY] === 'string' ? String(msg.data[EW_SNAPSHOT_FILE_KEY]) : '';
+      const fileRef =
+        typeof msg?.data?.[EW_SNAPSHOT_FILE_KEY] === 'string' ? String(msg.data[EW_SNAPSHOT_FILE_KEY]) : '';
       const bindingRole =
         typeof msg?.data?.[EW_BEFORE_REPLY_BINDING_KEY]?.role === 'string'
           ? String(msg.data[EW_BEFORE_REPLY_BINDING_KEY].role)
@@ -809,7 +818,8 @@ export async function localizeSnapshotsForCurrentChat(settings: EwSettings): Pro
 
     const localizedUpdates: Array<{ message_id: number; data: Record<string, unknown> }> = [];
     for (const msg of allMessages) {
-      const snapshotFile = typeof msg?.data?.[EW_SNAPSHOT_FILE_KEY] === 'string' ? String(msg.data[EW_SNAPSHOT_FILE_KEY]) : '';
+      const snapshotFile =
+        typeof msg?.data?.[EW_SNAPSHOT_FILE_KEY] === 'string' ? String(msg.data[EW_SNAPSHOT_FILE_KEY]) : '';
       const normalizedFile = snapshotFile.trim();
       if (!normalizedFile) {
         result.skipped += 1;
@@ -1414,10 +1424,10 @@ export async function migrateSnapshots(direction: 'to_file' | 'to_message_data')
     }
   } else {
     for (const msg of allMessages) {
-    const snapshotFile: string | undefined = _.get(msg.data, EW_SNAPSHOT_FILE_KEY);
-    if (!snapshotFile) continue;
+      const snapshotFile: string | undefined = _.get(msg.data, EW_SNAPSHOT_FILE_KEY);
+      if (!snapshotFile) continue;
 
-    const store = await readSnapshotStore(snapshotFile);
+      const store = await readSnapshotStore(snapshotFile);
       const nextData: Record<string, unknown> = { ...msg.data };
       delete nextData[EW_SNAPSHOT_FILE_KEY];
       clearInlineSnapshotFields(nextData);
@@ -1548,10 +1558,16 @@ export async function applySnapshotDiffToCurrentWorldbook(
   const nextDynByName = new Map((nextSnapshot?.dyn_entries ?? []).map(entry => [entry.name, entry]));
 
   const previousCtrlByKey = new Map(
-    (previousSnapshot?.controllers ?? []).map(snapshot => [controllerSnapshotKey(snapshot), normalizeControllerSnapshot(snapshot)]),
+    (previousSnapshot?.controllers ?? []).map(snapshot => [
+      controllerSnapshotKey(snapshot),
+      normalizeControllerSnapshot(snapshot),
+    ]),
   );
   const nextCtrlByKey = new Map(
-    (nextSnapshot?.controllers ?? []).map(snapshot => [controllerSnapshotKey(snapshot), normalizeControllerSnapshot(snapshot)]),
+    (nextSnapshot?.controllers ?? []).map(snapshot => [
+      controllerSnapshotKey(snapshot),
+      normalizeControllerSnapshot(snapshot),
+    ]),
   );
 
   const dynamicUpserts = _.uniq([...diff.created, ...diff.modified, ...diff.toggled]).filter(name =>
@@ -1566,18 +1582,21 @@ export async function applySnapshotDiffToCurrentWorldbook(
 
     const existing = nextEntries.find(entry => entry.name === entryName);
     const previous = previousDynByName.get(entryName);
+    const normalizedDesired = normalizeDynSnapshot(desired);
     if (existing) {
-      if (
+      const hasConflict = Boolean(
         previous &&
-        JSON.stringify(normalizeDynSnapshot(previous)) !== JSON.stringify(normalizeDynSnapshot(desired)) &&
-        JSON.stringify(buildDynSnapshotFromEntry(existing)) !== JSON.stringify(normalizeDynSnapshot(desired))
-      ) {
+        JSON.stringify(normalizeDynSnapshot(previous)) !== JSON.stringify(normalizedDesired) &&
+        JSON.stringify(buildDynSnapshotFromEntry(existing)) !== JSON.stringify(normalizedDesired),
+      );
+      if (hasConflict) {
         conflicts += 1;
         conflictNames.add(entryName);
+        continue;
       }
-      applyDynSnapshotToEntry(existing, normalizeDynSnapshot(desired));
+      applyDynSnapshotToEntry(existing, normalizedDesired);
     } else {
-      nextEntries.push(createDynEntryFromSnapshot(normalizeDynSnapshot(desired), nextEntries));
+      nextEntries.push(createDynEntryFromSnapshot(normalizedDesired, nextEntries));
     }
     applied += 1;
   }
@@ -1590,9 +1609,14 @@ export async function applySnapshotDiffToCurrentWorldbook(
 
     const existing = nextEntries[index];
     const previous = previousDynByName.get(entryName);
-    if (previous && JSON.stringify(buildDynSnapshotFromEntry(existing)) !== JSON.stringify(normalizeDynSnapshot(previous))) {
+    const hasConflict = Boolean(
+      previous &&
+      JSON.stringify(buildDynSnapshotFromEntry(existing)) !== JSON.stringify(normalizeDynSnapshot(previous)),
+    );
+    if (hasConflict) {
       conflicts += 1;
       conflictNames.add(entryName);
+      continue;
     }
     nextEntries.splice(index, 1);
     applied += 1;
@@ -1612,6 +1636,7 @@ export async function applySnapshotDiffToCurrentWorldbook(
       if (existing.content !== previous.content) {
         conflicts += 1;
         conflictNames.add(entryName);
+        continue;
       }
       existing.content = '';
       existing.enabled = false;
@@ -1627,9 +1652,13 @@ export async function applySnapshotDiffToCurrentWorldbook(
     const existing = nextEntries.find(entry => entry.name === entryName);
     const previous = previousCtrlByKey.get(controllerKey);
     if (existing) {
-      if (previous && existing.content !== previous.content && existing.content !== desired.content) {
+      const hasConflict = Boolean(
+        previous && existing.content !== previous.content && existing.content !== desired.content,
+      );
+      if (hasConflict) {
         conflicts += 1;
         conflictNames.add(entryName);
+        continue;
       }
       existing.content = desired.content;
       existing.enabled = true;

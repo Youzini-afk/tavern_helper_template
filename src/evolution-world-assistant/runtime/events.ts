@@ -16,19 +16,19 @@ import { markIntercepted, resetInterceptGuard, wasRecentlyIntercepted } from './
 import { runWorkflow, type RunWorkflowOutput } from './pipeline';
 import { getSettings, patchSettings } from './settings';
 import {
-  clearBeforeReplyBindingPending,
   clearAfterReplyPendingIfMatches,
-  markBeforeReplyBindingMigrated,
-  pruneExpiredBeforeReplyBindingPending,
+  clearBeforeReplyBindingPending,
   clearSendContextIfMatches,
   getRuntimeState,
   isQuietLike,
   markAfterReplyHandled,
+  markBeforeReplyBindingMigrated,
+  pruneExpiredBeforeReplyBindingPending,
   recordGeneration,
   recordUserSend,
   recordUserSendIntent,
-  setBeforeReplyBindingPending,
   resetRuntimeState,
+  setBeforeReplyBindingPending,
   setProcessing,
   shouldHandleAfterReply,
   shouldHandleGenerationAfter,
@@ -113,8 +113,8 @@ const queuedAfterReplyDedupKeys = new Set<string>();
 const failedAfterReplyJobsByChat = new Map<string, FailedAfterReplyQueueJob[]>();
 let workflowTaskDrainPromise: Promise<void> | null = null;
 let workflowTaskSeq = 0;
-/** Time-windowed dedup: prevents onAfterReplyMessage re-triggering within MIN_AFTER_REPLY_INTERVAL_MS */
-const lastAfterReplyTriggerByChatKey = new Map<string, number>();
+/** Time-windowed dedup: fallback only, not the primary identity check. */
+const lastAfterReplyTriggerByIdentityKey = new Map<string, number>();
 const MIN_AFTER_REPLY_INTERVAL_MS = 3000;
 
 function resolveWorkflowJobPriority(jobType: WorkflowJobType): number {
@@ -162,7 +162,7 @@ function clearQueuedWorkflowTasks(reason: string) {
   }
   queuedAfterReplyJobKeys.clear();
   queuedAfterReplyDedupKeys.clear();
-  lastAfterReplyTriggerByChatKey.clear();
+  lastAfterReplyTriggerByIdentityKey.clear();
 }
 
 function enqueueWorkflowTask<T>(label: string, run: () => Promise<T>, priority = 1): Promise<T> {
@@ -686,7 +686,10 @@ function normalizeWorkflowReplayCapsuleMap(raw: unknown): Record<string, Workflo
         obj.job_type === 'live_auto' || obj.job_type === 'live_reroll' || obj.job_type === 'historical_rederive'
           ? obj.job_type
           : 'live_auto',
-      timing: obj.timing === 'before_reply' || obj.timing === 'after_reply' || obj.timing === 'manual' ? obj.timing : 'manual',
+      timing:
+        obj.timing === 'before_reply' || obj.timing === 'after_reply' || obj.timing === 'manual'
+          ? obj.timing
+          : 'manual',
       source: String(obj.source ?? ''),
       generation_type: String(obj.generation_type ?? ''),
       target_message_id: Number(obj.target_message_id ?? -1),
@@ -1895,7 +1898,8 @@ async function executeWorkflowWithPolicy(
         generation_type: options.trigger.generation_type,
         target_message_id: capsuleMessageId,
         target_version_key: versionInfo.version_key,
-        target_role: capsuleMessage.role === 'assistant' ? 'assistant' : capsuleMessage.role === 'user' ? 'user' : 'other',
+        target_role:
+          capsuleMessage.role === 'assistant' ? 'assistant' : capsuleMessage.role === 'user' ? 'user' : 'other',
         flow_ids: flowIds,
         flow_ids_hash: simpleHash(flowIds.join('|')),
         capsule_mode: capsuleMode,
@@ -1921,7 +1925,7 @@ async function executeWorkflowWithPolicy(
         replayCapsule.request_preview = result.attempts
           .map(attempt => ({
             flow_id: attempt.flow.id,
-            request_id: attempt.request.request_id,
+            request_id: attempt.request?.request_id ?? '',
             flow_name: attempt.flow.name,
             flow_order: attempt.flow_order,
           }))
@@ -1934,7 +1938,12 @@ async function executeWorkflowWithPolicy(
   if (options.trigger.timing === 'before_reply') {
     const sourceMessageId = Number(options.trigger.user_message_id ?? options.messageId);
     const userMessageId = Number(options.trigger.user_message_id ?? options.messageId);
-    if (Number.isFinite(sourceMessageId) && sourceMessageId >= 0 && Number.isFinite(userMessageId) && userMessageId >= 0) {
+    if (
+      Number.isFinite(sourceMessageId) &&
+      sourceMessageId >= 0 &&
+      Number.isFinite(userMessageId) &&
+      userMessageId >= 0
+    ) {
       setBeforeReplyBindingPending({
         request_id: result.request_id,
         user_message_id: userMessageId,
@@ -2224,6 +2233,12 @@ function buildAfterReplyDedupKey(messageText: string, pendingUserMessageId: numb
   return `${getCurrentChatKey()}:${userMessagePart}:${contentHash}`;
 }
 
+function buildAfterReplyIdentityKey(chatKey: string, messageId: number, messageText: string): string {
+  const msg = getChatMessages(messageId)[0];
+  const versionInfo = getMessageVersionInfo(msg);
+  return `${chatKey}:assistant:${messageId}:${versionInfo.version_key}:${simpleHash(messageText.trim())}`;
+}
+
 async function onAfterReplyMessage(messageId: number, type: string, source: 'message_received' | 'generation_ended') {
   const settings = getSettings();
   pruneExpiredBeforeReplyBindingPending();
@@ -2245,9 +2260,9 @@ async function onAfterReplyMessage(messageId: number, type: string, source: 'mes
   const pendingBeforeReplyBinding = pruneExpiredBeforeReplyBindingPending();
   const shouldAttemptBeforeReplyBindingMigration = Boolean(
     pendingBeforeReplyBinding &&
-      !pendingBeforeReplyBinding.migrated &&
-      Number.isFinite(pendingUserMessageId) &&
-      pendingBeforeReplyBinding.user_message_id === pendingUserMessageId,
+    !pendingBeforeReplyBinding.migrated &&
+    Number.isFinite(pendingUserMessageId) &&
+    pendingBeforeReplyBinding.user_message_id === pendingUserMessageId,
   );
   const hasAfterReplyFlows = hasFlowsForTiming(settings, 'after_reply');
   const decision = hasAfterReplyFlows
@@ -2259,27 +2274,25 @@ async function onAfterReplyMessage(messageId: number, type: string, source: 'mes
     return;
   }
 
-  const queueKey = `${getCurrentChatKey()}:${messageId}`;
-  const dedupKey = buildAfterReplyDedupKey(messageText, pendingUserMessageId);
-
-  // Time-windowed dedup: if we already triggered for this chat within the interval, skip.
-  // This catches cases where MESSAGE_RECEIVED and GENERATION_ENDED both fire but with
-  // slightly different messageId values or when the key-based dedup keys have been cleaned up.
   const chatKey = getCurrentChatKey();
-  const lastTriggerAt = lastAfterReplyTriggerByChatKey.get(chatKey) ?? 0;
-  if (Date.now() - lastTriggerAt < MIN_AFTER_REPLY_INTERVAL_MS) {
-    console.debug(
-      `[Evolution World] after_reply skipped: time-windowed dedup (${source}, ${Date.now() - lastTriggerAt}ms since last)`,
-    );
-    return;
-  }
+  const queueKey = `${chatKey}:${messageId}`;
+  const dedupKey = buildAfterReplyDedupKey(messageText, pendingUserMessageId);
+  const identityKey = buildAfterReplyIdentityKey(chatKey, messageId, messageText);
 
   if (queuedAfterReplyJobKeys.has(queueKey) || queuedAfterReplyDedupKeys.has(dedupKey)) {
     console.debug(`[Evolution World] after_reply skipped as duplicate (${source}): ${dedupKey}`);
     return;
   }
 
-  lastAfterReplyTriggerByChatKey.set(chatKey, Date.now());
+  const lastTriggerAt = lastAfterReplyTriggerByIdentityKey.get(identityKey) ?? 0;
+  if (Date.now() - lastTriggerAt < MIN_AFTER_REPLY_INTERVAL_MS) {
+    console.debug(
+      `[Evolution World] after_reply skipped: identity-windowed dedup (${source}, ${Date.now() - lastTriggerAt}ms since last, key=${identityKey})`,
+    );
+    return;
+  }
+
+  lastAfterReplyTriggerByIdentityKey.set(identityKey, Date.now());
   queuedAfterReplyJobKeys.add(queueKey);
   queuedAfterReplyDedupKeys.add(dedupKey);
   await enqueueWorkflowJob('live_auto', `after_reply:${messageId}`, async () => {
@@ -2526,7 +2539,8 @@ export async function rederiveWorkflowAtFloor(input: RederiveWorkflowInput): Pro
   }
 
   const timing = input.timing;
-  const pair = timing === 'before_reply' ? resolveBeforeReplyPair(sourceMessageId) : { source_message_id: sourceMessageId };
+  const pair =
+    timing === 'before_reply' ? resolveBeforeReplyPair(sourceMessageId) : { source_message_id: sourceMessageId };
   const assistantMessageId = pair.assistant_message_id;
   const beforeReplySourceMessageId = pair.source_message_id;
   const anchorMessageId =
@@ -2576,58 +2590,66 @@ export async function rederiveWorkflowAtFloor(input: RederiveWorkflowInput): Pro
         : sourceUserText || getMessageText(sourceMessageId);
 
   try {
-    const outcome = await enqueueWorkflowJob('historical_rederive', `rederive:${timing}:${sourceMessageId}`, async () => {
-      setProcessing(true);
-      try {
-        const executionOutcome = await executeWorkflowWithPolicy(settings, {
-          messageId: timing === 'before_reply' ? beforeReplySourceMessageId : anchorMessageId,
-          userInput,
-          injectReply: false,
-          timingFilter: timing === 'manual' ? undefined : timing,
-          jobType: 'historical_rederive',
-          contextCursor,
-          writebackPolicy: 'dual_diff_merge',
-          rederiveOptions: {
-            legacy_approx: legacyApprox,
-            capsule_mode: contextCursor.capsule_mode,
-          },
-          trigger: appendTriggerMessageIds(
-            {
-              timing,
-              source: 'history_rederive',
-              generation_type: getRuntimeState().last_generation?.type || 'manual',
+    const outcome = await enqueueWorkflowJob(
+      'historical_rederive',
+      `rederive:${timing}:${sourceMessageId}`,
+      async () => {
+        setProcessing(true);
+        try {
+          const executionOutcome = await executeWorkflowWithPolicy(settings, {
+            messageId: timing === 'before_reply' ? beforeReplySourceMessageId : anchorMessageId,
+            userInput,
+            injectReply: false,
+            timingFilter: timing === 'manual' ? undefined : timing,
+            jobType: 'historical_rederive',
+            contextCursor,
+            writebackPolicy: 'dual_diff_merge',
+            rederiveOptions: {
+              legacy_approx: legacyApprox,
+              capsule_mode: contextCursor.capsule_mode,
             },
-            {
-              userMessageId: timing === 'before_reply' ? beforeReplySourceMessageId : undefined,
-              assistantMessageId:
-                timing === 'before_reply' ? assistantMessageId : anchorMessage.role === 'assistant' ? anchorMessageId : undefined,
-            },
-          ),
-          reminderMessage: '正在重推导历史楼层工作流并重建快照，请稍后…',
-          successMessage: '历史楼层重推导与快照重建已完成。',
-        });
+            trigger: appendTriggerMessageIds(
+              {
+                timing,
+                source: 'history_rederive',
+                generation_type: getRuntimeState().last_generation?.type || 'manual',
+              },
+              {
+                userMessageId: timing === 'before_reply' ? beforeReplySourceMessageId : undefined,
+                assistantMessageId:
+                  timing === 'before_reply'
+                    ? assistantMessageId
+                    : anchorMessage.role === 'assistant'
+                      ? anchorMessageId
+                      : undefined,
+              },
+            ),
+            reminderMessage: '正在重推导历史楼层工作流并重建快照，请稍后…',
+            successMessage: '历史楼层重推导与快照重建已完成。',
+          });
 
-        if (
-          timing === 'before_reply' &&
-          Number.isFinite(assistantMessageId) &&
-          Number.isFinite(beforeReplySourceMessageId) &&
-          beforeReplySourceMessageId !== assistantMessageId
-        ) {
-          await rebindFloorSnapshotToMessage(settings, beforeReplySourceMessageId, Number(assistantMessageId));
-          await migrateFloorWorkflowExecutionToAssistant(beforeReplySourceMessageId, Number(assistantMessageId));
-          await migrateFloorWorkflowCapsuleToAssistant(beforeReplySourceMessageId, Number(assistantMessageId));
-          await writeBeforeReplyBindingMeta(
-            beforeReplySourceMessageId,
-            Number(assistantMessageId),
-            `rederive:${Date.now().toString(36)}`,
-          );
+          if (
+            timing === 'before_reply' &&
+            Number.isFinite(assistantMessageId) &&
+            Number.isFinite(beforeReplySourceMessageId) &&
+            beforeReplySourceMessageId !== assistantMessageId
+          ) {
+            await rebindFloorSnapshotToMessage(settings, beforeReplySourceMessageId, Number(assistantMessageId));
+            await migrateFloorWorkflowExecutionToAssistant(beforeReplySourceMessageId, Number(assistantMessageId));
+            await migrateFloorWorkflowCapsuleToAssistant(beforeReplySourceMessageId, Number(assistantMessageId));
+            await writeBeforeReplyBindingMeta(
+              beforeReplySourceMessageId,
+              Number(assistantMessageId),
+              `rederive:${Date.now().toString(36)}`,
+            );
+          }
+
+          return executionOutcome;
+        } finally {
+          setProcessing(false);
         }
-
-        return executionOutcome;
-      } finally {
-        setProcessing(false);
-      }
-    });
+      },
+    );
 
     if (!outcome.workflowSucceeded) {
       return {
