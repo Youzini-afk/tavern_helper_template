@@ -1,7 +1,12 @@
 import _ from 'lodash';
 import { EwWorkflowNoticeInput, showManagedWorkflowNotice } from '../ui/notice';
 import { getEffectiveFlows } from './char-flows';
-import { disposeFloorBindingEvents, initFloorBindingEvents, rollbackBeforeFloor } from './floor-binding';
+import {
+  disposeFloorBindingEvents,
+  initFloorBindingEvents,
+  pinMessageSnapshotToCurrentVersion,
+  rollbackBeforeFloor,
+} from './floor-binding';
 import { getMessageVersionInfo, simpleHash } from './helpers';
 import { resetHideState, runIncrementalHideCheck, scheduleHideSettingsApply } from './hide-engine';
 import { markIntercepted, resetInterceptGuard, wasRecentlyIntercepted } from './intercept-guard';
@@ -566,6 +571,41 @@ async function writeFloorWorkflowExecution(
   }
 
   await setChatMessages([{ message_id: messageId, data: nextData }], { refresh: 'none' });
+}
+
+async function pinFloorWorkflowExecutionToCurrentVersion(
+  messageId: number,
+  state: FloorWorkflowExecutionState | null,
+): Promise<boolean> {
+  if (!state) {
+    return false;
+  }
+
+  const message = getChatMessages(messageId)[0];
+  if (!message) {
+    return false;
+  }
+
+  const versionInfo = getMessageVersionInfo(message);
+  const targetKey = buildExecutionVersionKey(versionInfo);
+  const map = readFloorWorkflowExecutionMap(messageId);
+  if (map[targetKey]) {
+    return false;
+  }
+
+  map[targetKey] = {
+    ...state,
+    swipe_id: versionInfo.swipe_id,
+    content_hash: versionInfo.content_hash,
+  };
+
+  const nextData: Record<string, unknown> = {
+    ...(message.data ?? {}),
+    [EW_FLOOR_WORKFLOW_EXECUTION_KEY]: map,
+  };
+
+  await setChatMessages([{ message_id: messageId, data: nextData }], { refresh: 'none' });
+  return true;
 }
 
 function buildFloorWorkflowExecutionState(
@@ -1403,6 +1443,16 @@ async function executeWorkflowWithPolicy(
     }
   }
 
+  if (options.trigger.timing === 'after_reply') {
+    const assistantMessageId = options.trigger.assistant_message_id ?? options.messageId;
+    try {
+      await pinMessageSnapshotToCurrentVersion(assistantMessageId);
+      await pinFloorWorkflowExecutionToCurrentVersion(assistantMessageId, lastAfterReplyExecutionState);
+    } catch (error) {
+      console.warn('[Evolution World] Failed to pin after_reply artifacts to current visible version:', error);
+    }
+  }
+
   syncAfterReplyFailureQueue(options, lastAfterReplyExecutionState, true);
   reminderSettled = true;
   stopCarousel();
@@ -1702,7 +1752,9 @@ async function onAfterReplyMessage(messageId: number, type: string, source: 'mes
   const chatKey = getCurrentChatKey();
   const lastTriggerAt = lastAfterReplyTriggerByChatKey.get(chatKey) ?? 0;
   if (Date.now() - lastTriggerAt < MIN_AFTER_REPLY_INTERVAL_MS) {
-    console.debug(`[Evolution World] after_reply skipped: time-windowed dedup (${source}, ${Date.now() - lastTriggerAt}ms since last)`);
+    console.debug(
+      `[Evolution World] after_reply skipped: time-windowed dedup (${source}, ${Date.now() - lastTriggerAt}ms since last)`,
+    );
     return;
   }
 

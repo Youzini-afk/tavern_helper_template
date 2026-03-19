@@ -1,8 +1,8 @@
 import { buildMessageVersionKey, getMessageVersionInfo, resolveControllerSnapshotEntryName } from './helpers';
 import {
+  buildFileName,
   cleanupSnapshotFiles,
   deleteSnapshot,
-  readSnapshot,
   readSnapshotStore,
   writeSnapshot,
   writeSnapshotStore,
@@ -20,6 +20,30 @@ const EW_SNAPSHOT_FILE_KEY = 'ew_snapshot_file';
 const EW_SWIPE_ID_KEY = 'ew_snapshot_swipe_id';
 const EW_CONTENT_HASH_KEY = 'ew_snapshot_content_hash';
 const EW_INLINE_SNAPSHOT_VERSIONS_KEY = 'ew_snapshot_versions';
+
+export type FloorSnapshotReadResolution =
+  | 'exact'
+  | 'single_fallback'
+  | 'same_swipe_fallback'
+  | 'latest_fallback'
+  | 'missing';
+
+type SnapshotReadMode = 'strict' | 'history';
+
+type SnapshotVersionSource = {
+  source: 'file' | 'inline';
+  versions: Record<string, SnapshotData>;
+  fileName?: string;
+};
+
+type SnapshotReadResult = {
+  snapshot: SnapshotData | null;
+  resolution: FloorSnapshotReadResolution;
+  available_version_count: number;
+  source: 'file' | 'inline' | 'none';
+  matched_version_key?: string;
+  file_name?: string;
+};
 
 export type DynSnapshot = { name: string; content: string; enabled: boolean };
 
@@ -115,23 +139,212 @@ function shouldReactToVisibleVersionMutation(messageId: number): boolean {
   return prevVersionKey !== nextVersionKey;
 }
 
-async function readSnapshotForMessage(msg: any): Promise<SnapshotData | null> {
-  const versionInfo = getMessageVersionInfo(msg);
-  const snapshotFile: string | undefined = _.get(msg.data, EW_SNAPSHOT_FILE_KEY);
+function getMessageSnapshotFileCandidates(msg: any): string[] {
+  const candidates: string[] = [];
+  const explicit = _.get(msg.data, EW_SNAPSHOT_FILE_KEY);
+  if (typeof explicit === 'string' && explicit.trim()) {
+    candidates.push(explicit.trim());
+  }
 
-  if (snapshotFile) {
-    const exact = await readSnapshot(snapshotFile, versionInfo.version_key);
-    if (exact) {
-      return exact;
-    }
-
-    const single = await readSnapshot(snapshotFile);
-    if (single) {
-      return single;
+  const messageId = Number(msg?.message_id);
+  if (Number.isFinite(messageId) && messageId >= 0) {
+    const inferred = buildFileName(getCharName(), getChatId(), messageId);
+    if (inferred && !candidates.includes(inferred)) {
+      candidates.push(inferred);
     }
   }
 
-  return readInlineSnapshot(msg.data ?? {}, versionInfo.version_key) ?? readInlineSnapshot(msg.data ?? {});
+  return candidates;
+}
+
+function buildSnapshotReadResult(
+  source: SnapshotVersionSource | null,
+  resolution: FloorSnapshotReadResolution,
+  snapshot: SnapshotData | null,
+  matchedVersionKey?: string,
+): SnapshotReadResult {
+  const availableVersionCount = source ? Object.keys(source.versions).length : 0;
+  return {
+    snapshot,
+    resolution,
+    available_version_count: availableVersionCount,
+    source: source?.source ?? 'none',
+    matched_version_key: matchedVersionKey,
+    file_name: source?.fileName,
+  };
+}
+
+function getVersionEntries(versions: Record<string, SnapshotData>): Array<[string, SnapshotData]> {
+  return Object.entries(versions) as Array<[string, SnapshotData]>;
+}
+
+function selectSnapshotFromSources(
+  sources: SnapshotVersionSource[],
+  versionInfo: ReturnType<typeof getMessageVersionInfo>,
+  mode: SnapshotReadMode,
+): SnapshotReadResult {
+  for (const source of sources) {
+    const exact = source.versions[versionInfo.version_key];
+    if (exact) {
+      return buildSnapshotReadResult(source, 'exact', exact, versionInfo.version_key);
+    }
+  }
+
+  for (const source of sources) {
+    const entries = getVersionEntries(source.versions);
+    if (entries.length === 1) {
+      const [matchedVersionKey, snapshot] = entries[0];
+      return buildSnapshotReadResult(source, 'single_fallback', snapshot, matchedVersionKey);
+    }
+  }
+
+  if (mode === 'strict') {
+    return buildSnapshotReadResult(null, 'missing', null);
+  }
+
+  for (const source of sources) {
+    const entries = getVersionEntries(source.versions);
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const [matchedVersionKey, snapshot] = entries[i];
+      if (Number(snapshot?.swipe_id ?? -1) === versionInfo.swipe_id) {
+        return buildSnapshotReadResult(source, 'same_swipe_fallback', snapshot, matchedVersionKey);
+      }
+    }
+  }
+
+  for (const source of sources) {
+    const entries = getVersionEntries(source.versions);
+    if (entries.length > 0) {
+      const [matchedVersionKey, snapshot] = entries[entries.length - 1];
+      return buildSnapshotReadResult(source, 'latest_fallback', snapshot, matchedVersionKey);
+    }
+  }
+
+  return buildSnapshotReadResult(null, 'missing', null);
+}
+
+async function loadSnapshotVersionSources(msg: any): Promise<SnapshotVersionSource[]> {
+  const sources: SnapshotVersionSource[] = [];
+
+  for (const fileName of getMessageSnapshotFileCandidates(msg)) {
+    const store = await readSnapshotStore(fileName);
+    if (!store || Object.keys(store.versions).length === 0) {
+      continue;
+    }
+
+    sources.push({
+      source: 'file',
+      versions: store.versions,
+      fileName,
+    });
+  }
+
+  const inlineVersions = readInlineSnapshotVersions(msg.data ?? {});
+  if (Object.keys(inlineVersions).length > 0) {
+    sources.push({
+      source: 'inline',
+      versions: inlineVersions,
+    });
+  }
+
+  return sources;
+}
+
+async function readSnapshotForMessageDetailed(msg: any, mode: SnapshotReadMode): Promise<SnapshotReadResult> {
+  const sources = await loadSnapshotVersionSources(msg);
+  if (sources.length === 0) {
+    return buildSnapshotReadResult(null, 'missing', null);
+  }
+
+  return selectSnapshotFromSources(sources, getMessageVersionInfo(msg), mode);
+}
+
+async function readSnapshotForMessage(msg: any): Promise<SnapshotData | null> {
+  return (await readSnapshotForMessageDetailed(msg, 'strict')).snapshot;
+}
+
+export async function pinMessageSnapshotToCurrentVersion(messageId: number): Promise<boolean> {
+  const msg = getChatMessages(messageId)[0];
+  if (!msg) {
+    return false;
+  }
+
+  const versionInfo = getMessageVersionInfo(msg);
+  const currentVersionKey = versionInfo.version_key;
+  const readResult = await readSnapshotForMessageDetailed(msg, 'history');
+  if (!readResult.snapshot || readResult.source === 'none') {
+    return false;
+  }
+
+  const nextData: Record<string, unknown> = {
+    ...(msg.data ?? {}),
+  };
+  let mutated = false;
+
+  const syncVisibleVersionMetadata = () => {
+    if (Number(nextData[EW_SWIPE_ID_KEY] ?? -1) !== versionInfo.swipe_id) {
+      nextData[EW_SWIPE_ID_KEY] = versionInfo.swipe_id;
+      mutated = true;
+    }
+
+    const currentHash = typeof nextData[EW_CONTENT_HASH_KEY] === 'string' ? String(nextData[EW_CONTENT_HASH_KEY]) : '';
+    const targetHash = String(versionInfo.content_hash ?? '').trim();
+    if (currentHash !== targetHash) {
+      if (targetHash) {
+        nextData[EW_CONTENT_HASH_KEY] = targetHash;
+      } else {
+        delete nextData[EW_CONTENT_HASH_KEY];
+      }
+      mutated = true;
+    }
+  };
+
+  if (readResult.source === 'file' && readResult.file_name) {
+    const currentFileRef =
+      typeof nextData[EW_SNAPSHOT_FILE_KEY] === 'string' ? String(nextData[EW_SNAPSHOT_FILE_KEY]).trim() : '';
+    const store = await readSnapshotStore(readResult.file_name);
+    if (!store) {
+      return false;
+    }
+
+    if (readResult.resolution !== 'exact') {
+      store.versions[currentVersionKey] = {
+        ...readResult.snapshot,
+        swipe_id: versionInfo.swipe_id,
+        content_hash: versionInfo.content_hash,
+      };
+      await writeSnapshotStore(readResult.file_name, store);
+      mutated = true;
+    }
+
+    if (currentFileRef !== readResult.file_name) {
+      nextData[EW_SNAPSHOT_FILE_KEY] = readResult.file_name;
+      mutated = true;
+    }
+
+    syncVisibleVersionMetadata();
+  } else if (readResult.source === 'inline') {
+    const inlineVersions = readInlineSnapshotVersions(msg.data ?? {});
+    if (!inlineVersions[currentVersionKey]) {
+      inlineVersions[currentVersionKey] = {
+        ...readResult.snapshot,
+        swipe_id: versionInfo.swipe_id,
+        content_hash: versionInfo.content_hash,
+      };
+      writeInlineSnapshotVersions(nextData, inlineVersions);
+      mutated = true;
+    }
+
+    syncVisibleVersionMetadata();
+  }
+
+  if (!mutated) {
+    return false;
+  }
+
+  observedMessageVersionKeys.set(messageId, currentVersionKey);
+  await setChatMessages([{ message_id: messageId, data: nextData }], { refresh: 'none' });
+  return true;
 }
 
 // ── Legacy upgrade helpers ───────────────────────────────────
@@ -533,8 +746,12 @@ export async function purgeAndRestoreForChat(settings: EwSettings): Promise<void
         const allMsgIds: number[] = [];
         for (const msg of allMessages) {
           allMsgIds.push(msg.message_id);
-          const file: string | undefined = _.get(msg.data, EW_SNAPSHOT_FILE_KEY);
-          if (file) keepFiles.add(file);
+          const sources = await loadSnapshotVersionSources(msg);
+          for (const source of sources) {
+            if (source.source === 'file' && source.fileName) {
+              keepFiles.add(source.fileName);
+            }
+          }
         }
         const cleaned = await cleanupSnapshotFiles(getCharName(), getChatId(), allMsgIds, keepFiles);
         if (cleaned > 0) {
@@ -620,6 +837,11 @@ export async function migrateSnapshots(direction: 'to_file' | 'to_message_data')
 export type FloorSnapshot = {
   messageId: number;
   snapshot: SnapshotData | null;
+  resolution: FloorSnapshotReadResolution;
+  available_version_count: number;
+  source: 'file' | 'inline' | 'none';
+  matched_version_key?: string;
+  file_name?: string;
 };
 
 export type SnapshotDiff = {
@@ -644,8 +866,16 @@ export async function collectAllFloorSnapshots(): Promise<FloorSnapshot[]> {
   const result: FloorSnapshot[] = [];
 
   for (const msg of allMessages) {
-    const snapshot = await readSnapshotForMessage(msg);
-    result.push({ messageId: msg.message_id, snapshot });
+    const readResult = await readSnapshotForMessageDetailed(msg, 'history');
+    result.push({
+      messageId: msg.message_id,
+      snapshot: readResult.snapshot,
+      resolution: readResult.resolution,
+      available_version_count: readResult.available_version_count,
+      source: readResult.source,
+      matched_version_key: readResult.matched_version_key,
+      file_name: readResult.file_name,
+    });
   }
 
   return result;

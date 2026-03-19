@@ -53,6 +53,24 @@
             </div>
             <div v-else class="hist-empty">此楼层无快照数据。</div>
 
+            <div class="hist-meta-panel">
+              <div class="hist-meta-row">
+                <strong>解析结果：</strong><span>{{ resolutionSummary }}</span>
+              </div>
+              <div class="hist-meta-row">
+                <strong>快照来源：</strong><span>{{ sourceSummary }}</span>
+              </div>
+              <div class="hist-meta-row">
+                <strong>可用版本数：</strong><span>{{ availableVersionCount }}</span>
+              </div>
+              <div v-if="matchedVersionKey" class="hist-meta-row">
+                <strong>展示版本键：</strong><code>{{ matchedVersionKey }}</code>
+              </div>
+              <div v-if="fileName" class="hist-meta-row">
+                <strong>文件名：</strong><code>{{ fileName }}</code>
+              </div>
+            </div>
+
             <!-- Snapshot content -->
             <div v-if="snapshot" class="hist-snapshot-detail">
               <h4 class="hist-sub-title">快照内容</h4>
@@ -150,7 +168,7 @@
 </template>
 
 <script setup lang="ts">
-import { diffSnapshots, type SnapshotDiff } from '../../runtime/floor-binding';
+import { diffSnapshots, type FloorSnapshotReadResolution, type SnapshotDiff } from '../../runtime/floor-binding';
 import type { SnapshotData } from '../../runtime/snapshot-storage';
 import { useEwStore } from '../store';
 
@@ -159,6 +177,11 @@ const props = defineProps<{
   floorId: number;
   snapshot: SnapshotData | null;
   prevSnapshot: SnapshotData | null;
+  resolution: FloorSnapshotReadResolution;
+  availableVersionCount: number;
+  snapshotSource: 'file' | 'inline' | 'none';
+  matchedVersionKey?: string;
+  fileName?: string;
 }>();
 
 defineEmits<{
@@ -172,6 +195,33 @@ const compareTargetId = ref<number | null>(null);
 const diff = computed<SnapshotDiff | null>(() => {
   if (!props.snapshot) return null;
   return diffSnapshots(props.prevSnapshot, props.snapshot);
+});
+
+const resolutionSummary = computed(() => {
+  switch (props.resolution) {
+    case 'exact':
+      return '当前可见版本已精确命中该楼快照。';
+    case 'single_fallback':
+      return '当前版本未精确命中，但该楼仅有一个快照版本，因此直接展示该版本。';
+    case 'same_swipe_fallback':
+      return '当前版本未精确命中，已回退展示同一 swipe 下的快照版本。';
+    case 'latest_fallback':
+      return '当前版本未精确命中，已回退展示该楼最近可用的快照版本。';
+    case 'missing':
+    default:
+      return '当前楼没有可展示快照；可能是未执行、被跳过，或快照确实缺失。';
+  }
+});
+
+const sourceSummary = computed(() => {
+  switch (props.snapshotSource) {
+    case 'file':
+      return '文件快照';
+    case 'inline':
+      return '消息内联快照';
+    default:
+      return '无';
+  }
 });
 
 const otherFloors = computed(() =>
@@ -293,6 +343,38 @@ function truncate(str: string, maxLen: number): string {
   padding: 0.4rem 0.6rem;
   border-radius: 0.5rem;
   font-size: 0.8rem;
+}
+
+.hist-empty {
+  padding: 1rem;
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 10%, rgba(0, 0, 0, 0.12));
+  color: color-mix(in srgb, var(--SmartThemeBodyColor) 65%, transparent);
+  font-size: 0.82rem;
+}
+
+.hist-meta-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.85rem 0 0;
+  padding: 0.8rem 0.9rem;
+  border-radius: 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 18%, transparent);
+  background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 7%, rgba(0, 0, 0, 0.1));
+}
+
+.hist-meta-row {
+  font-size: 0.78rem;
+  color: color-mix(in srgb, var(--SmartThemeBodyColor) 80%, transparent);
+  word-break: break-all;
+}
+
+.hist-meta-row code {
+  font-size: 0.72rem;
+  padding: 0.08rem 0.25rem;
+  border-radius: 0.35rem;
+  background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 18%, transparent);
 }
 
 .hist-change-icon {

@@ -8,7 +8,9 @@
     <div v-if="store.busy" class="hist-info">正在扫描当前聊天的楼层快照…</div>
 
     <div v-else-if="store.floorSnapshots.length > 0 && hasSnapshotCount === 0" class="hist-info hist-info--warning">
-      已扫描到聊天楼层，但没有发现任何快照。请优先检查是否开启了“楼层绑定”，以及当前聊天的旧快照是否需要点击“同步快照”迁移。
+      已扫描到聊天楼层，但没有发现任何可展示快照。除“楼层绑定”与“同步快照”外，也请注意：部分楼层可能被
+      <code>run_every_n_floors</code>
+      跳过，或当前可见版本与旧快照不匹配。
     </div>
 
     <div v-if="store.floorSnapshots.length > 0" class="hist-grid-wrap">
@@ -20,7 +22,12 @@
           :data-has-snapshot="item.floor.snapshot ? '1' : '0'"
           @click="openFloor(item.floor.messageId)"
         >
-          <span class="hist-block-floor">#{{ item.floor.messageId }}</span>
+          <div class="hist-block-head">
+            <span class="hist-block-floor">#{{ item.floor.messageId }}</span>
+            <span class="hist-block-status" :class="statusClass(item.floor)" :title="resolutionTitle(item.floor)">
+              {{ resolutionLabel(item.floor) }}
+            </span>
+          </div>
           <div v-if="item.floor.snapshot" class="hist-block-changes">
             <span v-if="item.diff.created.length" class="hist-tag hist-tag--created">
               +{{ item.diff.created.length }}
@@ -38,7 +45,9 @@
               ≈C{{ Object.keys(item.diff.controllersChanged).length }}
             </span>
           </div>
-          <div v-else class="hist-block-empty">—</div>
+          <div v-else class="hist-block-empty" :title="resolutionTitle(item.floor)">
+            {{ resolutionLabel(item.floor) }}
+          </div>
         </div>
       </div>
     </div>
@@ -50,6 +59,11 @@
     :floor-id="selectedFloorId"
     :snapshot="selectedSnapshot"
     :prev-snapshot="selectedPrevSnapshot"
+    :resolution="selectedFloor?.resolution ?? 'missing'"
+    :available-version-count="selectedFloor?.available_version_count ?? 0"
+    :snapshot-source="selectedFloor?.source ?? 'none'"
+    :matched-version-key="selectedFloor?.matched_version_key"
+    :file-name="selectedFloor?.file_name"
     @close="modalVisible = false"
   />
 </template>
@@ -71,9 +85,10 @@ onMounted(() => {
   void store.loadFloorSnapshots();
 });
 
+const selectedFloor = computed(() => store.floorSnapshots.find(f => f.messageId === selectedFloorId.value));
+
 const selectedSnapshot = computed<SnapshotData | null>(() => {
-  const floor = store.floorSnapshots.find(f => f.messageId === selectedFloorId.value);
-  return floor?.snapshot ?? null;
+  return selectedFloor.value?.snapshot ?? null;
 });
 
 const selectedPrevSnapshot = computed<SnapshotData | null>(() => {
@@ -102,6 +117,49 @@ const timelineItems = computed(() => {
 
   return items;
 });
+
+const resolutionMeta = {
+  exact: {
+    label: '精确',
+    title: '当前可见版本与该楼快照精确匹配。',
+    tone: 'exact',
+  },
+  single_fallback: {
+    label: '单版回退',
+    title: '当前版本未命中，但该楼只有一个快照版本，因此直接展示该版本。',
+    tone: 'fallback',
+  },
+  same_swipe_fallback: {
+    label: '同划回退',
+    title: '当前版本未精确命中，但命中了同一 swipe 的其他版本快照。',
+    tone: 'fallback',
+  },
+  latest_fallback: {
+    label: '最新回退',
+    title: '当前版本未命中，历史面板已回退展示该楼最近可用的快照版本。',
+    tone: 'fallback',
+  },
+  missing: {
+    label: '缺失',
+    title: '当前楼没有可展示快照；可能是本楼未触发、被跳过，或快照确实缺失。',
+    tone: 'missing',
+  },
+} as const;
+
+function resolutionLabel(floor: (typeof store.floorSnapshots)[number]): string {
+  return resolutionMeta[floor.resolution].label;
+}
+
+function resolutionTitle(floor: (typeof store.floorSnapshots)[number]): string {
+  const sourceText =
+    floor.source === 'file' ? '来源：文件快照。' : floor.source === 'inline' ? '来源：消息内联快照。' : '';
+  const versionText = floor.available_version_count > 0 ? `可用版本数：${floor.available_version_count}。` : '';
+  return `${resolutionMeta[floor.resolution].title}${sourceText}${versionText}`;
+}
+
+function statusClass(floor: (typeof store.floorSnapshots)[number]): string {
+  return `hist-block-status--${resolutionMeta[floor.resolution].tone}`;
+}
 
 function openFloor(messageId: number) {
   selectedFloorId.value = messageId;
@@ -152,6 +210,13 @@ function openFloor(messageId: number) {
   gap: 0.4rem;
 }
 
+.hist-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+}
+
 .hist-block {
   border-radius: 0.65rem;
   border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 25%, transparent);
@@ -182,6 +247,34 @@ function openFloor(messageId: number) {
   font-size: 0.75rem;
   font-weight: 700;
   color: color-mix(in srgb, var(--SmartThemeBodyColor) 80%, transparent);
+}
+
+.hist-block-status {
+  flex-shrink: 0;
+  font-size: 0.56rem;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 0.12rem 0.3rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.hist-block-status--exact {
+  color: #86efac;
+  border-color: color-mix(in srgb, #22c55e 35%, transparent);
+  background: color-mix(in srgb, #22c55e 16%, transparent);
+}
+
+.hist-block-status--fallback {
+  color: #c4b5fd;
+  border-color: color-mix(in srgb, #8b5cf6 35%, transparent);
+  background: color-mix(in srgb, #8b5cf6 15%, transparent);
+}
+
+.hist-block-status--missing {
+  color: #fca5a5;
+  border-color: color-mix(in srgb, #ef4444 35%, transparent);
+  background: color-mix(in srgb, #ef4444 15%, transparent);
 }
 
 .hist-block-changes {
