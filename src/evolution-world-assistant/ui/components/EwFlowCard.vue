@@ -85,7 +85,7 @@
                 @input="setFlowNumber('priority', $event)"
               />
             </EwFieldRow>
-            <EwFieldRow label="每多少次自动触发执行一次" :help="help('flow.run_every_n_floors')">
+            <EwFieldRow label="每多少个对应楼层自动执行一次" :help="help('flow.run_every_n_floors')">
               <input
                 :value="flow.run_every_n_floors"
                 type="number"
@@ -1035,7 +1035,7 @@ const endpointSummary = computed(() => {
 const presetLabel = computed(() => selectedPreset.value?.name?.trim() || '未绑定');
 const floorIntervalLabel = computed(() => {
   const interval = Math.max(1, Math.trunc(Number(flow.value.run_every_n_floors ?? 1) || 1));
-  return interval <= 1 ? '每次自动触发都执行' : `每 ${interval} 次自动触发执行`;
+  return interval <= 1 ? '每个对应楼层都会自动执行' : `每 ${interval} 个对应楼层自动执行一次`;
 });
 
 function help(key: string) {

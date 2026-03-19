@@ -1653,7 +1653,7 @@ async function executeWorkflowWithPolicy(
       message_id: options.messageId,
       user_input: options.userInput,
       trigger: options.trigger,
-      mode: options.jobType === 'historical_rederive' ? 'manual' : 'auto',
+      mode: options.jobType === 'live_auto' ? 'auto' : 'manual',
       inject_reply: options.injectReply,
       flow_ids: currentFlowIds,
       timing_filter: options.timingFilter,

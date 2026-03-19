@@ -4,7 +4,7 @@ import { dispatchFlows, DispatchFlowsError } from './dispatcher';
 import { uuidv4 } from './helpers';
 import { injectReplyInstructionOnce } from './injection';
 import { mergeFlowResults } from './merger';
-import { advanceWorkflowRoundCounter, getSettings, setLastIo, setLastRun } from './settings';
+import { getSettings, setLastIo, setLastRun } from './settings';
 import { commitMergedPlan } from './transaction';
 import {
   ContextCursor,
@@ -226,6 +226,50 @@ function shouldRunFlowOnRound(flow: DispatchFlowAttempt['flow'] | DispatchFlowRe
   return round % interval === 0;
 }
 
+function resolveAutoTriggerAnchorMessageId(input: RunWorkflowInput): number {
+  const assistantMessageId = Number(input.trigger?.assistant_message_id);
+  if (input.timing_filter === 'after_reply' && Number.isFinite(assistantMessageId) && assistantMessageId >= 0) {
+    return assistantMessageId;
+  }
+
+  const userMessageId = Number(input.trigger?.user_message_id);
+  if (input.timing_filter === 'before_reply' && Number.isFinite(userMessageId) && userMessageId >= 0) {
+    return userMessageId;
+  }
+
+  return Math.max(0, Math.trunc(Number(input.message_id) || 0));
+}
+
+function resolveAutoTriggerOrdinal(input: RunWorkflowInput): number {
+  if (!input.timing_filter) {
+    return 1;
+  }
+
+  const anchorMessageId = resolveAutoTriggerAnchorMessageId(input);
+  const expectedRole = input.timing_filter === 'after_reply' ? 'assistant' : 'user';
+  let matchedCount = 0;
+
+  try {
+    const messages = getChatMessages(`0-${anchorMessageId}`);
+    for (const message of Array.isArray(messages) ? messages : []) {
+      if (String(message?.role ?? '') === expectedRole) {
+        matchedCount += 1;
+      }
+    }
+
+    if (input.timing_filter === 'before_reply') {
+      const anchorMessage = getChatMessages(anchorMessageId)[0];
+      if (String(anchorMessage?.role ?? '') !== expectedRole) {
+        matchedCount += 1;
+      }
+    }
+  } catch (error) {
+    console.warn('[Evolution World] resolveAutoTriggerOrdinal failed, fallback to 1:', error);
+  }
+
+  return Math.max(1, matchedCount);
+}
+
 function buildWorkflowFailureDiagnostic(params: {
   stage: WorkflowFailureDiagnostic['stage'];
   reason: string;
@@ -439,10 +483,6 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
   const settings = getSettings();
   const requestId = uuidv4();
   const preservedResults = [...(input.preserved_results ?? [])];
-  const currentChatId = String(
-    (typeof SillyTavern !== 'undefined' ? (SillyTavern?.getCurrentChatId?.() ?? (SillyTavern as any).chatId) : null) ??
-      'unknown',
-  );
   let attempts: DispatchFlowAttempt[] = [];
   let currentStage: WorkflowExecutionStage = 'preparing';
 
@@ -474,13 +514,13 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
     }
 
     if (input.mode === 'auto' && input.timing_filter && selectedFlowIds.size === 0) {
-      const round = advanceWorkflowRoundCounter(currentChatId, input.timing_filter);
-      enabledFlows = enabledFlows.filter(flow => shouldRunFlowOnRound(flow, round));
+      const ordinal = resolveAutoTriggerOrdinal(input);
+      enabledFlows = enabledFlows.filter(flow => shouldRunFlowOnRound(flow, ordinal));
 
       if (enabledFlows.length === 0) {
         return {
           ok: true,
-          reason: `no flows scheduled for timing '${input.timing_filter}' on round ${round}`,
+          reason: `no flows scheduled for timing '${input.timing_filter}' on floor ordinal ${ordinal}`,
           request_id: requestId,
           attempts: [],
           results: [],

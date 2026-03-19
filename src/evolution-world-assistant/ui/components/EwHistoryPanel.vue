@@ -61,7 +61,9 @@
               <span class="hist-block-status" :class="statusClass(item)" :title="resolutionTitle(item)">
                 {{ resolutionLabel(item) }}
               </span>
-              <span class="hist-block-preview-hint">点击预览</span>
+              <button type="button" class="hist-block-preview-btn" @click.stop="openFloor(item.floor.messageId)">
+                预览
+              </button>
             </div>
           </div>
           <div v-if="item.floor.snapshot" class="hist-block-changes">
@@ -107,7 +109,7 @@
     :anchor-kind="selectedSemantic?.anchor_kind ?? 'normal'"
     :paired-message-id="selectedSemantic?.paired_message_id"
     :message-role="selectedSemantic?.role ?? 'other'"
-    @close="modalVisible = false"
+    @close="closeFloorModal"
   />
 </template>
 
@@ -123,6 +125,7 @@ const modalVisible = ref(false);
 const selectedFloorId = ref(0);
 const EW_BEFORE_REPLY_BINDING_META_KEY = 'ew_before_reply_binding';
 const EW_REDERIVE_META_KEY = 'ew_rederive_meta';
+let openFloorFrame: number | null = null;
 
 type FloorRole = 'assistant' | 'user' | 'other';
 type FloorAnchorKind = 'assistant_anchor' | 'source_user' | 'legacy_user_anchor' | 'normal';
@@ -440,8 +443,26 @@ function roleLabel(role: FloorRole): string {
 
 function openFloor(messageId: number) {
   selectedFloorId.value = messageId;
-  modalVisible.value = true;
+  modalVisible.value = false;
+  if (openFloorFrame !== null) {
+    cancelAnimationFrame(openFloorFrame);
+  }
+  openFloorFrame = requestAnimationFrame(() => {
+    modalVisible.value = true;
+    openFloorFrame = null;
+  });
 }
+
+function closeFloorModal() {
+  modalVisible.value = false;
+}
+
+onBeforeUnmount(() => {
+  if (openFloorFrame !== null) {
+    cancelAnimationFrame(openFloorFrame);
+    openFloorFrame = null;
+  }
+});
 
 async function onRebuildSelectedFloor() {
   const item = selectedTimelineItem.value;
@@ -643,10 +664,27 @@ async function onRebuildSelectedFloor() {
   border: 1px solid transparent;
 }
 
-.hist-block-preview-hint {
+.hist-block-preview-btn {
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 30%, transparent);
+  background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 12%, transparent);
+  color: color-mix(in srgb, var(--SmartThemeBodyColor) 68%, transparent);
   font-size: 0.58rem;
   line-height: 1.2;
-  color: color-mix(in srgb, var(--SmartThemeBodyColor) 40%, transparent);
+  padding: 0.12rem 0.38rem;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.hist-block-preview-btn:hover,
+.hist-block-preview-btn:focus-visible {
+  outline: none;
+  color: #fff;
+  border-color: color-mix(in srgb, var(--ew-accent, #818cf8) 55%, transparent);
+  background: color-mix(in srgb, var(--ew-accent, #818cf8) 28%, transparent);
 }
 
 .hist-block-status--exact {
