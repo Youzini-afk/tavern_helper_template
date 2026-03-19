@@ -21,7 +21,9 @@ import {
   getLastRun,
   getSettings,
   loadLastIo,
+  loadLastIoForChat,
   loadLastRun,
+  loadLastRunForChat,
   patchSettings,
   persistSettingsDraft,
   replaceSettings,
@@ -73,6 +75,14 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   let suppressPersist = false;
   let persistTimeoutId: number | null = null;
   let persistIdleId: number | null = null;
+
+  function getCurrentChatIdSafe(): string {
+    try {
+      return String(SillyTavern?.getCurrentChatId?.() ?? (SillyTavern as any)?.chatId ?? '').trim();
+    } catch {
+      return '';
+    }
+  }
 
   function clearScheduledPersist() {
     if (persistTimeoutId !== null) {
@@ -149,10 +159,16 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   });
 
   const syncRun = subscribeLastRun(next => {
-    lastRun.value = next;
+    const currentChatId = getCurrentChatIdSafe();
+    if (!currentChatId || !next?.chat_id || next.chat_id.trim() === currentChatId) {
+      lastRun.value = next;
+    }
   });
   const syncIo = subscribeLastIo(next => {
-    lastIo.value = next;
+    const currentChatId = getCurrentChatIdSafe();
+    if (!currentChatId || !next?.chat_id || next.chat_id.trim() === currentChatId) {
+      lastIo.value = next;
+    }
   });
 
   // L-3: 当 store 的作用域被销毁时，正确清理订阅。
@@ -231,8 +247,9 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   );
 
   function refreshDebugRecords() {
-    lastRun.value = loadLastRun();
-    lastIo.value = loadLastIo();
+    const currentChatId = getCurrentChatIdSafe();
+    lastRun.value = currentChatId ? loadLastRunForChat(currentChatId) : loadLastRun();
+    lastIo.value = currentChatId ? loadLastIoForChat(currentChatId) : loadLastIo();
   }
 
   function addApiPreset() {
