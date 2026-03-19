@@ -539,6 +539,227 @@
         <div v-else class="ew-flow-card__deferred-placeholder">正在加载请求模板编辑器…</div>
 
         <section class="ew-flow-card__section ew-flow-card__section--deferred">
+          <h4>Dyn 写入配置</h4>
+          <template v-if="deferredPostReady">
+            <div class="ew-grid ew-grid--two">
+              <EwFieldRow label="写入模式" :help="help('flow.dyn_write.mode')">
+                <select :value="flow.dyn_write.mode" @change="setDynWriteMode">
+                  <option value="overwrite">覆盖</option>
+                  <option value="add">只增</option>
+                  <option value="add_remove">增减</option>
+                </select>
+              </EwFieldRow>
+              <EwFieldRow label="Dyn 模式" :help="help('flow.dyn_write.activation_mode')">
+                <select :value="flow.dyn_write.activation_mode" @change="setDynActivationMode">
+                  <option value="controller_only">控制器仓库</option>
+                  <option value="worldbook_direct">直接世界书激活</option>
+                </select>
+              </EwFieldRow>
+            </div>
+
+            <p class="ew-flow-card__hint-text" v-if="flow.dyn_write.activation_mode === 'controller_only'">
+              当前为仓库型 Dyn。条目会保持红灯，关键词和概率等配置只作为元数据保存，真正注入仍由 Controller `getwi()`
+              完成。
+            </p>
+            <p class="ew-flow-card__hint-text" v-else>
+              当前为直接激活型 Dyn。条目会保持启用，并按下面的世界书配置直接参与酒馆世界书激活。
+            </p>
+
+            <div class="ew-flow-card__subsection">
+              <h5>基础字段</h5>
+              <div class="ew-grid ew-grid--two">
+                <EwFieldRow label="注释" :help="help('flow.dyn_write.profile.comment')">
+                  <input :value="flow.dyn_write.profile.comment" type="text" @input="setDynComment" />
+                </EwFieldRow>
+                <EwFieldRow label="策略类型" :help="help('flow.dyn_write.profile.strategy.type')">
+                  <input :value="flow.dyn_write.profile.strategy.type" type="text" @input="setDynStrategyType" />
+                </EwFieldRow>
+                <EwFieldRow label="扫描深度" :help="help('flow.dyn_write.profile.strategy.scan_depth')">
+                  <input :value="String(flow.dyn_write.profile.strategy.scan_depth)" type="text" @input="setDynScanDepth" />
+                </EwFieldRow>
+                <EwFieldRow label="概率" :help="help('flow.dyn_write.profile.probability')">
+                  <input
+                    :value="flow.dyn_write.profile.probability"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    @input="setDynProbability"
+                  />
+                </EwFieldRow>
+              </div>
+            </div>
+
+            <div class="ew-flow-card__subsection">
+              <h5>位置</h5>
+              <div class="ew-grid ew-grid--two">
+                <EwFieldRow label="位置类型" :help="help('flow.dyn_write.profile.position.type')">
+                  <input :value="flow.dyn_write.profile.position.type" type="text" @input="setDynPositionType" />
+                </EwFieldRow>
+                <EwFieldRow label="注入角色" :help="help('flow.dyn_write.profile.position.role')">
+                  <select :value="flow.dyn_write.profile.position.role" @change="setDynPositionRole">
+                    <option value="system">system</option>
+                    <option value="user">user</option>
+                    <option value="assistant">assistant</option>
+                  </select>
+                </EwFieldRow>
+                <EwFieldRow label="Depth" :help="help('flow.dyn_write.profile.position.depth')">
+                  <input
+                    :value="flow.dyn_write.profile.position.depth"
+                    type="number"
+                    min="0"
+                    step="1"
+                    @input="setDynPositionDepth"
+                  />
+                </EwFieldRow>
+                <EwFieldRow label="Order" :help="help('flow.dyn_write.profile.position.order')">
+                  <input
+                    :value="flow.dyn_write.profile.position.order"
+                    type="number"
+                    step="1"
+                    @input="setDynPositionOrder"
+                  />
+                </EwFieldRow>
+              </div>
+            </div>
+
+            <div class="ew-flow-card__subsection">
+              <h5>关键词与分组</h5>
+              <div class="ew-grid ew-grid--two">
+                <EwFieldRow label="主关键词" :help="help('flow.dyn_write.profile.strategy.keys')">
+                  <textarea
+                    :value="flow.dyn_write.profile.strategy.keys.join(', ')"
+                    rows="3"
+                    placeholder="逗号或换行分隔"
+                    @input="setDynPrimaryKeys"
+                  />
+                </EwFieldRow>
+                <EwFieldRow label="次关键词" :help="help('flow.dyn_write.profile.strategy.keys_secondary.keys')">
+                  <textarea
+                    :value="flow.dyn_write.profile.strategy.keys_secondary.keys.join(', ')"
+                    rows="3"
+                    placeholder="逗号或换行分隔"
+                    @input="setDynSecondaryKeys"
+                  />
+                </EwFieldRow>
+                <EwFieldRow label="次关键词逻辑" :help="help('flow.dyn_write.profile.strategy.keys_secondary.logic')">
+                  <select :value="flow.dyn_write.profile.strategy.keys_secondary.logic" @change="setDynSecondaryLogic">
+                    <option value="and_any">and_any</option>
+                    <option value="and_all">and_all</option>
+                    <option value="not_any">not_any</option>
+                    <option value="not_all">not_all</option>
+                  </select>
+                </EwFieldRow>
+                <EwFieldRow label="分组" :help="help('flow.dyn_write.profile.extra.group')">
+                  <input :value="flow.dyn_write.profile.extra.group" type="text" @input="setDynGroup" />
+                </EwFieldRow>
+                <EwFieldRow label="分组权重" :help="help('flow.dyn_write.profile.extra.groupWeight')">
+                  <input
+                    :value="flow.dyn_write.profile.extra.groupWeight"
+                    type="number"
+                    step="1"
+                    @input="setDynGroupWeight"
+                  />
+                </EwFieldRow>
+              </div>
+            </div>
+
+            <div class="ew-flow-card__subsection">
+              <h5>效果与匹配</h5>
+              <div class="ew-grid ew-grid--two">
+                <EwFieldRow label="Sticky" :help="help('flow.dyn_write.profile.effect.sticky')">
+                  <input
+                    :value="nullableNumberInput(flow.dyn_write.profile.effect.sticky)"
+                    type="number"
+                    min="0"
+                    step="1"
+                    @input="setDynEffectSticky"
+                  />
+                </EwFieldRow>
+                <EwFieldRow label="Cooldown" :help="help('flow.dyn_write.profile.effect.cooldown')">
+                  <input
+                    :value="nullableNumberInput(flow.dyn_write.profile.effect.cooldown)"
+                    type="number"
+                    min="0"
+                    step="1"
+                    @input="setDynEffectCooldown"
+                  />
+                </EwFieldRow>
+                <EwFieldRow label="Delay" :help="help('flow.dyn_write.profile.effect.delay')">
+                  <input
+                    :value="nullableNumberInput(flow.dyn_write.profile.effect.delay)"
+                    type="number"
+                    min="0"
+                    step="1"
+                    @input="setDynEffectDelay"
+                  />
+                </EwFieldRow>
+              </div>
+
+              <div class="ew-toggle-grid">
+                <div class="ew-toggle-item">
+                  <button
+                    type="button"
+                    class="ew-switch"
+                    role="switch"
+                    :aria-checked="flow.dyn_write.profile.extra.caseSensitive ? 'true' : 'false'"
+                    @click="toggleDynExtra('caseSensitive')"
+                  >
+                    <span class="ew-switch__track" :data-enabled="flow.dyn_write.profile.extra.caseSensitive ? '1' : '0'">
+                      <span class="ew-switch__thumb" />
+                    </span>
+                  </button>
+                  <span class="ew-toggle-item__label">大小写敏感</span>
+                </div>
+                <div class="ew-toggle-item">
+                  <button
+                    type="button"
+                    class="ew-switch"
+                    role="switch"
+                    :aria-checked="flow.dyn_write.profile.extra.matchWholeWords ? 'true' : 'false'"
+                    @click="toggleDynExtra('matchWholeWords')"
+                  >
+                    <span class="ew-switch__track" :data-enabled="flow.dyn_write.profile.extra.matchWholeWords ? '1' : '0'">
+                      <span class="ew-switch__thumb" />
+                    </span>
+                  </button>
+                  <span class="ew-toggle-item__label">全词匹配</span>
+                </div>
+                <div class="ew-toggle-item">
+                  <button
+                    type="button"
+                    class="ew-switch"
+                    role="switch"
+                    :aria-checked="flow.dyn_write.profile.extra.groupOverride ? 'true' : 'false'"
+                    @click="toggleDynExtra('groupOverride')"
+                  >
+                    <span class="ew-switch__track" :data-enabled="flow.dyn_write.profile.extra.groupOverride ? '1' : '0'">
+                      <span class="ew-switch__thumb" />
+                    </span>
+                  </button>
+                  <span class="ew-toggle-item__label">覆盖分组</span>
+                </div>
+                <div class="ew-toggle-item">
+                  <button
+                    type="button"
+                    class="ew-switch"
+                    role="switch"
+                    :aria-checked="flow.dyn_write.profile.extra.useGroupScoring ? 'true' : 'false'"
+                    @click="toggleDynExtra('useGroupScoring')"
+                  >
+                    <span class="ew-switch__track" :data-enabled="flow.dyn_write.profile.extra.useGroupScoring ? '1' : '0'">
+                      <span class="ew-switch__thumb" />
+                    </span>
+                  </button>
+                  <span class="ew-toggle-item__label">启用分组评分</span>
+                </div>
+              </div>
+            </div>
+          </template>
+          <div v-else class="ew-flow-card__deferred-placeholder">正在加载 Dyn 写入配置编辑器…</div>
+        </section>
+
+        <section class="ew-flow-card__section ew-flow-card__section--deferred">
           <h4>响应后处理</h4>
           <template v-if="deferredPostReady">
             <EwFieldRow label="移除正则" :help="help('flow.response_remove_regex')">
@@ -803,6 +1024,32 @@ function patchGeneration(partial: Partial<EwFlowConfig['generation_options']>) {
 function patchBehavior(partial: Partial<EwFlowConfig['behavior_options']>) {
   patch({ behavior_options: { ...flow.value.behavior_options, ...partial } });
 }
+function patchDynWrite(partial: Partial<EwFlowConfig['dyn_write']>) {
+  patch({ dyn_write: { ...flow.value.dyn_write, ...partial } });
+}
+function patchDynProfile(partial: Partial<EwFlowConfig['dyn_write']['profile']>) {
+  patchDynWrite({ profile: { ...flow.value.dyn_write.profile, ...partial } });
+}
+function patchDynPosition(partial: Partial<EwFlowConfig['dyn_write']['profile']['position']>) {
+  patchDynProfile({ position: { ...flow.value.dyn_write.profile.position, ...partial } });
+}
+function patchDynStrategy(partial: Partial<EwFlowConfig['dyn_write']['profile']['strategy']>) {
+  patchDynProfile({ strategy: { ...flow.value.dyn_write.profile.strategy, ...partial } });
+}
+function patchDynSecondaryKeys(partial: Partial<EwFlowConfig['dyn_write']['profile']['strategy']['keys_secondary']>) {
+  patchDynStrategy({
+    keys_secondary: {
+      ...flow.value.dyn_write.profile.strategy.keys_secondary,
+      ...partial,
+    },
+  });
+}
+function patchDynEffect(partial: Partial<EwFlowConfig['dyn_write']['profile']['effect']>) {
+  patchDynProfile({ effect: { ...flow.value.dyn_write.profile.effect, ...partial } });
+}
+function patchDynExtra(partial: Partial<EwFlowConfig['dyn_write']['profile']['extra']>) {
+  patchDynProfile({ extra: { ...flow.value.dyn_write.profile.extra, ...partial } });
+}
 function updatePromptOrder(order: EwPromptOrderEntry[]) {
   patch({ prompt_order: order });
 }
@@ -810,8 +1057,28 @@ function toNumber(raw: string, fallback: number) {
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
+function toNullableInteger(raw: string, fallback: number | null) {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(0, Math.trunc(parsed));
+}
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+function parseKeywordList(raw: string) {
+  return raw
+    .split(/[\n,]+/)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+function nullableNumberInput(value: number | null) {
+  return value === null ? '' : String(value);
 }
 function toggleEnabled() {
   patch({ enabled: !flow.value.enabled });
@@ -872,6 +1139,89 @@ function setBehaviorSelectByEvent(key: BehaviorSelectKey, event: Event) {
   patchBehavior({
     [key]: (event.target as HTMLSelectElement).value as EwFlowConfig['behavior_options'][typeof key],
   } as Partial<EwFlowConfig['behavior_options']>);
+}
+function setDynWriteMode(event: Event) {
+  patchDynWrite({
+    mode: (event.target as HTMLSelectElement).value as EwFlowConfig['dyn_write']['mode'],
+  });
+}
+function setDynActivationMode(event: Event) {
+  patchDynWrite({
+    activation_mode: (event.target as HTMLSelectElement).value as EwFlowConfig['dyn_write']['activation_mode'],
+  });
+}
+function setDynComment(event: Event) {
+  patchDynProfile({ comment: (event.target as HTMLInputElement).value });
+}
+function setDynStrategyType(event: Event) {
+  patchDynStrategy({ type: (event.target as HTMLInputElement).value });
+}
+function setDynScanDepth(event: Event) {
+  patchDynStrategy({
+    scan_depth: (event.target as HTMLInputElement).value as EwFlowConfig['dyn_write']['profile']['strategy']['scan_depth'],
+  });
+}
+function setDynProbability(event: Event) {
+  patchDynProfile({
+    probability: Math.round(clamp(toNumber((event.target as HTMLInputElement).value, flow.value.dyn_write.profile.probability), 0, 100)),
+  });
+}
+function setDynPositionType(event: Event) {
+  patchDynPosition({ type: (event.target as HTMLInputElement).value });
+}
+function setDynPositionRole(event: Event) {
+  patchDynPosition({
+    role: (event.target as HTMLSelectElement).value as EwFlowConfig['dyn_write']['profile']['position']['role'],
+  });
+}
+function setDynPositionDepth(event: Event) {
+  patchDynPosition({
+    depth: Math.max(0, Math.trunc(toNumber((event.target as HTMLInputElement).value, flow.value.dyn_write.profile.position.depth))),
+  });
+}
+function setDynPositionOrder(event: Event) {
+  patchDynPosition({
+    order: Math.trunc(toNumber((event.target as HTMLInputElement).value, flow.value.dyn_write.profile.position.order)),
+  });
+}
+function setDynPrimaryKeys(event: Event) {
+  patchDynStrategy({ keys: parseKeywordList((event.target as HTMLTextAreaElement).value) });
+}
+function setDynSecondaryKeys(event: Event) {
+  patchDynSecondaryKeys({ keys: parseKeywordList((event.target as HTMLTextAreaElement).value) });
+}
+function setDynSecondaryLogic(event: Event) {
+  patchDynSecondaryKeys({
+    logic: (event.target as HTMLSelectElement).value as EwFlowConfig['dyn_write']['profile']['strategy']['keys_secondary']['logic'],
+  });
+}
+function setDynGroup(event: Event) {
+  patchDynExtra({ group: (event.target as HTMLInputElement).value });
+}
+function setDynGroupWeight(event: Event) {
+  patchDynExtra({
+    groupWeight: toNumber((event.target as HTMLInputElement).value, flow.value.dyn_write.profile.extra.groupWeight),
+  });
+}
+function setDynEffectSticky(event: Event) {
+  patchDynEffect({
+    sticky: toNullableInteger((event.target as HTMLInputElement).value, flow.value.dyn_write.profile.effect.sticky),
+  });
+}
+function setDynEffectCooldown(event: Event) {
+  patchDynEffect({
+    cooldown: toNullableInteger((event.target as HTMLInputElement).value, flow.value.dyn_write.profile.effect.cooldown),
+  });
+}
+function setDynEffectDelay(event: Event) {
+  patchDynEffect({
+    delay: toNullableInteger((event.target as HTMLInputElement).value, flow.value.dyn_write.profile.effect.delay),
+  });
+}
+function toggleDynExtra(
+  key: 'caseSensitive' | 'matchWholeWords' | 'groupOverride' | 'useGroupScoring',
+) {
+  patchDynExtra({ [key]: !flow.value.dyn_write.profile.extra[key] } as Partial<EwFlowConfig['dyn_write']['profile']['extra']>);
 }
 
 function addCustomRegex() {

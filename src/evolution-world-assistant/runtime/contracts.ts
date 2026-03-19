@@ -7,6 +7,73 @@ export const TextSliceRuleSchema = z
   })
   .prefault({});
 
+const DynContextSecondaryLogicSchema = z.enum(['and_any', 'and_all', 'not_any', 'not_all']);
+const DynContextPositionRoleSchema = z.enum(['system', 'user', 'assistant']);
+const DynContextScanDepthSchema = z.union([z.literal('same_as_global'), z.number().int().min(0), z.string().min(1)]);
+
+const DynContextEntrySchema = z.object({
+  name: z.string().min(1),
+  content: z.string().default(''),
+  enabled: z.boolean().default(false),
+  comment: z.string().default(''),
+  position: z
+    .object({
+      type: z.string().default('before_character_definition'),
+      role: DynContextPositionRoleSchema.default('system'),
+      depth: z.number().int().min(0).default(0),
+      order: z.number().int().default(100),
+    })
+    .default({
+      type: 'before_character_definition',
+      role: 'system',
+      depth: 0,
+      order: 100,
+    }),
+  strategy: z
+    .object({
+      type: z.string().default('constant'),
+      keys: z.array(z.string()).default([]),
+      keys_secondary: z
+        .object({
+          logic: DynContextSecondaryLogicSchema.default('and_any'),
+          keys: z.array(z.string()).default([]),
+        })
+        .default({ logic: 'and_any', keys: [] }),
+      scan_depth: DynContextScanDepthSchema.default('same_as_global'),
+    })
+    .default({
+      type: 'constant',
+      keys: [],
+      keys_secondary: { logic: 'and_any', keys: [] },
+      scan_depth: 'same_as_global',
+    }),
+  probability: z.number().min(0).max(100).default(100),
+  effect: z
+    .object({
+      sticky: z.number().int().min(0).nullable().default(null),
+      cooldown: z.number().int().min(0).nullable().default(null),
+      delay: z.number().int().min(0).nullable().default(null),
+    })
+    .default({ sticky: null, cooldown: null, delay: null }),
+  extra: z
+    .object({
+      caseSensitive: z.boolean().default(false),
+      matchWholeWords: z.boolean().default(false),
+      group: z.string().default(''),
+      groupOverride: z.boolean().default(false),
+      groupWeight: z.number().default(100),
+      useGroupScoring: z.boolean().default(false),
+    })
+    .default({
+      caseSensitive: false,
+      matchWholeWords: false,
+      group: '',
+      groupOverride: false,
+      groupWeight: 100,
+      useGroupScoring: false,
+    }),
+});
+
 export const FlowRequestSchema = z.object({
   version: z.literal('ew-flow/v1'),
   request_id: z.string().min(1),
@@ -61,8 +128,29 @@ export const FlowRequestSchema = z.object({
       .object({
         active_names: z.array(z.string().min(1)).default([]),
         inactive_names: z.array(z.string().min(1)).default([]),
+        entries: z.array(DynContextEntrySchema).default([]),
+        write_hint: z
+          .object({
+            mode: z.enum(['overwrite', 'add', 'add_remove']).default('overwrite'),
+            item_format: z.literal('markdown_list').default('markdown_list'),
+            activation_mode: z.enum(['controller_only', 'worldbook_direct']).default('controller_only'),
+          })
+          .default({
+            mode: 'overwrite',
+            item_format: 'markdown_list',
+            activation_mode: 'controller_only',
+          }),
       })
-      .default({ active_names: [], inactive_names: [] }),
+      .default({
+        active_names: [],
+        inactive_names: [],
+        entries: [],
+        write_hint: {
+          mode: 'overwrite',
+          item_format: 'markdown_list',
+          activation_mode: 'controller_only',
+        },
+      }),
   }),
   rederive_context: z
     .object({

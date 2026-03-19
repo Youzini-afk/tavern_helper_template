@@ -1,7 +1,7 @@
 import { FlowRequestSchema, FlowRequestV1, FlowTriggerV1 } from './contracts';
 import { uuidv4 } from './helpers';
 import { ContextCursor, EwFlowConfig, EwSettings, WorkflowJobType, WorkflowWritebackPolicy } from './types';
-import { resolveTargetWorldbook } from './worldbook-runtime';
+import { buildDynSnapshotFromEntry, resolveTargetWorldbook } from './worldbook-runtime';
 
 export type BuildRequestInput = {
   settings: EwSettings;
@@ -27,22 +27,33 @@ async function collectDynEntryContext(settings: EwSettings, activeNamesInput: st
 
   try {
     const target = await resolveTargetWorldbook(settings);
-    const allManagedNames = _.uniq(
-      (target?.entries ?? [])
-        .map(entry => entry.name)
-        .filter(name => typeof name === 'string' && name.startsWith(settings.dynamic_entry_prefix)),
+    const managedEntries = (target?.entries ?? []).filter(
+      entry => typeof entry.name === 'string' && entry.name.startsWith(settings.dynamic_entry_prefix),
     );
+    const allManagedNames = _.uniq(managedEntries.map(entry => entry.name));
 
     const activeSet = new Set(activeNames);
     return {
       active_names: activeNames.filter(name => allManagedNames.includes(name)),
       inactive_names: allManagedNames.filter(name => !activeSet.has(name)),
+      entries: managedEntries.map(entry => buildDynSnapshotFromEntry(entry)),
+      write_hint: {
+        mode: 'overwrite',
+        item_format: 'markdown_list',
+        activation_mode: 'controller_only',
+      },
     };
   } catch (error) {
     console.debug('[Evolution World] collectDynEntryContext failed:', error);
     return {
       active_names: activeNames,
       inactive_names: [],
+      entries: [],
+      write_hint: {
+        mode: 'overwrite',
+        item_format: 'markdown_list',
+        activation_mode: 'controller_only',
+      },
     };
   }
 }
@@ -77,6 +88,11 @@ export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRe
   const requestId = input.request_id ?? uuidv4();
   const trigger = sanitizeTrigger(input.trigger);
   const ewDynEntries = await collectDynEntryContext(input.settings, input.active_dyn_entry_names);
+  ewDynEntries.write_hint = {
+    mode: input.flow.dyn_write.mode,
+    item_format: input.flow.dyn_write.item_format,
+    activation_mode: input.flow.dyn_write.activation_mode,
+  };
 
   const payload = FlowRequestSchema.parse({
     version: 'ew-flow/v1',

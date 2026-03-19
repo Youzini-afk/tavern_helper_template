@@ -9,11 +9,12 @@
  */
 
 import { buildMessageVersionKey, simpleHash } from './helpers';
-import type { ControllerEntrySnapshot } from './types';
+import type { ControllerEntrySnapshot, DynSnapshot } from './types';
+import { normalizeDynSnapshotData } from './worldbook-runtime';
 
 export type SnapshotData = {
   controllers: ControllerEntrySnapshot[];
-  dyn_entries: Array<{ name: string; content: string; enabled: boolean }>;
+  dyn_entries: DynSnapshot[];
   /** 写入快照时 assistant 消息的 swipe_id，用于版本校验 */
   swipe_id?: number;
   /** assistant 消息当前可见文本的哈希，检测 edit/update */
@@ -38,6 +39,11 @@ export type SnapshotStoreOwner = {
  */
 export function upgradeSnapshotData(raw: any): SnapshotData | null {
   if (!raw || typeof raw !== 'object') return null;
+  const dynEntries = Array.isArray(raw.dyn_entries)
+    ? raw.dyn_entries
+        .map((entry: unknown) => normalizeDynSnapshotData(entry))
+        .filter((entry: DynSnapshot | null): entry is DynSnapshot => Boolean(entry))
+    : [];
 
   if (Array.isArray(raw.controllers)) {
     return {
@@ -51,7 +57,7 @@ export function upgradeSnapshotData(raw: any): SnapshotData | null {
           legacy: Boolean(entry.legacy),
         }))
         .filter((entry: ControllerEntrySnapshot) => entry.content),
-      dyn_entries: Array.isArray(raw.dyn_entries) ? raw.dyn_entries : [],
+      dyn_entries: dynEntries,
       swipe_id: typeof raw.swipe_id === 'number' ? raw.swipe_id : undefined,
       content_hash: typeof raw.content_hash === 'string' ? raw.content_hash : undefined,
     };
@@ -65,7 +71,7 @@ export function upgradeSnapshotData(raw: any): SnapshotData | null {
         content: String(value ?? ''),
         legacy: key === 'legacy',
       })),
-      dyn_entries: Array.isArray(raw.dyn_entries) ? raw.dyn_entries : [],
+      dyn_entries: dynEntries,
       swipe_id: typeof raw.swipe_id === 'number' ? raw.swipe_id : undefined,
       content_hash: typeof raw.content_hash === 'string' ? raw.content_hash : undefined,
     };
@@ -76,7 +82,7 @@ export function upgradeSnapshotData(raw: any): SnapshotData | null {
       controllers: raw.controller
         ? [{ entry_name: '', flow_name: 'Legacy Controller', content: raw.controller, legacy: true }]
         : [],
-      dyn_entries: Array.isArray(raw.dyn_entries) ? raw.dyn_entries : [],
+      dyn_entries: dynEntries,
       swipe_id: typeof raw.swipe_id === 'number' ? raw.swipe_id : undefined,
       content_hash: typeof raw.content_hash === 'string' ? raw.content_hash : undefined,
     };

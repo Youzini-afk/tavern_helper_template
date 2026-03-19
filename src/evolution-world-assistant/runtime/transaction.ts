@@ -1,13 +1,31 @@
 import { markFloorEntries } from './floor-binding';
 import { getMessageVersionInfo } from './helpers';
 import { saveControllerBackup } from './settings';
-import { ControllerEntrySnapshot, ControllerTemplateSlot, EwSettings, MergedPlan } from './types';
-import { ensureDefaultEntry, resolveTargetWorldbook } from './worldbook-runtime';
+import {
+  ControllerEntrySnapshot,
+  ControllerTemplateSlot,
+  DynSnapshot,
+  EwSettings,
+  MergedPlan,
+  MergedWorldbookDesiredEntry,
+} from './types';
+import {
+  applyDynWriteConfigToEntry,
+  buildDynSnapshotFromEntry,
+  createDynEntryFromWriteConfig,
+  ensureDefaultEntry,
+  resolveTargetWorldbook,
+} from './worldbook-runtime';
 
 type CommitResult = {
   worldbook_name: string;
   chat_id: string;
   changed_count: number;
+};
+
+type MarkdownItemSet = {
+  header: string;
+  items: string[];
 };
 
 function isManagedEntryName(settings: EwSettings, name: string): boolean {
@@ -17,59 +35,219 @@ function isManagedEntryName(settings: EwSettings, name: string): boolean {
   return name.startsWith(settings.dynamic_entry_prefix);
 }
 
-/**
- * Apply declarative diff: reconcile the worldbook entries to match the desired state.
- *
- * - desired_entries: each entry should exist with the given content and enabled state.
- *   If it already exists, overwrite content/enabled. If not, create it.
- * - remove_entries: each named entry should be deleted if it exists.
- */
-function applyDeclarativeDiff(
-  currentEntries: WorldbookEntry[],
-  desiredEntries: Array<{ name: string; content: string; enabled: boolean }>,
-  removeEntries: Array<{ name: string }>,
-  settings: EwSettings,
-): WorldbookEntry[] {
-  // 步骤 1：移除条目。
-  const removeSet = new Set(removeEntries.map(e => e.name));
-  const result = klona(currentEntries.filter(entry => !removeSet.has(entry.name)));
+function compareContributionApplyOrder(lhs: MergedWorldbookDesiredEntry, rhs: MergedWorldbookDesiredEntry): number {
+  if (lhs.priority !== rhs.priority) {
+    return lhs.priority - rhs.priority;
+  }
+  return lhs.flow_order - rhs.flow_order;
+}
 
-  // 步骤 2：构建索引以实现 O(1) 查找。
-  const indexByName = new Map<string, number>();
-  for (let i = 0; i < result.length; i++) {
-    indexByName.set(result[i].name, i);
+function parseMarkdownItemSet(raw: string): MarkdownItemSet | null {
+  const text = String(raw ?? '').replace(/\r\n?/g, '\n');
+  if (!text.trim()) {
+    return { header: '', items: [] };
   }
 
-  // 步骤 3：应用目标状态（在已克隆的数组上就地修改）。
-  for (const desired of desiredEntries) {
-    // EW/Dyn/ 条目必须始终禁用（红灯）——它们由 EW/Controller 的 getwi() 拉取，
-    // 不需要通过酒馆的关键词扫描激活。AI 返回的 enabled 字段对 Dyn 条目无效。
-    const isDynEntry = desired.name.startsWith(settings.dynamic_entry_prefix);
-    const effectiveEnabled = isDynEntry ? false : desired.enabled;
+  const lines = text.split('\n');
+  const headerLines: string[] = [];
+  const items: string[] = [];
+  let currentItem: string[] | null = null;
+  let sawBullet = false;
 
-    const existingIndex = indexByName.get(desired.name);
-
-    if (existingIndex !== undefined) {
-      result[existingIndex].content = desired.content;
-      result[existingIndex].enabled = effectiveEnabled;
-    } else {
-      const newEntry = ensureDefaultEntry(desired.name, desired.content, effectiveEnabled, result);
-      indexByName.set(desired.name, result.length);
-      result.push(newEntry);
+  const flushCurrentItem = () => {
+    if (!currentItem) {
+      return;
     }
+    const normalized = currentItem
+      .join('\n')
+      .replace(/\s*\n\s*/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (normalized) {
+      items.push(normalized);
+    }
+    currentItem = null;
+  };
+
+  for (const line of lines) {
+    const bulletMatch = line.match(/^\s*[-*+]\s+(.+)$/);
+    if (bulletMatch) {
+      sawBullet = true;
+      flushCurrentItem();
+      currentItem = [bulletMatch[1].trim()];
+      continue;
+    }
+
+    if (!sawBullet) {
+      headerLines.push(line);
+      continue;
+    }
+
+    if (!currentItem) {
+      return null;
+    }
+
+    if (!line.trim()) {
+      continue;
+    }
+
+    currentItem.push(line.trim());
   }
 
+  flushCurrentItem();
+  const header = headerLines.join('\n').trim();
+
+  if (!sawBullet) {
+    return null;
+  }
+
+  return { header, items };
+}
+
+function normalizeMarkdownItem(item: string): string {
+  return String(item ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function dedupeMarkdownItems(items: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of items) {
+    const normalized = normalizeMarkdownItem(item);
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    result.push(normalized);
+  }
   return result;
 }
 
-function collectManagedDynSnapshots(nextEntries: WorldbookEntry[], settings: EwSettings) {
+function renderMarkdownItemSet(set: MarkdownItemSet): string {
+  const header = set.header.trim();
+  const items = dedupeMarkdownItems(set.items);
+  const body = items.map(item => `- ${item}`).join('\n');
+  if (header && body) {
+    return `${header}\n\n${body}`;
+  }
+  if (body) {
+    return body;
+  }
+  return header;
+}
+
+function applyMarkdownMerge(
+  currentContent: string,
+  incomingContent: string,
+  mode: 'add' | 'add_remove',
+): { ok: true; content: string } | { ok: false; reason: string } {
+  const current = parseMarkdownItemSet(currentContent);
+  const incoming = parseMarkdownItemSet(incomingContent);
+  if (!current) {
+    return { ok: false, reason: 'current_markdown_parse_failed' };
+  }
+  if (!incoming) {
+    return { ok: false, reason: 'incoming_markdown_parse_failed' };
+  }
+
+  const header = incoming.header.trim() ? incoming.header.trim() : current.header.trim();
+  if (mode === 'add') {
+    return {
+      ok: true,
+      content: renderMarkdownItemSet({
+        header,
+        items: [...current.items, ...incoming.items],
+      }),
+    };
+  }
+
+  return {
+    ok: true,
+    content: renderMarkdownItemSet({
+      header,
+      items: incoming.items,
+    }),
+  };
+}
+
+function pickWinningContribution(contributions: MergedWorldbookDesiredEntry[]): MergedWorldbookDesiredEntry {
+  return [...contributions].sort(compareContributionApplyOrder)[contributions.length - 1];
+}
+
+function groupDesiredEntries(entries: MergedWorldbookDesiredEntry[]): Map<string, MergedWorldbookDesiredEntry[]> {
+  const grouped = new Map<string, MergedWorldbookDesiredEntry[]>();
+  for (const entry of entries) {
+    const bucket = grouped.get(entry.name) ?? [];
+    bucket.push(entry);
+    grouped.set(entry.name, bucket);
+  }
+  return grouped;
+}
+
+function materializeDynEntryContent(
+  entryName: string,
+  currentContent: string,
+  contributions: MergedWorldbookDesiredEntry[],
+): { skipped: boolean; content?: string; winner: MergedWorldbookDesiredEntry } {
+  const ordered = [...contributions].sort(compareContributionApplyOrder);
+  const winner = ordered[ordered.length - 1];
+
+  if (ordered.every(entry => entry.dyn_write.mode === 'add')) {
+    let nextContent = currentContent;
+    for (const contribution of ordered) {
+      const merged = applyMarkdownMerge(nextContent, contribution.content, 'add');
+      if (!merged.ok) {
+        console.warn(
+          `[EW Commit] skip incremental Dyn "${entryName}" from flow "${contribution.source_flow_id}": ${merged.reason}`,
+        );
+        return { skipped: true, winner };
+      }
+      nextContent = merged.content;
+    }
+    return { skipped: false, content: nextContent, winner };
+  }
+
+  if (winner.dyn_write.mode === 'overwrite') {
+    return { skipped: false, content: winner.content, winner };
+  }
+
+  const merged = applyMarkdownMerge(currentContent, winner.content, winner.dyn_write.mode);
+  if (!merged.ok) {
+    console.warn(`[EW Commit] skip incremental Dyn "${entryName}" from flow "${winner.source_flow_id}": ${merged.reason}`);
+    return { skipped: true, winner };
+  }
+
+  return { skipped: false, content: merged.content, winner };
+}
+
+function applyResolvedManagedEntries(
+  nextEntries: WorldbookEntry[],
+  resolvedEntries: Array<{ name: string; content: string; enabled: boolean }>,
+): void {
+  const indexByName = new Map<string, number>();
+  for (let i = 0; i < nextEntries.length; i++) {
+    indexByName.set(nextEntries[i].name, i);
+  }
+
+  for (const desired of resolvedEntries) {
+    const existingIndex = indexByName.get(desired.name);
+    if (existingIndex !== undefined) {
+      nextEntries[existingIndex].content = desired.content;
+      nextEntries[existingIndex].enabled = desired.enabled;
+      continue;
+    }
+
+    const newEntry = ensureDefaultEntry(desired.name, desired.content, desired.enabled, nextEntries);
+    indexByName.set(desired.name, nextEntries.length);
+    nextEntries.push(newEntry);
+  }
+}
+
+function collectManagedDynSnapshots(nextEntries: WorldbookEntry[], settings: EwSettings): DynSnapshot[] {
   return nextEntries
     .filter(entry => entry.name.startsWith(settings.dynamic_entry_prefix))
-    .map(entry => ({
-      name: entry.name,
-      content: entry.content,
-      enabled: false,
-    }));
+    .map(entry => buildDynSnapshotFromEntry(entry));
 }
 
 function collectManagedControllerSnapshots(
@@ -99,7 +277,6 @@ export async function commitMergedPlan(
   const beforeEntries = target.entries;
   const chatId = String(SillyTavern.getCurrentChatId?.() ?? SillyTavern.chatId ?? 'unknown');
 
-  // 覆写前备份当前所有 controller 条目内容。
   const previousControllers: ControllerEntrySnapshot[] = [];
   for (const entry of beforeEntries) {
     if (entry.name.startsWith(settings.controller_entry_prefix)) {
@@ -111,7 +288,6 @@ export async function commitMergedPlan(
   }
   saveControllerBackup(chatId, target.worldbook_name, previousControllers);
 
-  // 校验所有操作目标都是受管理的条目名称。
   const allNames = [
     ...mergedPlan.worldbook.desired_entries.map(entry => entry.name),
     ...mergedPlan.worldbook.remove_entries.map(entry => entry.name),
@@ -121,13 +297,41 @@ export async function commitMergedPlan(
     throw new Error(`unmanaged entry name(s): ${unmanaged.join(', ')}`);
   }
 
-  // 将声明式 diff 应用到世界书条目。
-  const nextEntries = applyDeclarativeDiff(
-    beforeEntries,
-    mergedPlan.worldbook.desired_entries,
-    mergedPlan.worldbook.remove_entries,
-    settings,
-  );
+  const nextEntries = klona(beforeEntries);
+  const desiredEntriesByName = groupDesiredEntries(mergedPlan.worldbook.desired_entries);
+  const resolvedNonDynEntries: Array<{ name: string; content: string; enabled: boolean }> = [];
+
+  for (const [entryName, contributions] of desiredEntriesByName.entries()) {
+    if (entryName.startsWith(settings.dynamic_entry_prefix)) {
+      continue;
+    }
+    const winner = pickWinningContribution(contributions);
+    resolvedNonDynEntries.push({
+      name: entryName,
+      content: winner.content,
+      enabled: winner.enabled,
+    });
+  }
+
+  applyResolvedManagedEntries(nextEntries, resolvedNonDynEntries);
+
+  for (const [entryName, contributions] of desiredEntriesByName.entries()) {
+    if (!entryName.startsWith(settings.dynamic_entry_prefix)) {
+      continue;
+    }
+
+    const existing = nextEntries.find(entry => entry.name === entryName);
+    const materialized = materializeDynEntryContent(entryName, existing?.content ?? '', contributions);
+    if (materialized.skipped || materialized.content === undefined) {
+      continue;
+    }
+
+    if (existing) {
+      applyDynWriteConfigToEntry(existing, entryName, materialized.content, materialized.winner.dyn_write);
+    } else {
+      nextEntries.push(createDynEntryFromWriteConfig(entryName, materialized.content, nextEntries, materialized.winner.dyn_write));
+    }
+  }
 
   const desiredControllerByName = new Map(controllerTemplates.map(slot => [slot.entry_name, slot]));
 
@@ -146,22 +350,19 @@ export async function commitMergedPlan(
   }
 
   for (const slot of controllerTemplates) {
-    const ctrlExisting = nextEntries.find(e => e.name === slot.entry_name);
+    const ctrlExisting = nextEntries.find(entry => entry.name === slot.entry_name);
     if (ctrlExisting) {
       continue;
     }
     nextEntries.push(ensureDefaultEntry(slot.entry_name, slot.content, true, nextEntries, true));
   }
 
-  // 在一次原子操作中提交所有变更。
   await replaceWorldbook(target.worldbook_name, nextEntries, { render: 'debounced' });
 
-  // 标记楼层绑定：记录 EW/Dyn 条目、其内容快照和 Controller 快照。
   if (settings.floor_binding_enabled && messageId >= 0) {
     const dynSnapshots = collectManagedDynSnapshots(nextEntries, settings);
     const controllerSnapshots = collectManagedControllerSnapshots(nextEntries, settings);
 
-    // 读取当前消息的版本信息用于版本标识
     const targetMsg = getChatMessages(messageId)[0];
     const versionInfo = getMessageVersionInfo(targetMsg);
 

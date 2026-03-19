@@ -15,8 +15,15 @@ import {
   type SnapshotStoreOwner,
   type SnapshotVersionStore,
 } from './snapshot-storage';
-import { ControllerEntrySnapshot, EwSettings } from './types';
-import { ensureDefaultEntry, resolveTargetWorldbook } from './worldbook-runtime';
+import { ControllerEntrySnapshot, DynSnapshot, EwSettings } from './types';
+import {
+  applyDynSnapshotToEntry,
+  buildDynSnapshotFromEntry,
+  createDynEntryFromSnapshot,
+  ensureDefaultEntry,
+  normalizeDynSnapshotData,
+  resolveTargetWorldbook,
+} from './worldbook-runtime';
 
 const EW_FLOOR_DATA_KEY = 'ew_entries';
 const EW_CONTROLLER_DATA_KEY = 'ew_controller';
@@ -53,12 +60,43 @@ type SnapshotReadResult = {
   file_name?: string;
 };
 
-export type DynSnapshot = { name: string; content: string; enabled: boolean };
-
 function normalizeDynSnapshot(snapshot: DynSnapshot): DynSnapshot {
+  const normalized = normalizeDynSnapshotData(snapshot);
+  if (normalized) {
+    return normalized;
+  }
+
   return {
-    ...snapshot,
-    enabled: false,
+    name: String(snapshot?.name ?? '').trim(),
+    content: String(snapshot?.content ?? ''),
+    enabled: Boolean(snapshot?.enabled),
+    comment: '',
+    position: {
+      type: 'before_character_definition',
+      role: 'system',
+      depth: 0,
+      order: 100,
+    },
+    strategy: {
+      type: 'constant',
+      keys: [],
+      keys_secondary: { logic: 'and_any', keys: [] },
+      scan_depth: 'same_as_global',
+    },
+    probability: 100,
+    effect: {
+      sticky: null,
+      cooldown: null,
+      delay: null,
+    },
+    extra: {
+      caseSensitive: false,
+      matchWholeWords: false,
+      group: '',
+      groupOverride: false,
+      groupWeight: 100,
+      useGroupScoring: false,
+    },
   };
 }
 
@@ -1286,10 +1324,9 @@ export async function purgeAndRestoreForChat(settings: EwSettings): Promise<void
     const normalizedSnap = normalizeDynSnapshot(snap);
     const existing = nextEntries.find(e => e.name === snap.name);
     if (existing) {
-      existing.content = normalizedSnap.content;
-      existing.enabled = false;
+      applyDynSnapshotToEntry(existing, normalizedSnap);
     } else {
-      nextEntries.push(ensureDefaultEntry(normalizedSnap.name, normalizedSnap.content, false, nextEntries));
+      nextEntries.push(createDynEntryFromSnapshot(normalizedSnap, nextEntries));
     }
   }
 
@@ -1530,14 +1567,17 @@ export async function applySnapshotDiffToCurrentWorldbook(
     const existing = nextEntries.find(entry => entry.name === entryName);
     const previous = previousDynByName.get(entryName);
     if (existing) {
-      if (previous && existing.content !== previous.content && existing.content !== desired.content) {
+      if (
+        previous &&
+        JSON.stringify(normalizeDynSnapshot(previous)) !== JSON.stringify(normalizeDynSnapshot(desired)) &&
+        JSON.stringify(buildDynSnapshotFromEntry(existing)) !== JSON.stringify(normalizeDynSnapshot(desired))
+      ) {
         conflicts += 1;
         conflictNames.add(entryName);
       }
-      existing.content = desired.content;
-      existing.enabled = false;
+      applyDynSnapshotToEntry(existing, normalizeDynSnapshot(desired));
     } else {
-      nextEntries.push(ensureDefaultEntry(entryName, desired.content, false, nextEntries));
+      nextEntries.push(createDynEntryFromSnapshot(normalizeDynSnapshot(desired), nextEntries));
     }
     applied += 1;
   }
@@ -1550,7 +1590,7 @@ export async function applySnapshotDiffToCurrentWorldbook(
 
     const existing = nextEntries[index];
     const previous = previousDynByName.get(entryName);
-    if (previous && existing.content !== previous.content) {
+    if (previous && JSON.stringify(buildDynSnapshotFromEntry(existing)) !== JSON.stringify(normalizeDynSnapshot(previous))) {
       conflicts += 1;
       conflictNames.add(entryName);
     }
@@ -1615,16 +1655,16 @@ export function diffSnapshots(prev: SnapshotData | null, curr: SnapshotData | nu
   const diff: SnapshotDiff = { created: [], modified: [], deleted: [], toggled: [], controllersChanged: {} };
   if (!curr) return diff;
 
-  const prevMap = new Map<string, { content: string; enabled: boolean }>();
+  const prevMap = new Map<string, DynSnapshot>();
   if (prev) {
     for (const e of prev.dyn_entries) {
-      prevMap.set(e.name, { content: e.content, enabled: e.enabled });
+      prevMap.set(e.name, normalizeDynSnapshot(e));
     }
   }
 
-  const currMap = new Map<string, { content: string; enabled: boolean }>();
+  const currMap = new Map<string, DynSnapshot>();
   for (const e of curr.dyn_entries) {
-    currMap.set(e.name, { content: e.content, enabled: e.enabled });
+    currMap.set(e.name, normalizeDynSnapshot(e));
   }
 
   // Find created, modified, toggled
@@ -1632,10 +1672,8 @@ export function diffSnapshots(prev: SnapshotData | null, curr: SnapshotData | nu
     const prevEntry = prevMap.get(name);
     if (!prevEntry) {
       diff.created.push(name);
-    } else if (prevEntry.content !== currEntry.content) {
+    } else if (JSON.stringify(prevEntry) !== JSON.stringify(currEntry)) {
       diff.modified.push(name);
-    } else if (prevEntry.enabled !== currEntry.enabled) {
-      diff.toggled.push(name);
     }
   }
 
@@ -1743,10 +1781,9 @@ async function restoreWorldbookFromSnapshots(
     const normalizedSnap = normalizeDynSnapshot(snap);
     const existing = nextEntries.find(e => e.name === snap.name);
     if (existing) {
-      existing.content = normalizedSnap.content;
-      existing.enabled = false;
+      applyDynSnapshotToEntry(existing, normalizedSnap);
     } else {
-      nextEntries.push(ensureDefaultEntry(normalizedSnap.name, normalizedSnap.content, false, nextEntries));
+      nextEntries.push(createDynEntryFromSnapshot(normalizedSnap, nextEntries));
     }
   }
 

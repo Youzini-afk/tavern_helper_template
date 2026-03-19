@@ -1,7 +1,6 @@
 import { ControllerModel } from './contracts';
-import { checkEjsSyntax } from './ejs-internal';
 import { resolveControllerEntryNameMap } from './helpers';
-import { EwSettings, MergeInput, MergedPlan, Prioritized } from './types';
+import { EwSettings, MergeInput, MergedPlan, MergedWorldbookDesiredEntry } from './types';
 
 function comparePriority(
   lhs: { priority: number; flow_order: number },
@@ -11,19 +10,6 @@ function comparePriority(
     return rhs.priority - lhs.priority;
   }
   return lhs.flow_order - rhs.flow_order;
-}
-
-function shouldReplace<T>(current: Prioritized<T> | undefined, next: Prioritized<T>): boolean {
-  if (!current) {
-    return true;
-  }
-  if (next.priority > current.priority) {
-    return true;
-  }
-  if (next.priority < current.priority) {
-    return false;
-  }
-  return next.flow_order >= current.flow_order;
 }
 
 /**
@@ -51,6 +37,16 @@ function normalizeControllerModel(model: ControllerModel, dynPrefix: string, ctr
   };
 }
 
+function collectControllerReferencedEntries(model: ControllerModel, dynPrefix: string, ctrlPrefix: string): Set<string> {
+  return new Set(
+    _.uniq([
+      ...model.fallback_entries.map(name => normalizeEntryName(name, dynPrefix, ctrlPrefix)),
+      ...(model.activate_entries ?? []).map(entry => normalizeEntryName(entry.entry, dynPrefix, ctrlPrefix)),
+      ...model.rules.flatMap(rule => rule.include_entries.map(name => normalizeEntryName(name, dynPrefix, ctrlPrefix))),
+    ]),
+  );
+}
+
 export function mergeFlowResults(results: MergeInput, settings: EwSettings): MergedPlan {
   const sorted = [...results].sort((lhs, rhs) =>
     comparePriority(
@@ -59,11 +55,7 @@ export function mergeFlowResults(results: MergeInput, settings: EwSettings): Mer
     ),
   );
 
-  // Declarative: desired_entries (final state).
-  // remove_entries is intentionally ignored so AI cannot delete managed entries.
-  const desiredMap = new Map<string, Prioritized<{ content: string; enabled: boolean }>>();
-
-  // Multi-controller: each flow keeps its own controller_model, keyed by flow.id.
+  const desiredEntries: MergedWorldbookDesiredEntry[] = [];
   const controllerModels = new Map<string, MergedPlan['controller_models'][number]>();
   const replyParts: string[] = [];
   const diagnostics: Record<string, any> = {};
@@ -72,6 +64,12 @@ export function mergeFlowResults(results: MergeInput, settings: EwSettings): Mer
     const priority = result.flow.priority;
     const flowOrder = result.flow_order;
     const worldbookOps = result.response.operations.worldbook;
+    const normalizedControllerModel = result.response.operations.controller_model
+      ? normalizeControllerModel(result.response.operations.controller_model, settings.dynamic_entry_prefix, settings.controller_entry_prefix)
+      : undefined;
+    const referencedEntries = normalizedControllerModel
+      ? collectControllerReferencedEntries(normalizedControllerModel, settings.dynamic_entry_prefix, settings.controller_entry_prefix)
+      : new Set<string>();
 
     for (const desired of worldbookOps.desired_entries) {
       const normalizedName = normalizeEntryName(
@@ -79,14 +77,24 @@ export function mergeFlowResults(results: MergeInput, settings: EwSettings): Mer
         settings.dynamic_entry_prefix,
         settings.controller_entry_prefix,
       );
-      const next: Prioritized<{ content: string; enabled: boolean }> = {
-        value: { content: desired.content, enabled: desired.enabled },
+
+      desiredEntries.push({
+        name: normalizedName,
+        content: desired.content,
+        enabled: desired.enabled,
+        source_flow_id: result.flow.id,
+        source_flow_name: result.flow.name?.trim() || result.flow.id,
         priority,
         flow_order: flowOrder,
-      };
-      const current = desiredMap.get(normalizedName);
-      if (shouldReplace(current, next)) {
-        desiredMap.set(normalizedName, next);
+        dyn_write: result.flow.dyn_write,
+      });
+
+      if (
+        result.flow.dyn_write.activation_mode === 'worldbook_direct' &&
+        normalizedControllerModel &&
+        referencedEntries.has(normalizedName)
+      ) {
+        console.warn(`[EW Merger] potential_double_injection: flow "${result.flow.id}" references direct Dyn entry "${normalizedName}"`);
       }
     }
 
@@ -97,14 +105,14 @@ export function mergeFlowResults(results: MergeInput, settings: EwSettings): Mer
       );
     }
 
-    if (result.response.operations.controller_model) {
+    if (normalizedControllerModel) {
       const flowId = result.flow.id;
       const flowName = result.flow.name?.trim() || result.flow.id;
       controllerModels.set(flowId, {
         flow_id: flowId,
         flow_name: flowName,
         entry_name: '',
-        model: result.response.operations.controller_model,
+        model: normalizedControllerModel,
       });
     }
 
@@ -127,30 +135,9 @@ export function mergeFlowResults(results: MergeInput, settings: EwSettings): Mer
     })),
   );
 
-  const desiredEntries = [...desiredMap.entries()].map(([name, value]) => ({
-    name,
-    content: value.value.content,
-    enabled: value.value.enabled,
-  }));
-
-  // EJS syntax validation: warn (but do not block) on malformed EJS in entries.
-  for (const entry of desiredEntries) {
-    const err = checkEjsSyntax(entry.content);
-    if (err) {
-      console.warn(`[EW Merger] EJS syntax error in entry "${entry.name}":`, err);
-      try {
-        (globalThis as any).toastr?.warning(`EJS 语法错误: ${entry.name}`, 'Evolution World');
-      } catch {
-        /* noop */
-      }
-    }
-  }
-
-  // Normalize entry names inside each controller_model (add EW/Dyn/ prefix).
   const normalizedControllers = [...controllerModels.values()].map(slot => ({
     ...slot,
     entry_name: controllerEntryNameMap.get(slot.flow_id) ?? slot.entry_name,
-    model: normalizeControllerModel(slot.model, settings.dynamic_entry_prefix, settings.controller_entry_prefix),
   }));
 
   return {
