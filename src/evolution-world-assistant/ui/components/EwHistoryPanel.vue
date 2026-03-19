@@ -64,6 +64,7 @@
     :snapshot-source="selectedFloor?.source ?? 'none'"
     :matched-version-key="selectedFloor?.matched_version_key"
     :file-name="selectedFloor?.file_name"
+    :execution="selectedFloor?.execution"
     @close="modalVisible = false"
   />
 </template>
@@ -118,6 +119,29 @@ const timelineItems = computed(() => {
   return items;
 });
 
+const floorExecutionMap = computed(() => {
+  const result = new Map<
+    number,
+    {
+      execution_status?: 'executed' | 'skipped';
+      skip_reason?: string;
+      attempted_flow_ids?: string[];
+      failed_flow_ids?: string[];
+      workflow_failed?: boolean;
+    }
+  >();
+
+  for (const floor of store.floorSnapshots) {
+    const raw = (floor as unknown as { execution?: unknown }).execution;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      continue;
+    }
+    result.set(floor.messageId, raw as typeof result extends Map<any, infer V> ? V : never);
+  }
+
+  return result;
+});
+
 const resolutionMeta = {
   exact: {
     label: '精确',
@@ -144,13 +168,28 @@ const resolutionMeta = {
     title: '当前楼没有可展示快照；可能是本楼未触发、被跳过，或快照确实缺失。',
     tone: 'missing',
   },
+  skipped: {
+    label: '已跳过',
+    title: '该楼存在 after-reply 执行记录，但本轮因自动触发间隔或无匹配工作流而跳过。',
+    tone: 'skipped',
+  },
 } as const;
 
 function resolutionLabel(floor: (typeof store.floorSnapshots)[number]): string {
+  const execution = floorExecutionMap.value.get(floor.messageId);
+  if (!floor.snapshot && execution?.execution_status === 'skipped') {
+    return resolutionMeta.skipped.label;
+  }
   return resolutionMeta[floor.resolution].label;
 }
 
 function resolutionTitle(floor: (typeof store.floorSnapshots)[number]): string {
+  const execution = floorExecutionMap.value.get(floor.messageId);
+  if (!floor.snapshot && execution?.execution_status === 'skipped') {
+    const reasonText = execution.skip_reason ? `跳过原因：${execution.skip_reason}。` : '';
+    return `${resolutionMeta.skipped.title}${reasonText}`;
+  }
+
   const sourceText =
     floor.source === 'file' ? '来源：文件快照。' : floor.source === 'inline' ? '来源：消息内联快照。' : '';
   const versionText = floor.available_version_count > 0 ? `可用版本数：${floor.available_version_count}。` : '';
@@ -158,6 +197,10 @@ function resolutionTitle(floor: (typeof store.floorSnapshots)[number]): string {
 }
 
 function statusClass(floor: (typeof store.floorSnapshots)[number]): string {
+  const execution = floorExecutionMap.value.get(floor.messageId);
+  if (!floor.snapshot && execution?.execution_status === 'skipped') {
+    return `hist-block-status--${resolutionMeta.skipped.tone}`;
+  }
   return `hist-block-status--${resolutionMeta[floor.resolution].tone}`;
 }
 
@@ -275,6 +318,12 @@ function openFloor(messageId: number) {
   color: #fca5a5;
   border-color: color-mix(in srgb, #ef4444 35%, transparent);
   background: color-mix(in srgb, #ef4444 15%, transparent);
+}
+
+.hist-block-status--skipped {
+  color: #fde68a;
+  border-color: color-mix(in srgb, #f59e0b 35%, transparent);
+  background: color-mix(in srgb, #f59e0b 16%, transparent);
 }
 
 .hist-block-changes {

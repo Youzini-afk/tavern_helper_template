@@ -55,6 +55,8 @@ type FloorWorkflowExecutionState = {
   successful_results: FloorWorkflowStoredResult[];
   failed_flow_ids: string[];
   workflow_failed: boolean;
+  execution_status: 'executed' | 'skipped';
+  skip_reason?: string;
 };
 
 function buildExecutionVersionKey(state: { swipe_id?: number; content_hash?: string }): string {
@@ -470,6 +472,9 @@ function normalizeFloorWorkflowExecutionState(raw: unknown): FloorWorkflowExecut
     ? obj.attempted_flow_ids.map(value => String(value ?? '').trim()).filter(Boolean)
     : [];
 
+  const executionStatus = obj.execution_status === 'skipped' ? 'skipped' : 'executed';
+  const skipReason = typeof obj.skip_reason === 'string' ? String(obj.skip_reason).trim() : '';
+
   return {
     at: Number(obj.at ?? 0),
     request_id: String(obj.request_id ?? '').trim(),
@@ -479,6 +484,8 @@ function normalizeFloorWorkflowExecutionState(raw: unknown): FloorWorkflowExecut
     successful_results: successfulResults,
     failed_flow_ids: _.uniq(failedFlowIds),
     workflow_failed: Boolean(obj.workflow_failed),
+    execution_status: executionStatus,
+    skip_reason: skipReason || undefined,
   };
 }
 
@@ -526,7 +533,7 @@ function readFloorWorkflowExecutionMap(messageId: number): FloorWorkflowExecutio
   }
 }
 
-function readFloorWorkflowExecution(messageId: number): FloorWorkflowExecutionState | null {
+export function readFloorWorkflowExecution(messageId: number): FloorWorkflowExecutionState | null {
   const msg = getChatMessages(messageId)[0];
   if (!msg) {
     return null;
@@ -614,6 +621,7 @@ function buildFloorWorkflowExecutionState(
   workflowFailed: boolean,
   preservedResults: FloorWorkflowStoredResult[] = [],
   versionInfo?: { swipe_id?: number; content_hash?: string },
+  meta?: { execution_status?: 'executed' | 'skipped'; skip_reason?: string },
 ): FloorWorkflowExecutionState {
   const successfulResults = new Map<string, FloorWorkflowStoredResult>(
     preservedResults.map(result => [result.flow_id, result]),
@@ -650,6 +658,8 @@ function buildFloorWorkflowExecutionState(
     successful_results: [...successfulResults.values()],
     failed_flow_ids: [...failedFlowIds],
     workflow_failed: workflowFailed,
+    execution_status: meta?.execution_status ?? 'executed',
+    skip_reason: meta?.skip_reason?.trim() ? meta.skip_reason.trim() : undefined,
   };
 }
 
@@ -1245,7 +1255,7 @@ async function executeWorkflowWithPolicy(
       collectSuccessfulDispatchResultsFromAttempts(nextResult.attempts),
     );
 
-    if (options.trigger.timing === 'after_reply' && !nextResult.skipped) {
+    if (options.trigger.timing === 'after_reply') {
       const assistantMessageId = options.trigger.assistant_message_id ?? options.messageId;
       const assistantMsg = getChatMessages(assistantMessageId)[0];
       const versionInfo = assistantMsg ? getMessageVersionInfo(assistantMsg) : undefined;
@@ -1255,11 +1265,17 @@ async function executeWorkflowWithPolicy(
         !nextResult.ok,
         currentPreservedStoredResults,
         versionInfo,
+        {
+          execution_status: nextResult.skipped ? 'skipped' : 'executed',
+          skip_reason: nextResult.skipped ? nextResult.reason : undefined,
+        },
       );
       await writeFloorWorkflowExecution(assistantMessageId, executionState);
       lastAfterReplyExecutionState = executionState;
-      currentPreservedStoredResults = executionState.successful_results;
-      currentPreservedDispatchResults = await buildPreservedDispatchResults(settings, currentPreservedStoredResults);
+      if (!nextResult.skipped) {
+        currentPreservedStoredResults = executionState.successful_results;
+        currentPreservedDispatchResults = await buildPreservedDispatchResults(settings, currentPreservedStoredResults);
+      }
     }
 
     return nextResult;

@@ -5,6 +5,7 @@ import {
   writeCharFlowDraft,
   writeCharFlows,
 } from '../runtime/char-flows';
+import { readFloorWorkflowExecution } from '../runtime/events';
 import { createDefaultApiPreset, createDefaultFlow } from '../runtime/factory';
 import {
   collectAllFloorSnapshots,
@@ -887,7 +888,22 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   async function loadFloorSnapshots() {
     busy.value = true;
     try {
-      floorSnapshots.value = await collectAllFloorSnapshots();
+      const floors = await collectAllFloorSnapshots();
+      floorSnapshots.value = floors.map(floor => {
+        const execution = readFloorWorkflowExecution(floor.messageId);
+        return {
+          ...floor,
+          execution: execution
+            ? {
+                execution_status: execution.execution_status,
+                skip_reason: execution.skip_reason,
+                attempted_flow_ids: [...execution.attempted_flow_ids],
+                failed_flow_ids: [...execution.failed_flow_ids],
+                workflow_failed: execution.workflow_failed,
+              }
+            : undefined,
+        } satisfies FloorSnapshot;
+      });
       showEwNotice({ title: '历史', message: `已加载 ${floorSnapshots.value.length} 个楼层`, level: 'success' });
     } catch (e) {
       console.error('[Evolution World] loadFloorSnapshots failed:', e);

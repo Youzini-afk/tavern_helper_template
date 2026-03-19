@@ -63,6 +63,19 @@
               <div class="hist-meta-row">
                 <strong>可用版本数：</strong><span>{{ availableVersionCount }}</span>
               </div>
+              <div v-if="execution" class="hist-meta-row">
+                <strong>执行状态：</strong>
+                <span>{{ execution.execution_status === 'skipped' ? '已跳过' : '已执行' }}</span>
+              </div>
+              <div v-if="execution?.skip_reason" class="hist-meta-row">
+                <strong>跳过原因：</strong><span>{{ execution.skip_reason }}</span>
+              </div>
+              <div v-if="execution" class="hist-meta-row">
+                <strong>尝试工作流：</strong><span>{{ execution.attempted_flow_ids.length }}</span>
+              </div>
+              <div v-if="execution" class="hist-meta-row">
+                <strong>失败工作流：</strong><span>{{ execution.failed_flow_ids.length }}</span>
+              </div>
               <div v-if="matchedVersionKey" class="hist-meta-row">
                 <strong>展示版本键：</strong><code>{{ matchedVersionKey }}</code>
               </div>
@@ -182,6 +195,13 @@ const props = defineProps<{
   snapshotSource: 'file' | 'inline' | 'none';
   matchedVersionKey?: string;
   fileName?: string;
+  execution?: {
+    execution_status: 'executed' | 'skipped';
+    skip_reason?: string;
+    attempted_flow_ids: string[];
+    failed_flow_ids: string[];
+    workflow_failed: boolean;
+  };
 }>();
 
 defineEmits<{
@@ -198,6 +218,10 @@ const diff = computed<SnapshotDiff | null>(() => {
 });
 
 const resolutionSummary = computed(() => {
+  if (!props.snapshot && props.execution?.execution_status === 'skipped') {
+    return '该楼存在 after-reply 执行记录，但本轮被跳过，因此没有生成新的楼层快照。';
+  }
+
   switch (props.resolution) {
     case 'exact':
       return '当前可见版本已精确命中该楼快照。';

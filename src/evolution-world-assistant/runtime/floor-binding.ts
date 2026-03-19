@@ -842,6 +842,13 @@ export type FloorSnapshot = {
   source: 'file' | 'inline' | 'none';
   matched_version_key?: string;
   file_name?: string;
+  execution?: {
+    execution_status: 'executed' | 'skipped';
+    skip_reason?: string;
+    attempted_flow_ids: string[];
+    failed_flow_ids: string[];
+    workflow_failed: boolean;
+  };
 };
 
 export type SnapshotDiff = {
