@@ -539,8 +539,16 @@
         <div v-else class="ew-flow-card__deferred-placeholder">正在加载请求模板编辑器…</div>
 
         <section class="ew-flow-card__section ew-flow-card__section--deferred">
-          <h4>Dyn 写入配置</h4>
-          <template v-if="deferredPostReady">
+          <div class="ew-flow-card__section-head">
+            <h4>Dyn 写入配置</h4>
+            <button type="button" class="ew-flow-card__mini-toggle" @click="toggleDynWriteOpen">
+              {{ dynWriteOpen ? '收起' : '展开' }}
+            </button>
+          </div>
+          <p class="ew-flow-card__hint-text">
+            当前：{{ dynWriteModeLabel }} / {{ dynActivationModeLabel }}
+          </p>
+          <template v-if="dynWriteOpen && deferredPostReady">
             <div class="ew-grid ew-grid--two">
               <EwFieldRow label="写入模式" :help="help('flow.dyn_write.mode')">
                 <select :value="flow.dyn_write.mode" @change="setDynWriteMode">
@@ -781,7 +789,7 @@
               </div>
             </div>
           </template>
-          <div v-else class="ew-flow-card__deferred-placeholder">正在加载 Dyn 写入配置编辑器…</div>
+          <div v-else-if="dynWriteOpen" class="ew-flow-card__deferred-placeholder">正在加载 Dyn 写入配置编辑器…</div>
         </section>
 
         <section class="ew-flow-card__section ew-flow-card__section--deferred">
@@ -1036,6 +1044,19 @@ const floorIntervalLabel = computed(() => {
   const interval = Math.max(1, Math.trunc(Number(flow.value.run_every_n_floors ?? 1) || 1));
   return interval <= 1 ? '每个对应楼层都会自动执行' : `每 ${interval} 个对应楼层自动执行一次`;
 });
+const dynWriteOpen = ref(false);
+const dynWriteModeLabel = computed(() => {
+  if (flow.value.dyn_write.mode === 'add') {
+    return '只增写入';
+  }
+  if (flow.value.dyn_write.mode === 'add_remove') {
+    return '增减同步';
+  }
+  return '覆盖写入';
+});
+const dynActivationModeLabel = computed(() => {
+  return flow.value.dyn_write.activation_mode === 'worldbook_direct' ? '直接世界书激活' : '控制器仓库';
+});
 const dynPositionTypeOptions = computed(() => {
   const defaults = [
     { value: 'before_character_definition', label: '放在角色设定前（最常用）' },
@@ -1058,6 +1079,9 @@ const dynPositionTypeOptions = computed(() => {
 
 function help(key: string) {
   return getFieldHelp(key);
+}
+function toggleDynWriteOpen() {
+  dynWriteOpen.value = !dynWriteOpen.value;
 }
 function patch(partial: Partial<EwFlowConfig>) {
   emit('update:modelValue', { ...flow.value, ...partial });
@@ -1514,6 +1538,31 @@ function openRegexPreview() {
   border-color: var(--ew-danger);
   color: #fff;
   box-shadow: 0 4px 12px color-mix(in srgb, var(--ew-danger) 30%, transparent);
+}
+
+.ew-flow-card__mini-toggle {
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 36%, transparent);
+  background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7f92ab) 14%, transparent);
+  color: color-mix(in srgb, var(--SmartThemeBodyColor, #edf2f9) 86%, transparent);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.28rem 0.72rem;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.ew-flow-card__mini-toggle:hover,
+.ew-flow-card__mini-toggle:focus-visible {
+  outline: none;
+  border-color: var(--ew-accent);
+  background: color-mix(in srgb, var(--ew-accent) 24%, transparent);
+  color: #fff;
+  transform: translateY(-1px);
 }
 
 .ew-flow-card__body {
