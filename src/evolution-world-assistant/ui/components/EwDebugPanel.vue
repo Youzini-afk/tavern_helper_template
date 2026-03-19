@@ -419,8 +419,15 @@ function formatFailureKind(kind: string): string {
 
 function getCurrentChatIdSafe(): string {
   try {
-    const runtime = globalThis as Record<string, any>;
-    const sillyTavern = runtime.SillyTavern;
+    let runtime = globalThis as Record<string, any>;
+    try {
+      if (window.parent && window.parent !== window) {
+        runtime = window.parent as unknown as Record<string, any>;
+      }
+    } catch {
+      // ignore
+    }
+    const sillyTavern = runtime.SillyTavern ?? (globalThis as Record<string, any>).SillyTavern;
     return String(sillyTavern?.getCurrentChatId?.() ?? sillyTavern?.chatId ?? '').trim();
   } catch {
     return '';

@@ -76,9 +76,23 @@ export const useEwStore = defineStore('evolution-world-store', () => {
   let persistTimeoutId: number | null = null;
   let persistIdleId: number | null = null;
 
+  function getHostRuntime(): Record<string, any> {
+    try {
+      if (window.parent && window.parent !== window) {
+        return window.parent as unknown as Record<string, any>;
+      }
+    } catch {
+      // ignore
+    }
+
+    return window as unknown as Record<string, any>;
+  }
+
   function getCurrentChatIdSafe(): string {
     try {
-      return String(SillyTavern?.getCurrentChatId?.() ?? (SillyTavern as any)?.chatId ?? '').trim();
+      const hostRuntime = getHostRuntime();
+      const sillyTavern = hostRuntime.SillyTavern ?? (globalThis as Record<string, any>).SillyTavern;
+      return String(sillyTavern?.getCurrentChatId?.() ?? sillyTavern?.chatId ?? '').trim();
     } catch {
       return '';
     }
@@ -232,7 +246,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
       scheduleCharFlowRefreshWatch();
 
       if (uiOpen && tab === 'debug' && (!prevUiOpen || prevTab !== 'debug')) {
-        refreshDebugRecords();
+        refreshDebugRecords({ silent: true });
       }
 
       if (!uiOpen || tab !== 'flows' || scope !== 'character') {
@@ -246,10 +260,30 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     { immediate: true },
   );
 
-  function refreshDebugRecords() {
+  function refreshDebugRecords(options: { silent?: boolean } = {}) {
     const currentChatId = getCurrentChatIdSafe();
-    lastRun.value = currentChatId ? loadLastRunForChat(currentChatId) : loadLastRun();
-    lastIo.value = currentChatId ? loadLastIoForChat(currentChatId) : loadLastIo();
+    const nextRun = currentChatId ? loadLastRunForChat(currentChatId) : loadLastRun();
+    const nextIo = currentChatId ? loadLastIoForChat(currentChatId) : loadLastIo();
+
+    lastRun.value = nextRun;
+    lastIo.value = nextIo;
+
+    if (options.silent) {
+      return;
+    }
+
+    showEwNotice({
+      title: '调试',
+      message:
+        nextRun || nextIo
+          ? currentChatId
+            ? '已刷新当前聊天的调试记录'
+            : '已刷新调试记录'
+          : currentChatId
+            ? '当前聊天暂无调试记录'
+            : '暂无可用调试记录',
+      level: 'info',
+    });
   }
 
   function addApiPreset() {
