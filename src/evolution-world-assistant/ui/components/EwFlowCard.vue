@@ -612,12 +612,11 @@
               <h5>注入位置</h5>
               <div class="ew-grid ew-grid--two">
                 <EwFieldRow label="位置代码" :help="help('flow.dyn_write.profile.position.type')">
-                  <input
-                    :value="flow.dyn_write.profile.position.type"
-                    type="text"
-                    placeholder="例如：before_character_definition"
-                    @input="setDynPositionType"
-                  />
+                  <select :value="flow.dyn_write.profile.position.type" @change="setDynPositionType">
+                    <option v-for="option in dynPositionTypeOptions" :key="option.value" :value="option.value">
+                      {{ option.label }}
+                    </option>
+                  </select>
                 </EwFieldRow>
                 <EwFieldRow label="注入身份" :help="help('flow.dyn_write.profile.position.role')">
                   <select :value="flow.dyn_write.profile.position.role" @change="setDynPositionRole">
@@ -1036,6 +1035,25 @@ const presetLabel = computed(() => selectedPreset.value?.name?.trim() || '未绑
 const floorIntervalLabel = computed(() => {
   const interval = Math.max(1, Math.trunc(Number(flow.value.run_every_n_floors ?? 1) || 1));
   return interval <= 1 ? '每个对应楼层都会自动执行' : `每 ${interval} 个对应楼层自动执行一次`;
+});
+const dynPositionTypeOptions = computed(() => {
+  const defaults = [
+    { value: 'before_character_definition', label: '放在角色设定前（最常用）' },
+    { value: 'after_character_definition', label: '放在角色设定后' },
+    { value: 'before_example_messages', label: '放在示例对话前' },
+    { value: 'after_example_messages', label: '放在示例对话后' },
+    { value: 'before_author_note', label: '放在作者注前' },
+    { value: 'after_author_note', label: '放在作者注后' },
+    { value: 'at_depth', label: '按聊天深度插入' },
+    { value: 'at_depth_as_system', label: '按聊天深度插入（系统身份）' },
+    { value: 'at_depth_as_assistant', label: '按聊天深度插入（助手身份）' },
+    { value: 'at_depth_as_user', label: '按聊天深度插入（用户身份）' },
+  ];
+  const current = String(flow.value.dyn_write.profile.position.type ?? '').trim();
+  if (!current || defaults.some(option => option.value === current)) {
+    return defaults;
+  }
+  return [{ value: current, label: `当前自定义值：${current}` }, ...defaults];
 });
 
 function help(key: string) {

@@ -301,8 +301,9 @@ const FIELD_HELP_LIST: FieldHelpMeta[] = [
   {
     key: 'flow.dyn_write.profile.position.type',
     label: '位置类型',
-    shortHelp: '条目要插在提示词链路的哪个位置。',
-    detailHelp: '这里填写酒馆世界书的位置代码。常见值是 `before_character_definition`，也就是插在角色卡定义前。',
+    shortHelp: '决定这条 Dyn 大致插在提示词的哪个位置。',
+    detailHelp:
+      '最常用的是“放在角色设定前”，也就是在角色卡正文前面插入。其余选项主要用于插到示例对话附近、作者注附近，或按聊天深度塞进历史里。',
   },
   {
     key: 'flow.dyn_write.profile.position.role',
