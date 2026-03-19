@@ -102,8 +102,8 @@ export const FlowRequestSchema = z.object({
         n_candidates: z.number().int().min(1).default(1),
         stream: z.boolean().default(true),
         temperature: z.number().min(0).max(2).default(1.2),
-        frequency_penalty: z.number().min(0).max(2).default(0.85),
-        presence_penalty: z.number().min(0).max(2).default(0.5),
+        frequency_penalty: z.number().min(0).max(2).default(0),
+        presence_penalty: z.number().min(0).max(2).default(0),
         top_p: z.number().min(0).max(1).default(0.92),
       })
       .prefault({}),

@@ -34,8 +34,8 @@ export function createDefaultFlow(index: number, apiPresetId: string): EwFlowCon
       n_candidates: 1,
       stream: true,
       temperature: 1.2,
-      frequency_penalty: 0.85,
-      presence_penalty: 0.5,
+      frequency_penalty: 0,
+      presence_penalty: 0,
       top_p: 0.92,
     },
     behavior_options: {

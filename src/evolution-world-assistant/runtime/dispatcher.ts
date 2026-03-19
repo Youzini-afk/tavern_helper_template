@@ -326,6 +326,47 @@ function resolveCurrentChatCompletionModel(context: Record<string, any> | undefi
   return String(modelBySource[source] ?? '').trim();
 }
 
+function normalizePenaltyNumber(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Number(Math.max(0, Math.min(2, value)).toFixed(4));
+}
+
+function buildChatCompletionPenaltyFields(flow: EwFlowConfig): {
+  frequency_penalty?: number;
+  presence_penalty?: number;
+} {
+  const frequencyPenalty = normalizePenaltyNumber(flow.generation_options.frequency_penalty);
+  const presencePenalty = normalizePenaltyNumber(flow.generation_options.presence_penalty);
+  const fields: {
+    frequency_penalty?: number;
+    presence_penalty?: number;
+  } = {};
+
+  if (frequencyPenalty > 0) {
+    fields.frequency_penalty = frequencyPenalty;
+  }
+  if (presencePenalty > 0) {
+    fields.presence_penalty = presencePenalty;
+  }
+
+  return fields;
+}
+
+function buildGenerateRawPenaltyFields(flow: EwFlowConfig): {
+  frequency_penalty: 'unset' | number;
+  presence_penalty: 'unset' | number;
+} {
+  const frequencyPenalty = normalizePenaltyNumber(flow.generation_options.frequency_penalty);
+  const presencePenalty = normalizePenaltyNumber(flow.generation_options.presence_penalty);
+
+  return {
+    frequency_penalty: frequencyPenalty > 0 ? frequencyPenalty : 'unset',
+    presence_penalty: presencePenalty > 0 ? presencePenalty : 'unset',
+  };
+}
+
 function buildMainApiStBackendRequestBody(
   flow: EwFlowConfig,
   orderedPrompts: Array<{ role: 'system' | 'assistant' | 'user'; content: string }>,
@@ -354,8 +395,7 @@ function buildMainApiStBackendRequestBody(
     max_tokens: flow.generation_options.max_reply_tokens,
     temperature: flow.generation_options.temperature,
     top_p: flow.generation_options.top_p,
-    frequency_penalty: flow.generation_options.frequency_penalty,
-    presence_penalty: flow.generation_options.presence_penalty,
+    ...buildChatCompletionPenaltyFields(flow),
     stream: flow.generation_options.stream,
     chat_completion_source: String(chatSettings.chat_completion_source ?? 'openai'),
     group_names: [],
@@ -390,8 +430,7 @@ function buildCustomStBackendRequestBody(
     max_tokens: flow.generation_options.max_reply_tokens,
     temperature: flow.generation_options.temperature,
     top_p: flow.generation_options.top_p,
-    frequency_penalty: flow.generation_options.frequency_penalty,
-    presence_penalty: flow.generation_options.presence_penalty,
+    ...buildChatCompletionPenaltyFields(flow),
     stream: flow.generation_options.stream,
     chat_completion_source: 'custom',
     group_names: [],
@@ -670,8 +709,7 @@ function buildGenerateRawCustomApi(
     source: apiPreset.api_source?.trim() || 'openai',
     max_tokens: flow.generation_options.max_reply_tokens,
     temperature: flow.generation_options.temperature,
-    frequency_penalty: flow.generation_options.frequency_penalty,
-    presence_penalty: flow.generation_options.presence_penalty,
+    ...buildGenerateRawPenaltyFields(flow),
     top_p: flow.generation_options.top_p,
   };
 }
