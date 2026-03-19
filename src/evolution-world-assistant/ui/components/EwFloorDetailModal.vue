@@ -61,6 +61,15 @@
                 <strong>快照来源：</strong><span>{{ sourceSummary }}</span>
               </div>
               <div class="hist-meta-row">
+                <strong>楼层角色：</strong><span>{{ roleSummary }}</span>
+              </div>
+              <div class="hist-meta-row">
+                <strong>楼层语义：</strong><span>{{ anchorSummary }}</span>
+              </div>
+              <div v-if="pairedMessageId !== undefined && pairedMessageId !== null" class="hist-meta-row">
+                <strong>关联楼层：</strong><span>#{{ pairedMessageId }}</span>
+              </div>
+              <div class="hist-meta-row">
                 <strong>可用版本数：</strong><span>{{ availableVersionCount }}</span>
               </div>
               <div v-if="execution" class="hist-meta-row">
@@ -202,6 +211,9 @@ const props = defineProps<{
     failed_flow_ids: string[];
     workflow_failed: boolean;
   };
+  anchorKind?: 'assistant_anchor' | 'source_user' | 'legacy_user_anchor' | 'normal';
+  pairedMessageId?: number;
+  messageRole?: 'assistant' | 'user' | 'other';
 }>();
 
 defineEmits<{
@@ -245,6 +257,29 @@ const sourceSummary = computed(() => {
       return '消息内联快照';
     default:
       return '无';
+  }
+});
+
+const roleSummary = computed(() => {
+  if (props.messageRole === 'assistant') {
+    return 'AI 回复楼';
+  }
+  if (props.messageRole === 'user') {
+    return '用户输入楼';
+  }
+  return '其他';
+});
+
+const anchorSummary = computed(() => {
+  switch (props.anchorKind) {
+    case 'assistant_anchor':
+      return '主快照锚点（AI楼）';
+    case 'source_user':
+      return '拦截源楼（非主锚点）';
+    case 'legacy_user_anchor':
+      return '旧版 user 锚点（兼容展示）';
+    default:
+      return '普通楼层';
   }
 });
 

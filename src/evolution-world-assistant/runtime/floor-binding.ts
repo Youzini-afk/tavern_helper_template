@@ -20,6 +20,7 @@ const EW_SNAPSHOT_FILE_KEY = 'ew_snapshot_file';
 const EW_SWIPE_ID_KEY = 'ew_snapshot_swipe_id';
 const EW_CONTENT_HASH_KEY = 'ew_snapshot_content_hash';
 const EW_INLINE_SNAPSHOT_VERSIONS_KEY = 'ew_snapshot_versions';
+const EW_FLOOR_WORKFLOW_EXECUTION_KEY = 'ew_workflow_execution';
 
 export type FloorSnapshotReadResolution =
   | 'exact'
@@ -139,6 +140,19 @@ function shouldReactToVisibleVersionMutation(messageId: number): boolean {
   return prevVersionKey !== nextVersionKey;
 }
 
+function hasSnapshotMetadataHints(msg: any): boolean {
+  const data = (msg?.data ?? {}) as Record<string, unknown>;
+  return Boolean(
+    data[EW_SNAPSHOT_FILE_KEY] ||
+    data[EW_INLINE_SNAPSHOT_VERSIONS_KEY] ||
+    data[EW_CONTROLLER_DATA_KEY] ||
+    data[EW_CONTROLLERS_DATA_KEY] ||
+    data[EW_DYN_SNAPSHOTS_KEY] ||
+    data[EW_SWIPE_ID_KEY] !== undefined ||
+    data[EW_CONTENT_HASH_KEY],
+  );
+}
+
 function getMessageSnapshotFileCandidates(msg: any): string[] {
   const candidates: string[] = [];
   const explicit = _.get(msg.data, EW_SNAPSHOT_FILE_KEY);
@@ -147,7 +161,7 @@ function getMessageSnapshotFileCandidates(msg: any): string[] {
   }
 
   const messageId = Number(msg?.message_id);
-  if (Number.isFinite(messageId) && messageId >= 0) {
+  if (hasSnapshotMetadataHints(msg) && Number.isFinite(messageId) && messageId >= 0) {
     const inferred = buildFileName(getCharName(), getChatId(), messageId);
     if (inferred && !candidates.includes(inferred)) {
       candidates.push(inferred);
@@ -345,6 +359,100 @@ export async function pinMessageSnapshotToCurrentVersion(messageId: number): Pro
   observedMessageVersionKeys.set(messageId, currentVersionKey);
   await setChatMessages([{ message_id: messageId, data: nextData }], { refresh: 'none' });
   return true;
+}
+
+export type FloorSnapshotRebindResult = {
+  migrated: boolean;
+  source_message_id: number;
+  target_message_id: number;
+  source_version_key?: string;
+  target_version_key?: string;
+  reason?: string;
+};
+
+/**
+ * Rebind one floor's snapshot payload from source message to target message.
+ *
+ * This is used by before_reply interception:
+ * - source: user floor (where before_reply commit originally landed)
+ * - target: assistant floor (the final UX anchor for history / reroll)
+ *
+ * Behavior:
+ * - copies only the resolved source snapshot payload to target current version
+ * - removes only the matched source-version binding from source floor
+ * - does not perform destructive full-floor cleanup
+ */
+export async function rebindFloorSnapshotToMessage(
+  settings: EwSettings,
+  sourceMessageId: number,
+  targetMessageId: number,
+): Promise<FloorSnapshotRebindResult> {
+  if (sourceMessageId === targetMessageId) {
+    return {
+      migrated: false,
+      source_message_id: sourceMessageId,
+      target_message_id: targetMessageId,
+      reason: 'same_message',
+    };
+  }
+
+  const sourceMsg = getChatMessages(sourceMessageId)[0];
+  const targetMsg = getChatMessages(targetMessageId)[0];
+  if (!sourceMsg || !targetMsg) {
+    return {
+      migrated: false,
+      source_message_id: sourceMessageId,
+      target_message_id: targetMessageId,
+      reason: 'message_not_found',
+    };
+  }
+
+  const sourceVersionInfo = getMessageVersionInfo(sourceMsg);
+  const targetVersionInfo = getMessageVersionInfo(targetMsg);
+  const sourceReadResult = await readSnapshotForMessageDetailed(sourceMsg, 'strict');
+  if (!sourceReadResult.snapshot) {
+    return {
+      migrated: false,
+      source_message_id: sourceMessageId,
+      target_message_id: targetMessageId,
+      source_version_key: sourceVersionInfo.version_key,
+      target_version_key: targetVersionInfo.version_key,
+      reason: 'source_snapshot_missing',
+    };
+  }
+
+  const sourceSnapshot = sourceReadResult.snapshot;
+  const dynSnapshots = sourceSnapshot.dyn_entries
+    .filter(snapshot => snapshot.name && typeof snapshot.content === 'string')
+    .map(normalizeDynSnapshot);
+  const controllerSnapshots = sourceSnapshot.controllers.map(normalizeControllerSnapshot).filter(entry => entry.content);
+
+  await markFloorEntries(
+    settings,
+    targetMessageId,
+    dynSnapshots.map(entry => entry.name),
+    controllerSnapshots,
+    dynSnapshots,
+    targetVersionInfo.swipe_id,
+    targetVersionInfo.content_hash,
+  );
+
+  const cleanupSwipeId =
+    typeof sourceSnapshot.swipe_id === 'number' ? sourceSnapshot.swipe_id : Number(sourceVersionInfo.swipe_id ?? 0);
+  const cleanupContentHash =
+    typeof sourceSnapshot.content_hash === 'string'
+      ? sourceSnapshot.content_hash
+      : String(sourceVersionInfo.content_hash ?? '');
+
+  await markFloorEntries(settings, sourceMessageId, [], [], [], cleanupSwipeId, cleanupContentHash);
+
+  return {
+    migrated: true,
+    source_message_id: sourceMessageId,
+    target_message_id: targetMessageId,
+    source_version_key: sourceReadResult.matched_version_key ?? sourceVersionInfo.version_key,
+    target_version_key: targetVersionInfo.version_key,
+  };
 }
 
 // ── Legacy upgrade helpers ───────────────────────────────────

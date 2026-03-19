@@ -5,6 +5,7 @@ import {
   disposeFloorBindingEvents,
   initFloorBindingEvents,
   pinMessageSnapshotToCurrentVersion,
+  rebindFloorSnapshotToMessage,
   rollbackBeforeFloor,
 } from './floor-binding';
 import { getMessageVersionInfo, simpleHash } from './helpers';
@@ -13,7 +14,10 @@ import { markIntercepted, resetInterceptGuard, wasRecentlyIntercepted } from './
 import { runWorkflow, type RunWorkflowOutput } from './pipeline';
 import { getSettings, patchSettings } from './settings';
 import {
+  clearBeforeReplyBindingPending,
   clearAfterReplyPendingIfMatches,
+  markBeforeReplyBindingMigrated,
+  pruneExpiredBeforeReplyBindingPending,
   clearSendContextIfMatches,
   getRuntimeState,
   isQuietLike,
@@ -21,6 +25,7 @@ import {
   recordGeneration,
   recordUserSend,
   recordUserSendIntent,
+  setBeforeReplyBindingPending,
   resetRuntimeState,
   setProcessing,
   shouldHandleAfterReply,
@@ -36,6 +41,7 @@ import {
 } from './types';
 
 const EW_FLOOR_WORKFLOW_EXECUTION_KEY = 'ew_workflow_execution';
+const EW_BEFORE_REPLY_BINDING_KEY = 'ew_before_reply_binding';
 
 type FloorWorkflowStoredResult = {
   flow_id: string;
@@ -57,6 +63,13 @@ type FloorWorkflowExecutionState = {
   workflow_failed: boolean;
   execution_status: 'executed' | 'skipped';
   skip_reason?: string;
+};
+
+type BeforeReplyBindingMigrationResult = {
+  migrated: boolean;
+  snapshot_migrated: boolean;
+  execution_migrated: boolean;
+  reason?: string;
 };
 
 function buildExecutionVersionKey(state: { swipe_id?: number; content_hash?: string }): string {
@@ -92,6 +105,10 @@ let workflowTaskDrainPromise: Promise<void> | null = null;
 /** Time-windowed dedup: prevents onAfterReplyMessage re-triggering within MIN_AFTER_REPLY_INTERVAL_MS */
 const lastAfterReplyTriggerByChatKey = new Map<string, number>();
 const MIN_AFTER_REPLY_INTERVAL_MS = 3000;
+
+function resolveAfterReplyContextWindowMs(settings: EwSettings): number {
+  return Math.max(settings.total_timeout_ms + 10000, settings.gate_ttl_ms, 600000);
+}
 
 function getHostWindow(): Window & typeof globalThis {
   try {
@@ -613,6 +630,200 @@ async function pinFloorWorkflowExecutionToCurrentVersion(
 
   await setChatMessages([{ message_id: messageId, data: nextData }], { refresh: 'none' });
   return true;
+}
+
+function resolveExecutionStateForVersion(
+  map: FloorWorkflowExecutionVersionedMap,
+  versionKey: string,
+): { key: string; state: FloorWorkflowExecutionState } | null {
+  const exact = map[versionKey];
+  if (exact) {
+    return { key: versionKey, state: exact };
+  }
+
+  const entries = Object.entries(map) as Array<[string, FloorWorkflowExecutionState]>;
+  if (entries.length === 1) {
+    const [key, state] = entries[0];
+    return { key, state };
+  }
+
+  return null;
+}
+
+async function migrateFloorWorkflowExecutionToAssistant(
+  sourceMessageId: number,
+  assistantMessageId: number,
+): Promise<{ migrated: boolean; reason?: string }> {
+  if (sourceMessageId === assistantMessageId) {
+    return { migrated: false, reason: 'same_message' };
+  }
+
+  const sourceMsg = getChatMessages(sourceMessageId)[0];
+  const assistantMsg = getChatMessages(assistantMessageId)[0];
+  if (!sourceMsg || !assistantMsg) {
+    return { migrated: false, reason: 'message_not_found' };
+  }
+
+  const sourceVersionInfo = getMessageVersionInfo(sourceMsg);
+  const assistantVersionInfo = getMessageVersionInfo(assistantMsg);
+  const sourceMap = readFloorWorkflowExecutionMap(sourceMessageId);
+  const sourceResolved = resolveExecutionStateForVersion(sourceMap, buildExecutionVersionKey(sourceVersionInfo));
+  if (!sourceResolved) {
+    return { migrated: false, reason: 'source_execution_missing' };
+  }
+
+  const sourceNextMap = { ...sourceMap };
+  const assistantMap = readFloorWorkflowExecutionMap(assistantMessageId);
+  const assistantNextMap = { ...assistantMap };
+  const assistantVersionKey = buildExecutionVersionKey(assistantVersionInfo);
+  let mutated = false;
+
+  if (!assistantNextMap[assistantVersionKey]) {
+    assistantNextMap[assistantVersionKey] = {
+      ...sourceResolved.state,
+      swipe_id: assistantVersionInfo.swipe_id,
+      content_hash: assistantVersionInfo.content_hash,
+    };
+    mutated = true;
+  }
+
+  if (sourceNextMap[sourceResolved.key]) {
+    delete sourceNextMap[sourceResolved.key];
+    mutated = true;
+  }
+
+  if (!mutated) {
+    return { migrated: false, reason: 'already_migrated' };
+  }
+
+  const sourceNextData: Record<string, unknown> = {
+    ...(sourceMsg.data ?? {}),
+  };
+  if (Object.keys(sourceNextMap).length > 0) {
+    sourceNextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY] = sourceNextMap;
+  } else {
+    delete sourceNextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY];
+  }
+
+  const assistantNextData: Record<string, unknown> = {
+    ...(assistantMsg.data ?? {}),
+    [EW_FLOOR_WORKFLOW_EXECUTION_KEY]: assistantNextMap,
+  };
+
+  await setChatMessages(
+    [
+      { message_id: sourceMessageId, data: sourceNextData },
+      { message_id: assistantMessageId, data: assistantNextData },
+    ],
+    { refresh: 'none' },
+  );
+
+  return { migrated: true };
+}
+
+async function writeBeforeReplyBindingMeta(
+  sourceMessageId: number,
+  assistantMessageId: number,
+  requestId: string,
+): Promise<void> {
+  const sourceMsg = getChatMessages(sourceMessageId)[0];
+  const assistantMsg = getChatMessages(assistantMessageId)[0];
+  if (!sourceMsg || !assistantMsg) {
+    return;
+  }
+
+  const migratedAt = Date.now();
+  const sourceData: Record<string, unknown> = {
+    ...(sourceMsg.data ?? {}),
+    [EW_BEFORE_REPLY_BINDING_KEY]: {
+      role: 'source',
+      paired_message_id: assistantMessageId,
+      request_id: requestId,
+      migrated_at: migratedAt,
+    },
+  };
+  const assistantData: Record<string, unknown> = {
+    ...(assistantMsg.data ?? {}),
+    [EW_BEFORE_REPLY_BINDING_KEY]: {
+      role: 'assistant_anchor',
+      paired_message_id: sourceMessageId,
+      request_id: requestId,
+      migrated_at: migratedAt,
+    },
+  };
+
+  await setChatMessages(
+    [
+      { message_id: sourceMessageId, data: sourceData },
+      { message_id: assistantMessageId, data: assistantData },
+    ],
+    { refresh: 'none' },
+  );
+}
+
+async function migrateBeforeReplyBindingToAssistant(
+  settings: EwSettings,
+  assistantMessageId: number,
+  pendingUserMessageId: number | null,
+): Promise<BeforeReplyBindingMigrationResult> {
+  const pending = pruneExpiredBeforeReplyBindingPending();
+  if (!pending) {
+    return {
+      migrated: false,
+      snapshot_migrated: false,
+      execution_migrated: false,
+      reason: 'pending_missing_or_expired',
+    };
+  }
+
+  if (pending.migrated) {
+    return {
+      migrated: false,
+      snapshot_migrated: false,
+      execution_migrated: false,
+      reason: 'already_migrated',
+    };
+  }
+
+  if (!Number.isFinite(pendingUserMessageId) || pending.user_message_id !== pendingUserMessageId) {
+    return {
+      migrated: false,
+      snapshot_migrated: false,
+      execution_migrated: false,
+      reason: 'user_floor_mismatch',
+    };
+  }
+
+  if (!Number.isFinite(pending.source_message_id) || pending.source_message_id < 0) {
+    clearBeforeReplyBindingPending();
+    return {
+      migrated: false,
+      snapshot_migrated: false,
+      execution_migrated: false,
+      reason: 'invalid_source_floor',
+    };
+  }
+
+  const snapshotMove = await rebindFloorSnapshotToMessage(settings, pending.source_message_id, assistantMessageId);
+  const executionMove = await migrateFloorWorkflowExecutionToAssistant(pending.source_message_id, assistantMessageId);
+  const migrated = snapshotMove.migrated || executionMove.migrated;
+
+  if (migrated) {
+    await writeBeforeReplyBindingMeta(pending.source_message_id, assistantMessageId, pending.request_id);
+    markBeforeReplyBindingMigrated(assistantMessageId);
+    return {
+      migrated: true,
+      snapshot_migrated: snapshotMove.migrated,
+      execution_migrated: executionMove.migrated,
+    };
+  }
+
+  return {
+    migrated: false,
+    snapshot_migrated: false,
+    execution_migrated: false,
+    reason: `snapshot:${snapshotMove.reason ?? 'not_migrated'},execution:${executionMove.reason ?? 'not_migrated'}`,
+  };
 }
 
 function buildFloorWorkflowExecutionState(
@@ -1459,6 +1670,22 @@ async function executeWorkflowWithPolicy(
     }
   }
 
+  if (options.trigger.timing === 'before_reply') {
+    const sourceMessageId = Number(options.trigger.user_message_id ?? options.messageId);
+    const userMessageId = Number(options.trigger.user_message_id ?? options.messageId);
+    if (Number.isFinite(sourceMessageId) && sourceMessageId >= 0 && Number.isFinite(userMessageId) && userMessageId >= 0) {
+      setBeforeReplyBindingPending({
+        request_id: result.request_id,
+        user_message_id: userMessageId,
+        source_message_id: sourceMessageId,
+        generation_type: options.trigger.generation_type,
+        window_ms: resolveAfterReplyContextWindowMs(settings),
+      });
+    } else {
+      clearBeforeReplyBindingPending();
+    }
+  }
+
   if (options.trigger.timing === 'after_reply') {
     const assistantMessageId = options.trigger.assistant_message_id ?? options.messageId;
     try {
@@ -1736,21 +1963,14 @@ function buildAfterReplyDedupKey(messageText: string, pendingUserMessageId: numb
 
 async function onAfterReplyMessage(messageId: number, type: string, source: 'message_received' | 'generation_ended') {
   const settings = getSettings();
-  if (!hasFlowsForTiming(settings, 'after_reply')) {
-    return;
-  }
-
-  const decision = shouldHandleAfterReply(messageId, type, settings);
-  if (!decision.ok) {
-    return;
-  }
+  pruneExpiredBeforeReplyBindingPending();
 
   if (!isAssistantMessage(messageId)) {
     return;
   }
 
   const messageText = getMessageText(messageId);
-  if (!messageText.trim() || wasAfterReplyHandled(messageId, messageText)) {
+  if (!messageText.trim()) {
     return;
   }
 
@@ -1759,6 +1979,23 @@ async function onAfterReplyMessage(messageId: number, type: string, source: 'mes
   const userInput = resolveAfterReplyUserInput();
   const pendingUserMessageId =
     runtimeState.after_reply.pending_user_message_id ?? runtimeState.last_send?.message_id ?? null;
+  const pendingBeforeReplyBinding = pruneExpiredBeforeReplyBindingPending();
+  const shouldAttemptBeforeReplyBindingMigration = Boolean(
+    pendingBeforeReplyBinding &&
+      !pendingBeforeReplyBinding.migrated &&
+      Number.isFinite(pendingUserMessageId) &&
+      pendingBeforeReplyBinding.user_message_id === pendingUserMessageId,
+  );
+  const hasAfterReplyFlows = hasFlowsForTiming(settings, 'after_reply');
+  const decision = hasAfterReplyFlows
+    ? shouldHandleAfterReply(messageId, type, settings)
+    : { ok: false, reason: 'after_reply_flows_disabled' };
+  const shouldRunAfterReplyWorkflow =
+    hasAfterReplyFlows && decision.ok && !wasAfterReplyHandled(messageId, messageText);
+  if (!shouldRunAfterReplyWorkflow && !shouldAttemptBeforeReplyBindingMigration) {
+    return;
+  }
+
   const queueKey = `${getCurrentChatKey()}:${messageId}`;
   const dedupKey = buildAfterReplyDedupKey(messageText, pendingUserMessageId);
 
@@ -1785,6 +2022,19 @@ async function onAfterReplyMessage(messageId: number, type: string, source: 'mes
   await enqueueWorkflowTask(`after_reply:${messageId}`, async () => {
     setProcessing(true);
     try {
+      if (shouldAttemptBeforeReplyBindingMigration) {
+        const bindingMigration = await migrateBeforeReplyBindingToAssistant(settings, messageId, pendingUserMessageId);
+        if (bindingMigration.migrated) {
+          console.info(
+            `[Evolution World] before_reply binding migrated to assistant floor #${messageId} (snapshot=${bindingMigration.snapshot_migrated}, execution=${bindingMigration.execution_migrated})`,
+          );
+        }
+      }
+
+      if (!shouldRunAfterReplyWorkflow) {
+        return;
+      }
+
       await executeWorkflowWithPolicy(settings, {
         messageId,
         userInput,

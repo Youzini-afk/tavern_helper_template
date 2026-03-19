@@ -35,11 +35,24 @@ type AfterReplyRecord = {
   last_handled_at: number;
 };
 
+export type BeforeReplyBindingPending = {
+  request_id: string;
+  user_message_id: number;
+  source_message_id: number;
+  generation_type: string;
+  created_at: number;
+  expires_at: number;
+  migrated: boolean;
+  migrated_assistant_message_id?: number;
+  migrated_at?: number;
+};
+
 export type RuntimeState = {
   last_send: SendRecord | null;
   last_send_intent: SendIntentRecord | null;
   last_generation: GenerationRecord | null;
   after_reply: AfterReplyRecord;
+  before_reply_binding_pending: BeforeReplyBindingPending | null;
   is_processing: boolean;
 };
 
@@ -56,6 +69,7 @@ const state: RuntimeState = {
     last_handled_hash: '',
     last_handled_at: 0,
   },
+  before_reply_binding_pending: null,
   is_processing: false,
 };
 
@@ -73,6 +87,7 @@ export function recordUserSend(message_id: number, user_input: string) {
   state.after_reply.pending_user_message_id = message_id;
   state.after_reply.pending_user_input = user_input;
   state.after_reply.pending_at = now();
+  state.before_reply_binding_pending = null;
 }
 
 export function recordUserSendIntent(user_input: string) {
@@ -134,6 +149,66 @@ export function clearAfterReplyPendingIfMatches(message_id: number | null) {
   }
 }
 
+export function setBeforeReplyBindingPending(input: {
+  request_id: string;
+  user_message_id: number;
+  source_message_id: number;
+  generation_type: string;
+  window_ms: number;
+}): BeforeReplyBindingPending {
+  const createdAt = now();
+  const windowMs = Math.max(1000, Math.trunc(Number(input.window_ms) || 0));
+  const next: BeforeReplyBindingPending = {
+    request_id: String(input.request_id ?? '').trim(),
+    user_message_id: Number(input.user_message_id ?? -1),
+    source_message_id: Number(input.source_message_id ?? -1),
+    generation_type: String(input.generation_type ?? '').trim(),
+    created_at: createdAt,
+    expires_at: createdAt + windowMs,
+    migrated: false,
+  };
+  state.before_reply_binding_pending = next;
+  return next;
+}
+
+export function clearBeforeReplyBindingPending(): void {
+  state.before_reply_binding_pending = null;
+}
+
+export function getBeforeReplyBindingPending(): BeforeReplyBindingPending | null {
+  return state.before_reply_binding_pending;
+}
+
+export function pruneExpiredBeforeReplyBindingPending(currentAt = now()): BeforeReplyBindingPending | null {
+  const pending = state.before_reply_binding_pending;
+  if (!pending) {
+    return null;
+  }
+
+  if (pending.expires_at > currentAt) {
+    return pending;
+  }
+
+  state.before_reply_binding_pending = null;
+  return null;
+}
+
+export function markBeforeReplyBindingMigrated(assistantMessageId: number): BeforeReplyBindingPending | null {
+  const pending = state.before_reply_binding_pending;
+  if (!pending) {
+    return null;
+  }
+
+  const migratedAt = now();
+  state.before_reply_binding_pending = {
+    ...pending,
+    migrated: true,
+    migrated_assistant_message_id: assistantMessageId,
+    migrated_at: migratedAt,
+  };
+  return state.before_reply_binding_pending;
+}
+
 export function markAfterReplyHandled(message_id: number, content: string) {
   state.after_reply.last_handled_assistant_message_id = message_id;
   state.after_reply.last_handled_hash = simpleHash(content);
@@ -158,6 +233,7 @@ export function resetRuntimeState() {
   state.last_send_intent = null;
   state.last_generation = null;
   clearAfterReplyPending();
+  clearBeforeReplyBindingPending();
   state.after_reply.last_handled_assistant_message_id = null;
   state.after_reply.last_handled_hash = '';
   state.after_reply.last_handled_at = 0;
