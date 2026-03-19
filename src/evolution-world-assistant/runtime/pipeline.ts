@@ -7,12 +7,16 @@ import { mergeFlowResults } from './merger';
 import { advanceWorkflowRoundCounter, getSettings, setLastIo, setLastRun } from './settings';
 import { commitMergedPlan } from './transaction';
 import {
+  ContextCursor,
   ControllerTemplateSlot,
   DispatchFlowAttempt,
   DispatchFlowResult,
   RunSummarySchema,
+  WorkflowCapsuleMode,
   WorkflowFailureDiagnostic,
+  WorkflowJobType,
   WorkflowProgressUpdate,
+  WorkflowWritebackPolicy,
 } from './types';
 import { resolveTargetWorldbook } from './worldbook-runtime';
 
@@ -27,6 +31,13 @@ type RunWorkflowInput = {
   flow_ids?: string[];
   timing_filter?: 'before_reply' | 'after_reply';
   preserved_results?: DispatchFlowResult[];
+  job_type?: WorkflowJobType;
+  context_cursor?: ContextCursor;
+  writeback_policy?: WorkflowWritebackPolicy;
+  rederive_options?: {
+    legacy_approx?: boolean;
+    capsule_mode?: WorkflowCapsuleMode;
+  };
   abortSignal?: AbortSignal;
   isCancelled?: () => boolean;
   onProgress?: (update: WorkflowProgressUpdate) => void;
@@ -521,6 +532,10 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
         user_input: input.user_input,
         trigger: input.trigger,
         request_id: requestId,
+        context_cursor: input.context_cursor,
+        job_type: input.job_type,
+        writeback_policy: input.writeback_policy,
+        rederive_options: input.rederive_options,
         abortSignal: input.abortSignal,
         isCancelled: input.isCancelled,
         onProgress: input.onProgress,

@@ -2,13 +2,17 @@ import { buildFlowRequest } from './context-builder';
 import { FlowResponseSchema, FlowTriggerV1 } from './contracts';
 import { assembleOrderedPrompts, collectPromptComponents, PromptComponents } from './prompt-assembler';
 import {
+  ContextCursor,
   DispatchFlowAttempt,
   DispatchFlowResult,
   EwApiPreset,
   EwFlowConfig,
   EwSettings,
+  WorkflowCapsuleMode,
+  WorkflowJobType,
   WorkflowProgressUpdate,
   WorkflowStreamPreview,
+  WorkflowWritebackPolicy,
 } from './types';
 
 type DispatchInput = {
@@ -18,6 +22,13 @@ type DispatchInput = {
   user_input?: string;
   trigger?: FlowTriggerV1;
   request_id: string;
+  context_cursor?: ContextCursor;
+  job_type?: WorkflowJobType;
+  writeback_policy?: WorkflowWritebackPolicy;
+  rederive_options?: {
+    legacy_approx?: boolean;
+    capsule_mode?: WorkflowCapsuleMode;
+  };
   abortSignal?: AbortSignal;
   isCancelled?: () => boolean;
   onProgress?: (update: WorkflowProgressUpdate) => void;
@@ -1085,6 +1096,10 @@ async function executeFlow(
   trigger: FlowTriggerV1 | undefined,
   requestId: string,
   serialResults: Record<string, any>[],
+  contextCursor: ContextCursor | undefined,
+  jobType: WorkflowJobType | undefined,
+  writebackPolicy: WorkflowWritebackPolicy | undefined,
+  rederiveOptions: DispatchInput['rederive_options'] | undefined,
   abortSignal?: AbortSignal,
   isCancelled?: () => boolean,
   onProgress?: (update: WorkflowProgressUpdate) => void,
@@ -1129,7 +1144,7 @@ async function executeFlow(
   };
 
   // Collect prompt components once — shared by buildFlowRequest (metadata) and assembler (messages)
-  const promptComponentsPromise = collectPromptComponents(flow, settings);
+  const promptComponentsPromise = collectPromptComponents(flow, settings, contextCursor);
   let request: FlowRequestV1 | undefined;
   let requestDebug: Record<string, any> | undefined;
 
@@ -1145,6 +1160,10 @@ async function executeFlow(
       request_id: requestId,
       serial_results: serialResults,
       active_dyn_entry_names: collectActiveDynEntryNames(promptComponents, settings),
+      context_cursor: contextCursor,
+      job_type: jobType,
+      writeback_policy: writebackPolicy,
+      legacy_approx: Boolean(rederiveOptions?.legacy_approx),
     });
     const body = applyTemplate(request as unknown as Record<string, any>, flow.request_template);
     const orderedPrompts = await buildOrderedPromptsForFlow(flow, promptComponents, body);
@@ -1323,6 +1342,10 @@ export async function dispatchFlows(input: DispatchInput): Promise<DispatchFlows
         input.trigger,
         input.request_id,
         serialResults,
+        input.context_cursor,
+        input.job_type,
+        input.writeback_policy,
+        input.rederive_options,
         input.abortSignal,
         input.isCancelled,
         input.onProgress,
@@ -1375,6 +1398,10 @@ export async function dispatchFlows(input: DispatchInput): Promise<DispatchFlows
         input.trigger,
         input.request_id,
         [],
+        input.context_cursor,
+        input.job_type,
+        input.writeback_policy,
+        input.rederive_options,
         input.abortSignal,
         input.isCancelled,
         input.onProgress,

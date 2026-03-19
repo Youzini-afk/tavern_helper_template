@@ -1,5 +1,5 @@
 import { validateEjsTemplate } from './controller-renderer';
-import { rerollCurrentAfterReplyWorkflow } from './events';
+import { rederiveWorkflowAtFloor, rerollCurrentAfterReplyWorkflow } from './events';
 import { localizeSnapshotsForCurrentChat } from './floor-binding';
 import { resolveControllerSnapshotEntryName } from './helpers';
 import { runWorkflow } from './pipeline';
@@ -19,6 +19,24 @@ declare global {
       validateControllerSyntax: () => Promise<{ ok: boolean; reason?: string }>;
       rollbackController: () => Promise<{ ok: boolean; reason?: string }>;
       rerollCurrentAfterReply: () => Promise<{ ok: boolean; reason?: string }>;
+      rederiveWorkflowAtFloor: (input: {
+        message_id: number;
+        timing: 'before_reply' | 'after_reply' | 'manual';
+        target_version_key?: string;
+        confirm_legacy?: boolean;
+        capsule_mode?: 'full' | 'light';
+      }) => Promise<{
+        ok: boolean;
+        reason?: string;
+        result?: {
+          message_id: number;
+          anchor_message_id: number;
+          legacy_approx: boolean;
+          writeback_applied: number;
+          writeback_conflicts: number;
+          writeback_conflict_names: string[];
+        };
+      }>;
       localizeSnapshots: () => Promise<{
         ok: boolean;
         reason?: string;
@@ -169,6 +187,7 @@ export function initGlobalApi() {
     validateControllerSyntax,
     rollbackController,
     rerollCurrentAfterReply: () => rerollCurrentAfterReplyWorkflow(),
+    rederiveWorkflowAtFloor: input => rederiveWorkflowAtFloor(input),
     localizeSnapshots: async () => {
       try {
         const result = await localizeSnapshotsForCurrentChat(getSettings());

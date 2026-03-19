@@ -492,6 +492,23 @@ export type WorkflowProgressUpdate = {
   stream_preview?: WorkflowStreamPreview;
 };
 
+export type WorkflowJobType = 'live_auto' | 'live_reroll' | 'historical_rederive';
+
+export type WorkflowWritebackPolicy = 'dual_diff_merge';
+
+export type WorkflowCapsuleMode = 'full' | 'light';
+
+export type ContextCursor = {
+  chat_id: string;
+  target_message_id: number;
+  target_role: 'user' | 'assistant' | 'other';
+  target_version_key: string;
+  timing: 'before_reply' | 'after_reply' | 'manual';
+  source_user_message_id?: number;
+  assistant_message_id?: number;
+  capsule_mode?: WorkflowCapsuleMode;
+};
+
 export type MergeInput = DispatchFlowResult[];
 
 export type Prioritized<T> = {

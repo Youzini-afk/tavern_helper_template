@@ -90,6 +90,14 @@ function snapshotVersionKey(data: SnapshotData): string {
   return buildMessageVersionKey(Number(data.swipe_id ?? 0), String(data.content_hash ?? '').trim());
 }
 
+function buildArchivedSnapshotVersionKey(baseKey: string, store: SnapshotVersionStore): string {
+  let candidate = `${baseKey}@rev:${Date.now()}`;
+  while (store.versions[candidate]) {
+    candidate = `${baseKey}@rev:${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+  }
+  return candidate;
+}
+
 function buildChatFingerprint(chatId: string): string {
   return simpleHash(String(chatId ?? '')).replace(/^h/, '').slice(0, 12);
 }
@@ -239,7 +247,16 @@ export async function writeSnapshot(
     owner: buildSnapshotStoreOwner(charName, chatId),
   };
   currentStore.updated_at = Date.now();
-  currentStore.versions[snapshotVersionKey(data)] = data;
+  const versionKey = snapshotVersionKey(data);
+  const existing = currentStore.versions[versionKey];
+  if (existing) {
+    const existingJson = JSON.stringify(existing);
+    const nextJson = JSON.stringify(data);
+    if (existingJson !== nextJson) {
+      currentStore.versions[buildArchivedSnapshotVersionKey(versionKey, currentStore)] = existing;
+    }
+  }
+  currentStore.versions[versionKey] = data;
   currentStore.owner = buildSnapshotStoreOwner(charName, chatId);
 
   await persistSnapshotStore(fileName, currentStore);

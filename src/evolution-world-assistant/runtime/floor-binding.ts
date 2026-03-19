@@ -1460,6 +1460,153 @@ export async function collectAllFloorSnapshots(): Promise<FloorSnapshot[]> {
   return result;
 }
 
+export async function readFloorSnapshotByMessageId(
+  messageId: number,
+  mode: 'strict' | 'history' = 'history',
+): Promise<FloorSnapshot | null> {
+  const message = getChatMessages(messageId)[0];
+  if (!message) {
+    return null;
+  }
+
+  const readResult = await readSnapshotForMessageDetailed(message, mode);
+  return {
+    messageId,
+    snapshot: readResult.snapshot,
+    resolution: readResult.resolution,
+    available_version_count: readResult.available_version_count,
+    source: readResult.source,
+    matched_version_key: readResult.matched_version_key,
+    file_name: readResult.file_name,
+  };
+}
+
+export type SnapshotDiffApplyResult = {
+  applied: number;
+  conflicts: number;
+  conflict_names: string[];
+};
+
+export async function applySnapshotDiffToCurrentWorldbook(
+  settings: EwSettings,
+  previousSnapshot: SnapshotData | null,
+  nextSnapshot: SnapshotData | null,
+): Promise<SnapshotDiffApplyResult> {
+  if (!previousSnapshot && !nextSnapshot) {
+    return { applied: 0, conflicts: 0, conflict_names: [] };
+  }
+
+  const target = await resolveTargetWorldbook(settings);
+  if (!target) {
+    return { applied: 0, conflicts: 0, conflict_names: [] };
+  }
+
+  const nextEntries = klona(target.entries);
+  const diff = diffSnapshots(previousSnapshot, nextSnapshot);
+  let applied = 0;
+  let conflicts = 0;
+  const conflictNames = new Set<string>();
+
+  const previousDynByName = new Map((previousSnapshot?.dyn_entries ?? []).map(entry => [entry.name, entry]));
+  const nextDynByName = new Map((nextSnapshot?.dyn_entries ?? []).map(entry => [entry.name, entry]));
+
+  const previousCtrlByKey = new Map(
+    (previousSnapshot?.controllers ?? []).map(snapshot => [controllerSnapshotKey(snapshot), normalizeControllerSnapshot(snapshot)]),
+  );
+  const nextCtrlByKey = new Map(
+    (nextSnapshot?.controllers ?? []).map(snapshot => [controllerSnapshotKey(snapshot), normalizeControllerSnapshot(snapshot)]),
+  );
+
+  const dynamicUpserts = _.uniq([...diff.created, ...diff.modified, ...diff.toggled]).filter(name =>
+    String(name ?? '').startsWith(settings.dynamic_entry_prefix),
+  );
+
+  for (const entryName of dynamicUpserts) {
+    const desired = nextDynByName.get(entryName);
+    if (!desired) {
+      continue;
+    }
+
+    const existing = nextEntries.find(entry => entry.name === entryName);
+    const previous = previousDynByName.get(entryName);
+    if (existing) {
+      if (previous && existing.content !== previous.content && existing.content !== desired.content) {
+        conflicts += 1;
+        conflictNames.add(entryName);
+      }
+      existing.content = desired.content;
+      existing.enabled = false;
+    } else {
+      nextEntries.push(ensureDefaultEntry(entryName, desired.content, false, nextEntries));
+    }
+    applied += 1;
+  }
+
+  for (const entryName of diff.deleted.filter(name => String(name ?? '').startsWith(settings.dynamic_entry_prefix))) {
+    const index = nextEntries.findIndex(entry => entry.name === entryName);
+    if (index < 0) {
+      continue;
+    }
+
+    const existing = nextEntries[index];
+    const previous = previousDynByName.get(entryName);
+    if (previous && existing.content !== previous.content) {
+      conflicts += 1;
+      conflictNames.add(entryName);
+    }
+    nextEntries.splice(index, 1);
+    applied += 1;
+  }
+
+  for (const [controllerKey, changeType] of Object.entries(diff.controllersChanged ?? {})) {
+    if (changeType === 'deleted') {
+      const previous = previousCtrlByKey.get(controllerKey);
+      if (!previous) {
+        continue;
+      }
+      const entryName = resolveControllerSnapshotEntryName(settings.controller_entry_prefix, previous);
+      const existing = nextEntries.find(entry => entry.name === entryName);
+      if (!existing) {
+        continue;
+      }
+      if (existing.content !== previous.content) {
+        conflicts += 1;
+        conflictNames.add(entryName);
+      }
+      existing.content = '';
+      existing.enabled = false;
+      applied += 1;
+      continue;
+    }
+
+    const desired = nextCtrlByKey.get(controllerKey);
+    if (!desired) {
+      continue;
+    }
+    const entryName = resolveControllerSnapshotEntryName(settings.controller_entry_prefix, desired);
+    const existing = nextEntries.find(entry => entry.name === entryName);
+    const previous = previousCtrlByKey.get(controllerKey);
+    if (existing) {
+      if (previous && existing.content !== previous.content && existing.content !== desired.content) {
+        conflicts += 1;
+        conflictNames.add(entryName);
+      }
+      existing.content = desired.content;
+      existing.enabled = true;
+    } else {
+      nextEntries.push(ensureDefaultEntry(entryName, desired.content, true, nextEntries, true));
+    }
+    applied += 1;
+  }
+
+  await replaceWorldbook(target.worldbook_name, nextEntries, { render: 'debounced' });
+  return {
+    applied,
+    conflicts,
+    conflict_names: [...conflictNames],
+  };
+}
+
 /**
  * Compute the diff between two snapshots (prev → curr).
  * If prev is null, all entries in curr are "created".

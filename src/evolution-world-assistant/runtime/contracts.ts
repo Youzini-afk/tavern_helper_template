@@ -64,6 +64,17 @@ export const FlowRequestSchema = z.object({
       })
       .default({ active_names: [], inactive_names: [] }),
   }),
+  rederive_context: z
+    .object({
+      job_type: z.enum(['live_auto', 'live_reroll', 'historical_rederive']).default('live_auto'),
+      writeback_policy: z.enum(['dual_diff_merge']).default('dual_diff_merge'),
+      target_message_id: z.number(),
+      target_version_key: z.string().default(''),
+      target_role: z.enum(['user', 'assistant', 'other']).default('other'),
+      legacy_approx: z.boolean().default(false),
+      capsule_mode: z.enum(['full', 'light']).default('full'),
+    })
+    .optional(),
   serial_results: z.array(z.record(z.string(), z.any())).default([]),
 });
 

@@ -1,6 +1,6 @@
 import { FlowRequestSchema, FlowRequestV1, FlowTriggerV1 } from './contracts';
 import { uuidv4 } from './helpers';
-import { EwFlowConfig, EwSettings } from './types';
+import { ContextCursor, EwFlowConfig, EwSettings, WorkflowJobType, WorkflowWritebackPolicy } from './types';
 import { resolveTargetWorldbook } from './worldbook-runtime';
 
 export type BuildRequestInput = {
@@ -12,6 +12,10 @@ export type BuildRequestInput = {
   request_id?: string;
   serial_results?: Record<string, any>[];
   active_dyn_entry_names?: string[];
+  context_cursor?: ContextCursor;
+  job_type?: WorkflowJobType;
+  writeback_policy?: WorkflowWritebackPolicy;
+  legacy_approx?: boolean;
 };
 
 function normalizeEntryNames(names: string[] | undefined): string[] {
@@ -95,6 +99,19 @@ export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRe
       exclude_rules: input.flow.exclude_rules,
       ew_dyn_entries: ewDynEntries,
     },
+    ...(input.context_cursor
+      ? {
+          rederive_context: {
+            job_type: input.job_type ?? 'live_auto',
+            writeback_policy: input.writeback_policy ?? 'dual_diff_merge',
+            target_message_id: input.context_cursor.target_message_id,
+            target_version_key: input.context_cursor.target_version_key,
+            target_role: input.context_cursor.target_role,
+            legacy_approx: Boolean(input.legacy_approx),
+            capsule_mode: input.context_cursor.capsule_mode ?? 'full',
+          },
+        }
+      : {}),
     serial_results: input.serial_results ?? [],
   });
 

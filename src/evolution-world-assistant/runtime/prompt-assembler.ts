@@ -1,7 +1,7 @@
 ﻿import { renderEjsContent } from './ejs-internal';
 import { isLikelyMvuWorldInfoContent, stripBlockedPromptContents, stripMvuPromptArtifacts } from './mvu-compat';
 import { applyTavernRegex } from './regex-engine';
-import type { EwFlowConfig, EwPromptOrderEntry, EwSettings } from './types';
+import type { ContextCursor, EwFlowConfig, EwPromptOrderEntry, EwSettings } from './types';
 import { collectIgnoredWorldInfoContents, resolveWorldInfo, type ResolvedWiEntry } from './worldinfo-engine';
 
 // SillyTavern 运行时全局变量，在扩展上下文中可用
@@ -654,7 +654,11 @@ type AssemblePreviewOptions = {
  * Gathers raw content for every system marker that can appear in a flow's
  * prompt_order: character card fields, world info, jailbreak, and chat messages.
  */
-export async function collectPromptComponents(flow: EwFlowConfig, settings?: EwSettings): Promise<PromptComponents> {
+export async function collectPromptComponents(
+  flow: EwFlowConfig,
+  settings?: EwSettings,
+  contextCursor?: ContextCursor,
+): Promise<PromptComponents> {
   const components: PromptComponents = {
     main: '',
     jailbreak: '',
@@ -690,7 +694,11 @@ export async function collectPromptComponents(flow: EwFlowConfig, settings?: EwS
 
   // ── 2. Chat messages ──────────────────────────────────────────────────
   try {
-    const lastId = getRuntimeLastMessageId();
+    const runtimeLastId = getRuntimeLastMessageId();
+    const boundedTargetId = Number.isFinite(contextCursor?.target_message_id)
+      ? Math.max(-1, Math.min(runtimeLastId, Math.trunc(Number(contextCursor?.target_message_id ?? -1))))
+      : runtimeLastId;
+    const lastId = boundedTargetId;
     const chatHistoryAttempts: PromptDiagnosticAttempt[] = [
       {
         label: 'getLastMessageId()',

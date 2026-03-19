@@ -926,6 +926,59 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     }
   }
 
+  async function rederiveFloorWorkflow(
+    messageId: number,
+    timing: 'before_reply' | 'after_reply' | 'manual',
+  ): Promise<{ ok: boolean; reason?: string }> {
+    const api = window.EvolutionWorldAPI;
+    if (!api?.rederiveWorkflowAtFloor) {
+      return { ok: false, reason: 'runtime api not ready' };
+    }
+
+    busy.value = true;
+    try {
+      let result = await api.rederiveWorkflowAtFloor({
+        message_id: messageId,
+        timing,
+        capsule_mode: 'full',
+      });
+
+      if (!result.ok && result.reason === 'legacy_confirmation_required') {
+        const confirmed = window.confirm('该楼层缺少历史执行胶囊，将使用近似回放。是否继续？');
+        if (!confirmed) {
+          return { ok: false, reason: 'cancelled_by_user' };
+        }
+        result = await api.rederiveWorkflowAtFloor({
+          message_id: messageId,
+          timing,
+          capsule_mode: 'full',
+          confirm_legacy: true,
+        });
+      }
+
+      if (!result.ok) {
+        return { ok: false, reason: result.reason ?? 'workflow failed' };
+      }
+
+      await loadFloorSnapshots();
+      const conflictCount = Number(result.result?.writeback_conflicts ?? 0);
+      showEwNotice({
+        title: '历史重推导',
+        message:
+          conflictCount > 0
+            ? `楼层 #${messageId} 重推导完成，检测到 ${conflictCount} 项冲突（已按重推导优先处理）`
+            : `楼层 #${messageId} 重推导完成`,
+        level: 'success',
+      });
+      return { ok: true };
+    } catch (e) {
+      console.error('[Evolution World] rederiveFloorWorkflow failed:', e);
+      return { ok: false, reason: (e as Error).message };
+    } finally {
+      busy.value = false;
+    }
+  }
+
   return {
     settings,
     lastRun,
@@ -988,5 +1041,6 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     compareFloorId,
     loadFloorSnapshots,
     doRollbackToFloor,
+    rederiveFloorWorkflow,
   };
 });

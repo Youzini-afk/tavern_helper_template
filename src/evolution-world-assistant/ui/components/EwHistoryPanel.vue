@@ -2,6 +2,9 @@
   <EwSectionCard title="楼层快照时间线" subtitle="每个楼层的 EW 条目变更记录。">
     <div class="hist-toolbar">
       <button type="button" class="ew-btn" :disabled="store.busy" @click="store.loadFloorSnapshots">🔄 刷新</button>
+      <button type="button" class="ew-btn" :disabled="store.busy || !selectedTimelineItem" @click="onRebuildSelectedFloor">
+        重推导所选楼
+      </button>
       <span class="hist-stats"> {{ hasSnapshotCount }} / {{ store.floorSnapshots.length }} 楼层有快照 </span>
       <span class="hist-stats hist-stats--assistant">AI锚点 {{ assistantAnchorCount }}</span>
       <span class="hist-stats hist-stats--source">拦截源楼 {{ sourceFloorCount }}</span>
@@ -36,6 +39,9 @@
               </span>
               <span v-else-if="item.semantic.anchor_kind === 'source_user'" class="hist-anchor-chip hist-anchor-chip--source">
                 拦截源楼
+              </span>
+              <span v-if="item.semantic.rederive" class="hist-anchor-chip hist-anchor-chip--rederive">
+                {{ item.semantic.rederive.legacy_approx ? '重推导(approx)' : '重推导(exact)' }}
               </span>
             </div>
             <span class="hist-block-status" :class="statusClass(item)" :title="resolutionTitle(item)">
@@ -100,6 +106,7 @@ const store = useEwStore();
 const modalVisible = ref(false);
 const selectedFloorId = ref(0);
 const EW_BEFORE_REPLY_BINDING_META_KEY = 'ew_before_reply_binding';
+const EW_REDERIVE_META_KEY = 'ew_rederive_meta';
 
 type FloorRole = 'assistant' | 'user' | 'other';
 type FloorAnchorKind = 'assistant_anchor' | 'source_user' | 'legacy_user_anchor' | 'normal';
@@ -107,6 +114,10 @@ type TimelineSemantic = {
   role: FloorRole;
   anchor_kind: FloorAnchorKind;
   paired_message_id?: number;
+  rederive?: {
+    legacy_approx: boolean;
+    conflicts: number;
+  };
 };
 type TimelineItem = {
   floor: (typeof store.floorSnapshots)[number];
@@ -146,12 +157,24 @@ function normalizeBindingMeta(raw: unknown):
   };
 }
 
+function normalizeRederiveMeta(raw: unknown): { legacy_approx: boolean; conflicts: number } | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null;
+  }
+  const meta = raw as Record<string, unknown>;
+  return {
+    legacy_approx: Boolean(meta.legacy_approx),
+    conflicts: Math.max(0, Math.trunc(Number(meta.conflicts ?? 0) || 0)),
+  };
+}
+
 const floorRuntimeMap = computed(() => {
   const result = new Map<
     number,
     {
       role: FloorRole;
       binding_meta: ReturnType<typeof normalizeBindingMeta>;
+      rederive_meta: ReturnType<typeof normalizeRederiveMeta>;
     }
   >();
 
@@ -159,9 +182,11 @@ const floorRuntimeMap = computed(() => {
     const message = getChatMessages(floor.messageId)[0];
     const role = normalizeRole(message?.role);
     const bindingMeta = normalizeBindingMeta(message?.data?.[EW_BEFORE_REPLY_BINDING_META_KEY]);
+    const rederiveMeta = normalizeRederiveMeta(message?.data?.[EW_REDERIVE_META_KEY]);
     result.set(floor.messageId, {
       role,
       binding_meta: bindingMeta,
+      rederive_meta: rederiveMeta,
     });
   }
 
@@ -210,11 +235,13 @@ const timelineItems = computed(() => {
     const runtimeMeta = floorRuntimeMap.value.get(floor.messageId);
     const role = runtimeMeta?.role ?? 'other';
     const bindingMeta = runtimeMeta?.binding_meta;
+    const rederiveMeta = runtimeMeta?.rederive_meta;
     const hasArtifacts = Boolean(floorArtifactMap.get(floor.messageId));
 
     let semantic: TimelineSemantic = {
       role,
       anchor_kind: 'normal',
+      rederive: rederiveMeta ?? undefined,
     };
 
     if (bindingMeta?.role === 'assistant_anchor' && role === 'assistant') {
@@ -364,7 +391,10 @@ function resolutionTitle(item: TimelineItem): string {
     item.floor.source === 'file' ? '来源：文件快照。' : item.floor.source === 'inline' ? '来源：消息内联快照。' : '';
   const versionText =
     item.floor.available_version_count > 0 ? `可用版本数：${item.floor.available_version_count}。` : '';
-  return `${resolutionMeta[item.floor.resolution].title}${sourceText}${versionText}`;
+  const rederiveText = item.semantic.rederive
+    ? `最近一次重推导：${item.semantic.rederive.legacy_approx ? 'approx' : 'exact'}；冲突=${item.semantic.rederive.conflicts}。`
+    : '';
+  return `${resolutionMeta[item.floor.resolution].title}${sourceText}${versionText}${rederiveText}`;
 }
 
 function statusClass(item: TimelineItem): string {
@@ -395,6 +425,20 @@ function roleLabel(role: FloorRole): string {
 function openFloor(messageId: number) {
   selectedFloorId.value = messageId;
   modalVisible.value = true;
+}
+
+async function onRebuildSelectedFloor() {
+  const item = selectedTimelineItem.value;
+  if (!item) {
+    return;
+  }
+
+  const timing: 'before_reply' | 'after_reply' | 'manual' =
+    item.semantic.role === 'assistant' ? 'after_reply' : item.semantic.role === 'user' ? 'before_reply' : 'manual';
+  const result = await store.rederiveFloorWorkflow(item.floor.messageId, timing);
+  if (!result.ok && result.reason && result.reason !== 'cancelled_by_user') {
+    console.warn('[Evolution World] rederive failed:', result.reason);
+  }
 }
 </script>
 
@@ -533,6 +577,12 @@ function openFloor(messageId: number) {
   color: #93c5fd;
   border-color: color-mix(in srgb, #3b82f6 35%, transparent);
   background: color-mix(in srgb, #3b82f6 14%, transparent);
+}
+
+.hist-anchor-chip--rederive {
+  color: #fcd34d;
+  border-color: color-mix(in srgb, #f59e0b 35%, transparent);
+  background: color-mix(in srgb, #f59e0b 16%, transparent);
 }
 
 .hist-block-status {
