@@ -78,6 +78,10 @@ type BeforeReplyBindingMigrationResult = {
   migrated: boolean;
   snapshot_migrated: boolean;
   execution_migrated: boolean;
+  capsule_migrated: boolean;
+  snapshot_reason?: string;
+  execution_reason?: string;
+  capsule_reason?: string;
   reason?: string;
 };
 
@@ -955,6 +959,7 @@ async function migrateBeforeReplyBindingToAssistant(
       migrated: false,
       snapshot_migrated: false,
       execution_migrated: false,
+      capsule_migrated: false,
       reason: 'pending_missing_or_expired',
     };
   }
@@ -964,6 +969,7 @@ async function migrateBeforeReplyBindingToAssistant(
       migrated: false,
       snapshot_migrated: false,
       execution_migrated: false,
+      capsule_migrated: false,
       reason: 'already_migrated',
     };
   }
@@ -973,6 +979,7 @@ async function migrateBeforeReplyBindingToAssistant(
       migrated: false,
       snapshot_migrated: false,
       execution_migrated: false,
+      capsule_migrated: false,
       reason: 'user_floor_mismatch',
     };
   }
@@ -983,6 +990,7 @@ async function migrateBeforeReplyBindingToAssistant(
       migrated: false,
       snapshot_migrated: false,
       execution_migrated: false,
+      capsule_migrated: false,
       reason: 'invalid_source_floor',
     };
   }
@@ -991,23 +999,41 @@ async function migrateBeforeReplyBindingToAssistant(
   const executionMove = await migrateFloorWorkflowExecutionToAssistant(pending.source_message_id, assistantMessageId);
   const capsuleMove = await migrateFloorWorkflowCapsuleToAssistant(pending.source_message_id, assistantMessageId);
   const migrated = snapshotMove.migrated || executionMove.migrated || capsuleMove.migrated;
+  const result: BeforeReplyBindingMigrationResult = {
+    migrated,
+    snapshot_migrated: snapshotMove.migrated,
+    execution_migrated: executionMove.migrated,
+    capsule_migrated: capsuleMove.migrated,
+    snapshot_reason: snapshotMove.reason,
+    execution_reason: executionMove.reason,
+    capsule_reason: capsuleMove.reason,
+    reason: `snapshot:${snapshotMove.reason ?? 'migrated'},execution:${executionMove.reason ?? 'migrated'},capsule:${capsuleMove.reason ?? 'migrated'}`,
+  };
 
   if (migrated) {
     await writeBeforeReplyBindingMeta(pending.source_message_id, assistantMessageId, pending.request_id);
     markBeforeReplyBindingMigrated(assistantMessageId);
-    return {
-      migrated: true,
+    console.info('[Evolution World] before_reply binding migrated to assistant anchor', {
+      source_message_id: pending.source_message_id,
+      assistant_message_id: assistantMessageId,
       snapshot_migrated: snapshotMove.migrated,
       execution_migrated: executionMove.migrated,
-    };
+      capsule_migrated: capsuleMove.migrated,
+      snapshot_reason: snapshotMove.reason ?? 'migrated',
+      execution_reason: executionMove.reason ?? 'migrated',
+      capsule_reason: capsuleMove.reason ?? 'migrated',
+    });
+    return result;
   }
 
-  return {
-    migrated: false,
-    snapshot_migrated: false,
-    execution_migrated: false,
-    reason: `snapshot:${snapshotMove.reason ?? 'not_migrated'},execution:${executionMove.reason ?? 'not_migrated'}`,
-  };
+  console.warn('[Evolution World] before_reply binding migration failed', {
+    source_message_id: pending.source_message_id,
+    assistant_message_id: assistantMessageId,
+    snapshot_reason: snapshotMove.reason ?? 'not_migrated',
+    execution_reason: executionMove.reason ?? 'not_migrated',
+    capsule_reason: capsuleMove.reason ?? 'not_migrated',
+  });
+  return result;
 }
 
 function buildFloorWorkflowExecutionState(

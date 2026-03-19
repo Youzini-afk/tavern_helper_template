@@ -97,15 +97,20 @@ function snapshotVersionKey(data: SnapshotData): string {
 }
 
 function buildArchivedSnapshotVersionKey(baseKey: string, store: SnapshotVersionStore): string {
-  let candidate = `${baseKey}@rev:${Date.now()}`;
+  const revisionStamp = Date.now();
+  let candidate = `${baseKey}@rev:${revisionStamp}`;
+  let counter = 0;
   while (store.versions[candidate]) {
-    candidate = `${baseKey}@rev:${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    counter += 1;
+    candidate = `${baseKey}@rev:${revisionStamp}_${counter}`;
   }
   return candidate;
 }
 
 function buildChatFingerprint(chatId: string): string {
-  return simpleHash(String(chatId ?? '')).replace(/^h/, '').slice(0, 12);
+  return simpleHash(String(chatId ?? ''))
+    .replace(/^h/, '')
+    .slice(0, 12);
 }
 
 function buildSnapshotStoreOwner(charName: string, chatId: string): SnapshotStoreOwner {

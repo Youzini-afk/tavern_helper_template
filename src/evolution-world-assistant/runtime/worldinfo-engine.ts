@@ -562,13 +562,13 @@ function selectActivatedEntries(entries: NormalizedEntry[], trigger: string): No
     // Group prioritization
     const usePrioritize = members.filter(e => e.groupOverride);
     if (usePrioritize.length > 0) {
-      const orders = members.map(e => e.order);
-      const top = Math.min(...orders);
-      if (top) {
+      const orders = usePrioritize.map(e => e.order);
+      if (orders.length > 0) {
+        const top = Math.min(...orders);
         matched.push(
-          members[
+          usePrioritize[
             Math.max(
-              orders.findIndex(o => o <= top),
+              usePrioritize.findIndex(entry => entry.order <= top),
               0,
             )
           ],
