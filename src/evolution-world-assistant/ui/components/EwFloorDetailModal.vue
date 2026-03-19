@@ -1,192 +1,190 @@
 <template>
-  <Teleport to="body">
-    <transition name="hist-modal">
-      <div v-if="visible" class="hist-modal-overlay" @click.self="$emit('close')">
-        <div class="hist-modal-container">
-          <!-- Header -->
-          <header class="hist-modal-header">
-            <h3 class="hist-modal-title">
-              {{ isComparing ? '楼层对比' : `楼层 #${floorId}` }}
-            </h3>
-            <button type="button" class="hist-modal-close" @click="$emit('close')">✕</button>
-          </header>
+  <transition name="hist-modal">
+    <div v-if="visible" class="hist-modal-overlay" @click.self="$emit('close')">
+      <div class="hist-modal-container">
+        <!-- Header -->
+        <header class="hist-modal-header">
+          <h3 class="hist-modal-title">
+            {{ isComparing ? '楼层对比' : `楼层 #${floorId}` }}
+          </h3>
+          <button type="button" class="hist-modal-close" @click="$emit('close')">✕</button>
+        </header>
 
-          <!-- Normal Detail View -->
-          <div v-if="!isComparing" class="hist-modal-body">
-            <div v-if="safeDiff" class="hist-changes">
-              <div
-                v-for="[controllerKey, change] in Object.entries(safeDiff.controllersChanged)"
-                :key="`ctrl-${controllerKey}`"
-                class="hist-change-item hist-change--modified"
-              >
-                <span class="hist-change-icon">≈</span>
-                <span>Controller {{ controllerKey }} · {{ change }}</span>
-              </div>
-              <div v-for="name in safeDiff.created" :key="'c-' + name" class="hist-change-item hist-change--created">
-                <span class="hist-change-icon">+</span>
-                <span class="hist-change-name">{{ name }}</span>
-              </div>
-              <div v-for="name in safeDiff.modified" :key="'m-' + name" class="hist-change-item hist-change--modified">
-                <span class="hist-change-icon">~</span>
-                <span class="hist-change-name">{{ name }}</span>
-              </div>
-              <div v-for="name in safeDiff.deleted" :key="'d-' + name" class="hist-change-item hist-change--deleted">
-                <span class="hist-change-icon">−</span>
-                <span class="hist-change-name">{{ name }}</span>
-              </div>
-              <div v-for="name in safeDiff.toggled" :key="'t-' + name" class="hist-change-item hist-change--toggled">
-                <span class="hist-change-icon">⇄</span>
-                <span class="hist-change-name">{{ name }}</span>
-              </div>
-              <div
-                v-if="
-                  !safeDiff.created.length &&
-                  !safeDiff.modified.length &&
-                  !safeDiff.deleted.length &&
-                  !safeDiff.toggled.length &&
-                  !Object.keys(safeDiff.controllersChanged).length
-                "
-                class="hist-empty"
-              >
-                此楼层无变更。
-              </div>
+        <!-- Normal Detail View -->
+        <div v-if="!isComparing" class="hist-modal-body">
+          <div v-if="safeDiff" class="hist-changes">
+            <div
+              v-for="[controllerKey, change] in Object.entries(safeDiff.controllersChanged)"
+              :key="`ctrl-${controllerKey}`"
+              class="hist-change-item hist-change--modified"
+            >
+              <span class="hist-change-icon">≈</span>
+              <span>Controller {{ controllerKey }} · {{ change }}</span>
             </div>
-            <div v-else class="hist-empty">此楼层无快照数据。</div>
-
-            <div class="hist-meta-panel">
-              <div class="hist-meta-row">
-                <strong>解析结果：</strong><span>{{ resolutionSummary }}</span>
-              </div>
-              <div class="hist-meta-row">
-                <strong>快照来源：</strong><span>{{ sourceSummary }}</span>
-              </div>
-              <div class="hist-meta-row">
-                <strong>楼层角色：</strong><span>{{ roleSummary }}</span>
-              </div>
-              <div class="hist-meta-row">
-                <strong>楼层语义：</strong><span>{{ anchorSummary }}</span>
-              </div>
-              <div v-if="pairedMessageId !== undefined && pairedMessageId !== null" class="hist-meta-row">
-                <strong>关联楼层：</strong><span>#{{ pairedMessageId }}</span>
-              </div>
-              <div class="hist-meta-row">
-                <strong>可用版本数：</strong><span>{{ availableVersionCount }}</span>
-              </div>
-              <div v-if="safeExecution" class="hist-meta-row">
-                <strong>执行状态：</strong>
-                <span>{{ safeExecution.execution_status === 'skipped' ? '已跳过' : '已执行' }}</span>
-              </div>
-              <div v-if="safeExecution?.skip_reason" class="hist-meta-row">
-                <strong>跳过原因：</strong><span>{{ safeExecution.skip_reason }}</span>
-              </div>
-              <div v-if="safeExecution" class="hist-meta-row">
-                <strong>尝试工作流：</strong><span>{{ safeExecution.attempted_flow_ids.length }}</span>
-              </div>
-              <div v-if="safeExecution" class="hist-meta-row">
-                <strong>失败工作流：</strong><span>{{ safeExecution.failed_flow_ids.length }}</span>
-              </div>
-              <div v-if="matchedVersionKey" class="hist-meta-row">
-                <strong>展示版本键：</strong><code>{{ matchedVersionKey }}</code>
-              </div>
-              <div v-if="fileName" class="hist-meta-row">
-                <strong>文件名：</strong><code>{{ fileName }}</code>
-              </div>
+            <div v-for="name in safeDiff.created" :key="'c-' + name" class="hist-change-item hist-change--created">
+              <span class="hist-change-icon">+</span>
+              <span class="hist-change-name">{{ name }}</span>
             </div>
-
-            <!-- Snapshot content -->
-            <div v-if="safeSnapshot" class="hist-snapshot-detail">
-              <h4 class="hist-sub-title">快照内容</h4>
-              <div
-                v-for="controller in safeSnapshot.controllers"
-                :key="controller.entry_name || controller.flow_id || controller.flow_name"
-                class="hist-detail-block"
-              >
-                <strong>Controller · {{ controller.flow_name || controller.flow_id || 'Legacy' }}</strong>
-                <pre>{{ truncate(controller.content, 500) }}</pre>
-              </div>
-              <div v-for="entry in safeSnapshot.dyn_entries" :key="entry.name" class="hist-detail-block">
-                <strong>
-                  <span class="hist-enabled-dot" :data-enabled="entry.enabled ? '1' : '0'" />
-                  {{ entry.name }}
-                </strong>
-                <pre>{{ truncate(entry.content, 300) }}</pre>
-              </div>
+            <div v-for="name in safeDiff.modified" :key="'m-' + name" class="hist-change-item hist-change--modified">
+              <span class="hist-change-icon">~</span>
+              <span class="hist-change-name">{{ name }}</span>
             </div>
+            <div v-for="name in safeDiff.deleted" :key="'d-' + name" class="hist-change-item hist-change--deleted">
+              <span class="hist-change-icon">−</span>
+              <span class="hist-change-name">{{ name }}</span>
+            </div>
+            <div v-for="name in safeDiff.toggled" :key="'t-' + name" class="hist-change-item hist-change--toggled">
+              <span class="hist-change-icon">⇄</span>
+              <span class="hist-change-name">{{ name }}</span>
+            </div>
+            <div
+              v-if="
+                !safeDiff.created.length &&
+                !safeDiff.modified.length &&
+                !safeDiff.deleted.length &&
+                !safeDiff.toggled.length &&
+                !Object.keys(safeDiff.controllersChanged).length
+              "
+              class="hist-empty"
+            >
+              此楼层无变更。
+            </div>
+          </div>
+          <div v-else class="hist-empty">此楼层无快照数据。</div>
 
-            <!-- Actions -->
-            <div class="hist-modal-actions">
-              <button type="button" class="ew-btn" :disabled="store.busy" @click="doRollback">↩ 回滚到此楼层</button>
-              <button type="button" class="ew-btn" @click="startCompare">⇋ 对比其他楼层</button>
+          <div class="hist-meta-panel">
+            <div class="hist-meta-row">
+              <strong>解析结果：</strong><span>{{ resolutionSummary }}</span>
+            </div>
+            <div class="hist-meta-row">
+              <strong>快照来源：</strong><span>{{ sourceSummary }}</span>
+            </div>
+            <div class="hist-meta-row">
+              <strong>楼层角色：</strong><span>{{ roleSummary }}</span>
+            </div>
+            <div class="hist-meta-row">
+              <strong>楼层语义：</strong><span>{{ anchorSummary }}</span>
+            </div>
+            <div v-if="pairedMessageId !== undefined && pairedMessageId !== null" class="hist-meta-row">
+              <strong>关联楼层：</strong><span>#{{ pairedMessageId }}</span>
+            </div>
+            <div class="hist-meta-row">
+              <strong>可用版本数：</strong><span>{{ availableVersionCount }}</span>
+            </div>
+            <div v-if="safeExecution" class="hist-meta-row">
+              <strong>执行状态：</strong>
+              <span>{{ safeExecution.execution_status === 'skipped' ? '已跳过' : '已执行' }}</span>
+            </div>
+            <div v-if="safeExecution?.skip_reason" class="hist-meta-row">
+              <strong>跳过原因：</strong><span>{{ safeExecution.skip_reason }}</span>
+            </div>
+            <div v-if="safeExecution" class="hist-meta-row">
+              <strong>尝试工作流：</strong><span>{{ safeExecution.attempted_flow_ids.length }}</span>
+            </div>
+            <div v-if="safeExecution" class="hist-meta-row">
+              <strong>失败工作流：</strong><span>{{ safeExecution.failed_flow_ids.length }}</span>
+            </div>
+            <div v-if="matchedVersionKey" class="hist-meta-row">
+              <strong>展示版本键：</strong><code>{{ matchedVersionKey }}</code>
+            </div>
+            <div v-if="fileName" class="hist-meta-row">
+              <strong>文件名：</strong><code>{{ fileName }}</code>
             </div>
           </div>
 
-          <!-- Compare View -->
-          <div v-else class="hist-modal-body">
-            <div class="hist-compare-select">
-              <label>对比目标楼层：</label>
-              <select v-model="compareTargetId" class="hist-select">
-                <option v-for="floor in otherFloors" :key="floor.messageId" :value="floor.messageId">
-                  #{{ floor.messageId }}
-                </option>
-              </select>
-              <button type="button" class="ew-btn ew-btn--sm" @click="isComparing = false">取消对比</button>
+          <!-- Snapshot content -->
+          <div v-if="safeSnapshot" class="hist-snapshot-detail">
+            <h4 class="hist-sub-title">快照内容</h4>
+            <div
+              v-for="controller in safeSnapshot.controllers"
+              :key="controller.entry_name || controller.flow_id || controller.flow_name"
+              class="hist-detail-block"
+            >
+              <strong>Controller · {{ controller.flow_name || controller.flow_id || 'Legacy' }}</strong>
+              <pre>{{ truncate(controller.content, 500) }}</pre>
             </div>
+            <div v-for="entry in safeSnapshot.dyn_entries" :key="entry.name" class="hist-detail-block">
+              <strong>
+                <span class="hist-enabled-dot" :data-enabled="entry.enabled ? '1' : '0'" />
+                {{ entry.name }}
+              </strong>
+              <pre>{{ truncate(entry.content, 300) }}</pre>
+            </div>
+          </div>
 
-            <div v-if="compareTargetId !== null" class="hist-diff-view">
-              <!-- Left: current floor -->
-              <div class="hist-diff-col">
-                <h4 class="hist-diff-title">楼层 #{{ floorId }}</h4>
-                <div v-if="safeSnapshot" class="hist-diff-entries">
-                  <div
-                    v-for="controller in safeSnapshot.controllers"
-                    :key="`left-${controller.entry_name || controller.flow_id || controller.flow_name}`"
-                    class="hist-diff-entry"
-                  >
-                    <strong>Controller · {{ controller.flow_name || controller.flow_id || 'Legacy' }}</strong>
-                    <pre>{{ truncate(controller.content, 300) }}</pre>
-                  </div>
-                  <div
-                    v-for="e in safeSnapshot.dyn_entries"
-                    :key="e.name"
-                    class="hist-diff-entry"
-                    :class="diffEntryClass(e.name, 'left')"
-                  >
-                    <strong>{{ e.name }}</strong>
-                    <pre>{{ truncate(e.content, 200) }}</pre>
-                  </div>
+          <!-- Actions -->
+          <div class="hist-modal-actions">
+            <button type="button" class="ew-btn" :disabled="store.busy" @click="doRollback">↩ 回滚到此楼层</button>
+            <button type="button" class="ew-btn" @click="startCompare">⇋ 对比其他楼层</button>
+          </div>
+        </div>
+
+        <!-- Compare View -->
+        <div v-else class="hist-modal-body">
+          <div class="hist-compare-select">
+            <label>对比目标楼层：</label>
+            <select v-model="compareTargetId" class="hist-select">
+              <option v-for="floor in otherFloors" :key="floor.messageId" :value="floor.messageId">
+                #{{ floor.messageId }}
+              </option>
+            </select>
+            <button type="button" class="ew-btn ew-btn--sm" @click="isComparing = false">取消对比</button>
+          </div>
+
+          <div v-if="compareTargetId !== null" class="hist-diff-view">
+            <!-- Left: current floor -->
+            <div class="hist-diff-col">
+              <h4 class="hist-diff-title">楼层 #{{ floorId }}</h4>
+              <div v-if="safeSnapshot" class="hist-diff-entries">
+                <div
+                  v-for="controller in safeSnapshot.controllers"
+                  :key="`left-${controller.entry_name || controller.flow_id || controller.flow_name}`"
+                  class="hist-diff-entry"
+                >
+                  <strong>Controller · {{ controller.flow_name || controller.flow_id || 'Legacy' }}</strong>
+                  <pre>{{ truncate(controller.content, 300) }}</pre>
                 </div>
-                <div v-else class="hist-empty">无快照</div>
-              </div>
-              <!-- Right: compare target -->
-              <div class="hist-diff-col">
-                <h4 class="hist-diff-title">楼层 #{{ compareTargetId }}</h4>
-                <div v-if="safeCompareSnapshot" class="hist-diff-entries">
-                  <div
-                    v-for="controller in safeCompareSnapshot.controllers"
-                    :key="`right-${controller.entry_name || controller.flow_id || controller.flow_name}`"
-                    class="hist-diff-entry"
-                  >
-                    <strong>Controller · {{ controller.flow_name || controller.flow_id || 'Legacy' }}</strong>
-                    <pre>{{ truncate(controller.content, 300) }}</pre>
-                  </div>
-                  <div
-                    v-for="e in safeCompareSnapshot.dyn_entries"
-                    :key="e.name"
-                    class="hist-diff-entry"
-                    :class="diffEntryClass(e.name, 'right')"
-                  >
-                    <strong>{{ e.name }}</strong>
-                    <pre>{{ truncate(e.content, 200) }}</pre>
-                  </div>
+                <div
+                  v-for="e in safeSnapshot.dyn_entries"
+                  :key="e.name"
+                  class="hist-diff-entry"
+                  :class="diffEntryClass(e.name, 'left')"
+                >
+                  <strong>{{ e.name }}</strong>
+                  <pre>{{ truncate(e.content, 200) }}</pre>
                 </div>
-                <div v-else class="hist-empty">无快照</div>
               </div>
+              <div v-else class="hist-empty">无快照</div>
+            </div>
+            <!-- Right: compare target -->
+            <div class="hist-diff-col">
+              <h4 class="hist-diff-title">楼层 #{{ compareTargetId }}</h4>
+              <div v-if="safeCompareSnapshot" class="hist-diff-entries">
+                <div
+                  v-for="controller in safeCompareSnapshot.controllers"
+                  :key="`right-${controller.entry_name || controller.flow_id || controller.flow_name}`"
+                  class="hist-diff-entry"
+                >
+                  <strong>Controller · {{ controller.flow_name || controller.flow_id || 'Legacy' }}</strong>
+                  <pre>{{ truncate(controller.content, 300) }}</pre>
+                </div>
+                <div
+                  v-for="e in safeCompareSnapshot.dyn_entries"
+                  :key="e.name"
+                  class="hist-diff-entry"
+                  :class="diffEntryClass(e.name, 'right')"
+                >
+                  <strong>{{ e.name }}</strong>
+                  <pre>{{ truncate(e.content, 200) }}</pre>
+                </div>
+              </div>
+              <div v-else class="hist-empty">无快照</div>
             </div>
           </div>
         </div>
       </div>
-    </transition>
-  </Teleport>
+    </div>
+  </transition>
 </template>
 
 <script setup lang="ts">
