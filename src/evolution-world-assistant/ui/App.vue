@@ -590,7 +590,7 @@
 
 <script setup lang="ts">
 import { checkEjsSyntax, renderEjsContent } from '../runtime/ejs-internal';
-import { migrateSnapshots } from '../runtime/floor-binding';
+import { localizeSnapshotsForCurrentChat, migrateSnapshots } from '../runtime/floor-binding';
 import { resolveControllerEntryNameMap } from '../runtime/helpers';
 import { applyHideSettings, unhideAll } from '../runtime/hide-engine';
 import { patchSettings } from '../runtime/settings';
@@ -840,9 +840,14 @@ async function onMigrateSnapshots() {
   if (migratingSnapshots.value) return;
   migratingSnapshots.value = true;
   try {
+    const localization = await localizeSnapshotsForCurrentChat(store.settings);
     const direction = store.settings.snapshot_storage === 'file' ? ('to_file' as const) : ('to_message_data' as const);
     const { migrated } = await migrateSnapshots(direction);
-    showEwNotice({ title: '快照同步', message: `已处理 ${migrated} 条消息`, level: 'success' });
+    showEwNotice({
+      title: '快照同步',
+      message: `本地化 ${localization.localized} 条、回填锚点 ${localization.uplifted} 条、同步处理 ${migrated} 条消息`,
+      level: 'success',
+    });
   } catch (e) {
     console.error('[Evolution World] Migration failed:', e);
     showEwNotice({ title: '快照同步失败', message: '请检查控制台', level: 'error' });

@@ -1,12 +1,18 @@
 import { buildMessageVersionKey, getMessageVersionInfo, resolveControllerSnapshotEntryName } from './helpers';
 import {
+  buildChatFingerprint,
   buildFileName,
+  buildFilePrefix,
+  buildLegacyFileName,
+  buildLegacyFilePrefix,
+  buildSnapshotStoreOwner,
   cleanupSnapshotFiles,
   deleteSnapshot,
   readSnapshotStore,
   writeSnapshot,
   writeSnapshotStore,
   type SnapshotData,
+  type SnapshotStoreOwner,
   type SnapshotVersionStore,
 } from './snapshot-storage';
 import { ControllerEntrySnapshot, EwSettings } from './types';
@@ -21,6 +27,7 @@ const EW_SWIPE_ID_KEY = 'ew_snapshot_swipe_id';
 const EW_CONTENT_HASH_KEY = 'ew_snapshot_content_hash';
 const EW_INLINE_SNAPSHOT_VERSIONS_KEY = 'ew_snapshot_versions';
 const EW_FLOOR_WORKFLOW_EXECUTION_KEY = 'ew_workflow_execution';
+const EW_BEFORE_REPLY_BINDING_KEY = 'ew_before_reply_binding';
 
 export type FloorSnapshotReadResolution =
   | 'exact'
@@ -72,6 +79,8 @@ function controllerSnapshotKey(snapshot: ControllerEntrySnapshot): string {
 const floorBindingListenerStops: EventOnReturn[] = [];
 const observedMessageVersionKeys = new Map<number, string>();
 let floorBindingRestoreTimer: ReturnType<typeof setTimeout> | null = null;
+const localizationInFlightByChatKey = new Map<string, Promise<SnapshotLocalizationResult>>();
+const localizationSignatureByChatKey = new Map<string, string>();
 
 function scheduleFloorBindingRestore(getSettings: () => EwSettings, delayMs: number): void {
   if (floorBindingRestoreTimer) {
@@ -166,9 +175,50 @@ function getMessageSnapshotFileCandidates(msg: any): string[] {
     if (inferred && !candidates.includes(inferred)) {
       candidates.push(inferred);
     }
+
+    const inferredLegacy = buildLegacyFileName(getCharName(), getChatId(), messageId);
+    if (inferredLegacy && !candidates.includes(inferredLegacy)) {
+      candidates.push(inferredLegacy);
+    }
   }
 
   return candidates;
+}
+
+function isSnapshotFileNamedForCurrentChat(fileName: string): boolean {
+  const normalized = String(fileName ?? '').trim();
+  if (!normalized) {
+    return false;
+  }
+  const expectedPrefix = buildFilePrefix(getCharName(), getChatId());
+  const legacyPrefix = buildLegacyFilePrefix(getCharName(), getChatId());
+  return normalized.startsWith(expectedPrefix) || normalized.startsWith(legacyPrefix);
+}
+
+function isSnapshotOwnerMatchingCurrentChat(owner: SnapshotStoreOwner | undefined): boolean {
+  if (!owner) {
+    return false;
+  }
+
+  const expected = buildSnapshotStoreOwner(getCharName(), getChatId());
+  return (
+    owner.char_name === expected.char_name &&
+    owner.chat_id === expected.chat_id &&
+    owner.chat_fingerprint === expected.chat_fingerprint
+  );
+}
+
+function isSnapshotStoreOwnedByCurrentChat(fileName: string, store: SnapshotVersionStore | null | undefined): boolean {
+  const nameOwned = isSnapshotFileNamedForCurrentChat(fileName);
+  if (!nameOwned) {
+    return false;
+  }
+
+  if (!store?.owner) {
+    return nameOwned;
+  }
+
+  return nameOwned && isSnapshotOwnerMatchingCurrentChat(store.owner);
 }
 
 function buildSnapshotReadResult(
@@ -316,23 +366,36 @@ export async function pinMessageSnapshotToCurrentVersion(messageId: number): Pro
   if (readResult.source === 'file' && readResult.file_name) {
     const currentFileRef =
       typeof nextData[EW_SNAPSHOT_FILE_KEY] === 'string' ? String(nextData[EW_SNAPSHOT_FILE_KEY]).trim() : '';
-    const store = await readSnapshotStore(readResult.file_name);
-    if (!store) {
+    const sourceFileName = String(readResult.file_name).trim();
+    const sourceStore = await readSnapshotStore(sourceFileName);
+    if (!sourceStore) {
       return false;
     }
 
+    const isOwnedByCurrentChat = isSnapshotStoreOwnedByCurrentChat(sourceFileName, sourceStore);
+    const writableFileName = isOwnedByCurrentChat ? sourceFileName : buildFileName(getCharName(), getChatId(), messageId);
+    const writableStore: SnapshotVersionStore = {
+      version: 'ew-snapshot/v2',
+      updated_at: Date.now(),
+      versions: { ...sourceStore.versions },
+      owner: buildSnapshotStoreOwner(getCharName(), getChatId()),
+    };
     if (readResult.resolution !== 'exact') {
-      store.versions[currentVersionKey] = {
+      writableStore.versions[currentVersionKey] = {
         ...readResult.snapshot,
         swipe_id: versionInfo.swipe_id,
         content_hash: versionInfo.content_hash,
       };
-      await writeSnapshotStore(readResult.file_name, store);
       mutated = true;
     }
 
-    if (currentFileRef !== readResult.file_name) {
-      nextData[EW_SNAPSHOT_FILE_KEY] = readResult.file_name;
+    if (!isOwnedByCurrentChat || readResult.resolution !== 'exact') {
+      await writeSnapshotStore(writableFileName, writableStore);
+      mutated = true;
+    }
+
+    if (currentFileRef !== writableFileName) {
+      nextData[EW_SNAPSHOT_FILE_KEY] = writableFileName;
       mutated = true;
     }
 
@@ -455,6 +518,393 @@ export async function rebindFloorSnapshotToMessage(
   };
 }
 
+export type SnapshotLocalizationResult = {
+  localized: number;
+  uplifted: number;
+  unresolved: number;
+  skipped: number;
+  mutated_messages: number;
+  warnings: string[];
+};
+
+type FloorWorkflowExecutionVersionedMap = Record<string, Record<string, unknown>>;
+
+function buildFloorExecutionVersionKey(state: { swipe_id?: number; content_hash?: string }): string {
+  return `sw:${Math.max(0, Math.trunc(Number(state.swipe_id ?? 0) || 0))}|${String(state.content_hash ?? '').trim()}`;
+}
+
+function normalizeFloorWorkflowExecutionMap(raw: unknown): FloorWorkflowExecutionVersionedMap {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {};
+  }
+
+  const obj = raw as Record<string, unknown>;
+  if (
+    Array.isArray(obj.attempted_flow_ids) ||
+    Array.isArray(obj.failed_flow_ids) ||
+    Array.isArray(obj.successful_results) ||
+    typeof obj.request_id === 'string'
+  ) {
+    const versionKey = buildFloorExecutionVersionKey({
+      swipe_id: Number(obj.swipe_id ?? 0),
+      content_hash: String(obj.content_hash ?? '').trim(),
+    });
+    return {
+      [versionKey]: { ...obj },
+    };
+  }
+
+  const map: FloorWorkflowExecutionVersionedMap = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      map[key] = { ...(value as Record<string, unknown>) };
+    }
+  }
+  return map;
+}
+
+function resolveExecutionEntryForMessage(msg: any): {
+  map: FloorWorkflowExecutionVersionedMap;
+  key: string;
+  state: Record<string, unknown>;
+} | null {
+  const map = normalizeFloorWorkflowExecutionMap(msg?.data?.[EW_FLOOR_WORKFLOW_EXECUTION_KEY]);
+  const versionInfo = getMessageVersionInfo(msg);
+  const versionKey = buildFloorExecutionVersionKey(versionInfo);
+  const exact = map[versionKey];
+  if (exact) {
+    return {
+      map,
+      key: versionKey,
+      state: { ...exact },
+    };
+  }
+
+  const entries = Object.entries(map);
+  if (entries.length === 1) {
+    const [key, state] = entries[0];
+    return {
+      map,
+      key,
+      state: { ...state },
+    };
+  }
+
+  return null;
+}
+
+async function migrateExecutionBetweenMessages(
+  sourceMessageId: number,
+  targetMessageId: number,
+): Promise<{ migrated: boolean; reason?: string }> {
+  if (sourceMessageId === targetMessageId) {
+    return { migrated: false, reason: 'same_message' };
+  }
+
+  const sourceMsg = getChatMessages(sourceMessageId)[0];
+  const targetMsg = getChatMessages(targetMessageId)[0];
+  if (!sourceMsg || !targetMsg) {
+    return { migrated: false, reason: 'message_not_found' };
+  }
+
+  const sourceResolved = resolveExecutionEntryForMessage(sourceMsg);
+  if (!sourceResolved) {
+    return { migrated: false, reason: 'source_execution_missing' };
+  }
+
+  const sourceMap = { ...sourceResolved.map };
+  const targetMap = normalizeFloorWorkflowExecutionMap(targetMsg?.data?.[EW_FLOOR_WORKFLOW_EXECUTION_KEY]);
+  const targetVersionInfo = getMessageVersionInfo(targetMsg);
+  const targetVersionKey = buildFloorExecutionVersionKey(targetVersionInfo);
+  let mutated = false;
+
+  if (!targetMap[targetVersionKey]) {
+    targetMap[targetVersionKey] = {
+      ...sourceResolved.state,
+      swipe_id: targetVersionInfo.swipe_id,
+      content_hash: targetVersionInfo.content_hash,
+    };
+    mutated = true;
+  }
+
+  if (sourceMap[sourceResolved.key]) {
+    delete sourceMap[sourceResolved.key];
+    mutated = true;
+  }
+
+  if (!mutated) {
+    return { migrated: false, reason: 'already_migrated' };
+  }
+
+  const sourceNextData: Record<string, unknown> = {
+    ...(sourceMsg.data ?? {}),
+  };
+  if (Object.keys(sourceMap).length > 0) {
+    sourceNextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY] = sourceMap;
+  } else {
+    delete sourceNextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY];
+  }
+
+  const targetNextData: Record<string, unknown> = {
+    ...(targetMsg.data ?? {}),
+    [EW_FLOOR_WORKFLOW_EXECUTION_KEY]: targetMap,
+  };
+
+  await setChatMessages(
+    [
+      { message_id: sourceMessageId, data: sourceNextData },
+      { message_id: targetMessageId, data: targetNextData },
+    ],
+    { refresh: 'none' },
+  );
+  return { migrated: true };
+}
+
+async function writeBindingMetaPair(sourceMessageId: number, targetMessageId: number, requestId: string): Promise<void> {
+  const sourceMsg = getChatMessages(sourceMessageId)[0];
+  const targetMsg = getChatMessages(targetMessageId)[0];
+  if (!sourceMsg || !targetMsg) {
+    return;
+  }
+
+  const migratedAt = Date.now();
+  const sourceNextData: Record<string, unknown> = {
+    ...(sourceMsg.data ?? {}),
+    [EW_BEFORE_REPLY_BINDING_KEY]: {
+      role: 'source',
+      paired_message_id: targetMessageId,
+      request_id: requestId,
+      migrated_at: migratedAt,
+    },
+  };
+  const targetNextData: Record<string, unknown> = {
+    ...(targetMsg.data ?? {}),
+    [EW_BEFORE_REPLY_BINDING_KEY]: {
+      role: 'assistant_anchor',
+      paired_message_id: sourceMessageId,
+      request_id: requestId,
+      migrated_at: migratedAt,
+    },
+  };
+
+  await setChatMessages(
+    [
+      { message_id: sourceMessageId, data: sourceNextData },
+      { message_id: targetMessageId, data: targetNextData },
+    ],
+    { refresh: 'none' },
+  );
+}
+
+async function markLegacyUserAnchor(messageId: number, reason: string): Promise<void> {
+  const msg = getChatMessages(messageId)[0];
+  if (!msg) {
+    return;
+  }
+
+  const nextData: Record<string, unknown> = {
+    ...(msg.data ?? {}),
+    [EW_BEFORE_REPLY_BINDING_KEY]: {
+      role: 'legacy_user_anchor',
+      reason,
+      marked_at: Date.now(),
+    },
+  };
+  await setChatMessages([{ message_id: messageId, data: nextData }], { refresh: 'none' });
+}
+
+function buildLocalizationSignature(messages: any[]): string {
+  return messages
+    .map(msg => {
+      const fileRef = typeof msg?.data?.[EW_SNAPSHOT_FILE_KEY] === 'string' ? String(msg.data[EW_SNAPSHOT_FILE_KEY]) : '';
+      const bindingRole =
+        typeof msg?.data?.[EW_BEFORE_REPLY_BINDING_KEY]?.role === 'string'
+          ? String(msg.data[EW_BEFORE_REPLY_BINDING_KEY].role)
+          : '';
+      return `${msg.message_id}:${msg.role ?? ''}:${fileRef}:${bindingRole}`;
+    })
+    .join('|');
+}
+
+export async function localizeSnapshotsForCurrentChat(settings: EwSettings): Promise<SnapshotLocalizationResult> {
+  const chatId = getChatId();
+  const charName = getCharName();
+  const ownershipKey = `${charName}::${chatId}::${buildChatFingerprint(chatId)}`;
+  const existingTask = localizationInFlightByChatKey.get(ownershipKey);
+  if (existingTask) {
+    return existingTask;
+  }
+
+  const runTask = (async (): Promise<SnapshotLocalizationResult> => {
+    const result: SnapshotLocalizationResult = {
+      localized: 0,
+      uplifted: 0,
+      unresolved: 0,
+      skipped: 0,
+      mutated_messages: 0,
+      warnings: [],
+    };
+
+    const lastId = getLastMessageId();
+    if (lastId < 0) {
+      localizationSignatureByChatKey.set(ownershipKey, '');
+      return result;
+    }
+
+    const readStoreCache = new Map<string, SnapshotVersionStore | null>();
+    const readStoreCached = async (fileName: string): Promise<SnapshotVersionStore | null> => {
+      const key = String(fileName ?? '').trim();
+      if (!key) {
+        return null;
+      }
+      if (readStoreCache.has(key)) {
+        return readStoreCache.get(key) ?? null;
+      }
+      const store = await readSnapshotStore(key);
+      readStoreCache.set(key, store);
+      return store;
+    };
+
+    let allMessages = getChatMessages(`0-${lastId}`);
+    const previousSignature = localizationSignatureByChatKey.get(ownershipKey);
+    const nextSignature = buildLocalizationSignature(allMessages);
+
+    const localizedUpdates: Array<{ message_id: number; data: Record<string, unknown> }> = [];
+    for (const msg of allMessages) {
+      const snapshotFile = typeof msg?.data?.[EW_SNAPSHOT_FILE_KEY] === 'string' ? String(msg.data[EW_SNAPSHOT_FILE_KEY]) : '';
+      const normalizedFile = snapshotFile.trim();
+      if (!normalizedFile) {
+        result.skipped += 1;
+        continue;
+      }
+
+      const store = await readStoreCached(normalizedFile);
+      if (!store) {
+        result.unresolved += 1;
+        result.warnings.push(`message #${msg.message_id}: snapshot file missing "${normalizedFile}"`);
+        continue;
+      }
+
+      if (isSnapshotStoreOwnedByCurrentChat(normalizedFile, store)) {
+        result.skipped += 1;
+        continue;
+      }
+
+      const localizedFileName = buildFileName(charName, chatId, Number(msg.message_id));
+      const localizedStore: SnapshotVersionStore = {
+        version: 'ew-snapshot/v2',
+        updated_at: Date.now(),
+        versions: { ...store.versions },
+        owner: buildSnapshotStoreOwner(charName, chatId),
+      };
+      await writeSnapshotStore(localizedFileName, localizedStore);
+      localizedUpdates.push({
+        message_id: msg.message_id,
+        data: {
+          ...(msg.data ?? {}),
+          [EW_SNAPSHOT_FILE_KEY]: localizedFileName,
+        },
+      });
+      result.localized += 1;
+    }
+
+    if (localizedUpdates.length > 0) {
+      await setChatMessages(localizedUpdates, { refresh: 'none' });
+      result.mutated_messages += localizedUpdates.length;
+      allMessages = getChatMessages(`0-${lastId}`);
+    }
+
+    const snapshotReadCache = new Map<number, SnapshotReadResult>();
+    const readSnapshotCached = async (messageId: number): Promise<SnapshotReadResult> => {
+      if (snapshotReadCache.has(messageId)) {
+        return snapshotReadCache.get(messageId)!;
+      }
+      const message = getChatMessages(messageId)[0];
+      if (!message) {
+        const missing = buildSnapshotReadResult(null, 'missing', null);
+        snapshotReadCache.set(messageId, missing);
+        return missing;
+      }
+      const readResult = await readSnapshotForMessageDetailed(message, 'strict');
+      snapshotReadCache.set(messageId, readResult);
+      return readResult;
+    };
+
+    for (let i = 0; i < allMessages.length; i++) {
+      const source = getChatMessages(allMessages[i].message_id)[0] ?? allMessages[i];
+      if (source?.role !== 'user') {
+        continue;
+      }
+
+      const sourceSnapshotRead = await readSnapshotCached(source.message_id);
+      const sourceExecution = resolveExecutionEntryForMessage(source);
+      const sourceHasArtifacts = Boolean(sourceSnapshotRead.snapshot || sourceExecution);
+      if (!sourceHasArtifacts) {
+        continue;
+      }
+
+      const next = allMessages[i + 1];
+      if (!next || next.role !== 'assistant') {
+        await markLegacyUserAnchor(source.message_id, 'missing_adjacent_assistant');
+        result.skipped += 1;
+        continue;
+      }
+
+      const target = getChatMessages(next.message_id)[0] ?? next;
+      const targetSnapshotRead = await readSnapshotCached(target.message_id);
+      const targetExecution = resolveExecutionEntryForMessage(target);
+      const targetHasArtifacts = Boolean(targetSnapshotRead.snapshot || targetExecution);
+      if (targetHasArtifacts) {
+        continue;
+      }
+
+      let snapshotMigrated = false;
+      if (sourceSnapshotRead.snapshot) {
+        const snapshotMove = await rebindFloorSnapshotToMessage(settings, source.message_id, target.message_id);
+        snapshotMigrated = snapshotMove.migrated;
+      }
+
+      let executionMigrated = false;
+      if (sourceExecution) {
+        const executionMove = await migrateExecutionBetweenMessages(source.message_id, target.message_id);
+        executionMigrated = executionMove.migrated;
+      }
+
+      if (snapshotMigrated || executionMigrated) {
+        await writeBindingMetaPair(source.message_id, target.message_id, 'auto-localize');
+        snapshotReadCache.delete(source.message_id);
+        snapshotReadCache.delete(target.message_id);
+        result.uplifted += 1;
+        result.mutated_messages += 2;
+      } else {
+        await markLegacyUserAnchor(source.message_id, 'adjacent_assistant_uplift_failed');
+        result.skipped += 1;
+      }
+    }
+
+    if (previousSignature && previousSignature === nextSignature && result.localized === 0 && result.uplifted === 0) {
+      result.skipped += allMessages.length;
+    }
+    localizationSignatureByChatKey.set(ownershipKey, buildLocalizationSignature(getChatMessages(`0-${lastId}`)));
+
+    if (result.unresolved > 0) {
+      console.warn(
+        `[Evolution World] snapshot localization unresolved=${result.unresolved} for chat ${chatId}`,
+        result.warnings,
+      );
+    }
+
+    return result;
+  })();
+
+  localizationInFlightByChatKey.set(ownershipKey, runTask);
+  try {
+    return await runTask;
+  } finally {
+    localizationInFlightByChatKey.delete(ownershipKey);
+  }
+}
+
 // ── Legacy upgrade helpers ───────────────────────────────────
 
 /**
@@ -575,6 +1025,7 @@ function buildSnapshotStoreFromVersions(versions: Record<string, SnapshotData>):
     version: 'ew-snapshot/v2',
     updated_at: Date.now(),
     versions: { ...versions },
+    owner: buildSnapshotStoreOwner(getCharName(), getChatId()),
   };
 }
 
@@ -603,6 +1054,11 @@ export async function markFloorEntries(
 
   const msg = messages[0];
   const previousSnapshotFile = _.get(msg.data, EW_SNAPSHOT_FILE_KEY);
+  const previousSnapshotFileName = typeof previousSnapshotFile === 'string' ? previousSnapshotFile.trim() : '';
+  const previousSnapshotStore = previousSnapshotFileName ? await readSnapshotStore(previousSnapshotFileName) : null;
+  const previousSnapshotFileOwned = previousSnapshotFileName
+    ? isSnapshotStoreOwnedByCurrentChat(previousSnapshotFileName, previousSnapshotStore)
+    : false;
   const versionKey = buildMessageVersionKey(Number(swipeId ?? 0), String(contentHash ?? '').trim());
   const normalizedEntryNames = _.uniq(entryNames.filter(name => typeof name === 'string' && name.trim()));
   const normalizedDynSnapshots = (dynSnapshots ?? [])
@@ -628,18 +1084,24 @@ export async function markFloorEntries(
   clearFloorSnapshotFields(nextData);
 
   if (!hasSnapshotPayload) {
-    if (typeof previousSnapshotFile === 'string' && previousSnapshotFile) {
-      const existingStore = await readSnapshotStore(previousSnapshotFile);
-      if (existingStore) {
-        delete existingStore.versions[versionKey];
-        if (Object.keys(existingStore.versions).length > 0) {
-          await writeSnapshotStore(previousSnapshotFile, existingStore);
-          nextData[EW_SNAPSHOT_FILE_KEY] = previousSnapshotFile;
-        } else {
-          await deleteSnapshot(previousSnapshotFile);
-        }
+    if (previousSnapshotFileName) {
+      if (!previousSnapshotFileOwned) {
+        console.info(
+          `[Evolution World] markFloorEntries: skipped deleting foreign snapshot file "${previousSnapshotFileName}"`,
+        );
       } else {
-        await deleteSnapshot(previousSnapshotFile);
+        const existingStore = previousSnapshotStore;
+        if (existingStore) {
+          delete existingStore.versions[versionKey];
+          if (Object.keys(existingStore.versions).length > 0) {
+            await writeSnapshotStore(previousSnapshotFileName, existingStore);
+            nextData[EW_SNAPSHOT_FILE_KEY] = previousSnapshotFileName;
+          } else {
+            await deleteSnapshot(previousSnapshotFileName);
+          }
+        } else {
+          await deleteSnapshot(previousSnapshotFileName);
+        }
       }
     }
 
@@ -698,8 +1160,8 @@ export async function markFloorEntries(
     writeInlineSnapshotVersions(nextData, inlineVersions);
     nextData[EW_SWIPE_ID_KEY] = swipeId ?? 0;
     if (contentHash) nextData[EW_CONTENT_HASH_KEY] = contentHash;
-    if (typeof previousSnapshotFile === 'string' && previousSnapshotFile) {
-      await deleteSnapshot(previousSnapshotFile);
+    if (previousSnapshotFileName && previousSnapshotFileOwned) {
+      await deleteSnapshot(previousSnapshotFileName);
     }
   }
 
@@ -915,10 +1377,10 @@ export async function migrateSnapshots(direction: 'to_file' | 'to_message_data')
     }
   } else {
     for (const msg of allMessages) {
-      const snapshotFile: string | undefined = _.get(msg.data, EW_SNAPSHOT_FILE_KEY);
-      if (!snapshotFile) continue;
+    const snapshotFile: string | undefined = _.get(msg.data, EW_SNAPSHOT_FILE_KEY);
+    if (!snapshotFile) continue;
 
-      const store = await readSnapshotStore(snapshotFile);
+    const store = await readSnapshotStore(snapshotFile);
       const nextData: Record<string, unknown> = { ...msg.data };
       delete nextData[EW_SNAPSHOT_FILE_KEY];
       clearInlineSnapshotFields(nextData);
@@ -931,7 +1393,9 @@ export async function migrateSnapshots(direction: 'to_file' | 'to_message_data')
       }
 
       await setChatMessages([{ message_id: msg.message_id, data: nextData }], { refresh: 'none' });
-      await deleteSnapshot(snapshotFile);
+      if (isSnapshotStoreOwnedByCurrentChat(snapshotFile, store)) {
+        await deleteSnapshot(snapshotFile);
+      }
       migrated++;
     }
   }
@@ -1158,6 +1622,12 @@ async function restoreWorldbookFromSnapshots(
 
 async function onChatChanged(settings: EwSettings): Promise<void> {
   try {
+    const localization = await localizeSnapshotsForCurrentChat(settings);
+    if (localization.localized > 0 || localization.uplifted > 0 || localization.unresolved > 0) {
+      console.info(
+        `[Evolution World] snapshot localize: localized=${localization.localized}, uplifted=${localization.uplifted}, unresolved=${localization.unresolved}`,
+      );
+    }
     await purgeAndRestoreForChat(settings);
   } catch (error) {
     console.warn('[Evolution World] chat change handling failed:', error);

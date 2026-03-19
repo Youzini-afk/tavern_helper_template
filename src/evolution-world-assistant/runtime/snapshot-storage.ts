@@ -8,7 +8,7 @@
  * (flat layout — ST file API doesn't support subdirectories)
  */
 
-import { buildMessageVersionKey } from './helpers';
+import { buildMessageVersionKey, simpleHash } from './helpers';
 import type { ControllerEntrySnapshot } from './types';
 
 export type SnapshotData = {
@@ -24,6 +24,13 @@ export type SnapshotVersionStore = {
   version: 'ew-snapshot/v2';
   updated_at: number;
   versions: Record<string, SnapshotData>;
+  owner?: SnapshotStoreOwner;
+};
+
+export type SnapshotStoreOwner = {
+  char_name: string;
+  chat_id: string;
+  chat_fingerprint: string;
 };
 
 /**
@@ -83,6 +90,38 @@ function snapshotVersionKey(data: SnapshotData): string {
   return buildMessageVersionKey(Number(data.swipe_id ?? 0), String(data.content_hash ?? '').trim());
 }
 
+function buildChatFingerprint(chatId: string): string {
+  return simpleHash(String(chatId ?? '')).replace(/^h/, '').slice(0, 12);
+}
+
+function buildSnapshotStoreOwner(charName: string, chatId: string): SnapshotStoreOwner {
+  return {
+    char_name: String(charName ?? ''),
+    chat_id: String(chatId ?? ''),
+    chat_fingerprint: buildChatFingerprint(chatId),
+  };
+}
+
+function normalizeSnapshotStoreOwner(raw: unknown): SnapshotStoreOwner | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return undefined;
+  }
+
+  const owner = raw as Record<string, unknown>;
+  const charName = String(owner.char_name ?? '').trim();
+  const chatId = String(owner.chat_id ?? '').trim();
+  const chatFingerprint = String(owner.chat_fingerprint ?? '').trim();
+  if (!charName || !chatId || !chatFingerprint) {
+    return undefined;
+  }
+
+  return {
+    char_name: charName,
+    chat_id: chatId,
+    chat_fingerprint: chatFingerprint,
+  };
+}
+
 function normalizeSnapshotVersionStore(raw: any): SnapshotVersionStore | null {
   if (!raw || typeof raw !== 'object') {
     return null;
@@ -105,6 +144,7 @@ function normalizeSnapshotVersionStore(raw: any): SnapshotVersionStore | null {
       version: 'ew-snapshot/v2',
       updated_at: Number(raw.updated_at ?? Date.now()),
       versions,
+      owner: normalizeSnapshotStoreOwner(raw.owner),
     };
   }
 
@@ -130,10 +170,18 @@ function sanitizeSegment(s: string): string {
 }
 
 function buildFileName(charName: string, chatId: string, messageId: number): string {
-  return `ew__${sanitizeSegment(charName)}__${sanitizeSegment(chatId)}__msg-${messageId}.json`;
+  return `ew__${sanitizeSegment(charName)}__${sanitizeSegment(chatId)}__fp-${buildChatFingerprint(chatId)}__msg-${messageId}.json`;
 }
 
 function buildFilePrefix(charName: string, chatId: string): string {
+  return `ew__${sanitizeSegment(charName)}__${sanitizeSegment(chatId)}__fp-${buildChatFingerprint(chatId)}__`;
+}
+
+function buildLegacyFileName(charName: string, chatId: string, messageId: number): string {
+  return `ew__${sanitizeSegment(charName)}__${sanitizeSegment(chatId)}__msg-${messageId}.json`;
+}
+
+function buildLegacyFilePrefix(charName: string, chatId: string): string {
   return `ew__${sanitizeSegment(charName)}__${sanitizeSegment(chatId)}__`;
 }
 
@@ -173,6 +221,7 @@ export async function writeSnapshotStore(fileName: string, store: SnapshotVersio
     version: 'ew-snapshot/v2',
     updated_at: Date.now(),
     versions: { ...store.versions },
+    owner: store.owner,
   });
 }
 
@@ -187,9 +236,11 @@ export async function writeSnapshot(
     version: 'ew-snapshot/v2' as const,
     updated_at: Date.now(),
     versions: {},
+    owner: buildSnapshotStoreOwner(charName, chatId),
   };
   currentStore.updated_at = Date.now();
   currentStore.versions[snapshotVersionKey(data)] = data;
+  currentStore.owner = buildSnapshotStoreOwner(charName, chatId);
 
   await persistSnapshotStore(fileName, currentStore);
 
@@ -256,7 +307,11 @@ export async function deleteSnapshot(fileName: string): Promise<void> {
  */
 export async function findSnapshotFiles(charName: string, chatId: string, messageIds: number[]): Promise<string[]> {
   const prefix = buildFilePrefix(charName, chatId);
-  const candidates = messageIds.map(id => `user/files/${prefix}msg-${id}.json`);
+  const legacyPrefix = buildLegacyFilePrefix(charName, chatId);
+  const candidates = _.uniq([
+    ...messageIds.map(id => `user/files/${prefix}msg-${id}.json`),
+    ...messageIds.map(id => `user/files/${legacyPrefix}msg-${id}.json`),
+  ]);
 
   if (candidates.length === 0) return [];
 
@@ -300,4 +355,11 @@ export async function cleanupSnapshotFiles(
 
 // ── 迁移 ────────────────────────────────────────────────
 
-export { buildFileName, buildFilePrefix };
+export {
+  buildChatFingerprint,
+  buildFileName,
+  buildFilePrefix,
+  buildLegacyFileName,
+  buildLegacyFilePrefix,
+  buildSnapshotStoreOwner,
+};

@@ -1,5 +1,6 @@
 import { validateEjsTemplate } from './controller-renderer';
 import { rerollCurrentAfterReplyWorkflow } from './events';
+import { localizeSnapshotsForCurrentChat } from './floor-binding';
 import { resolveControllerSnapshotEntryName } from './helpers';
 import { runWorkflow } from './pipeline';
 import { getLastIo, getLastRun, getSettings, patchSettings, readControllerBackup } from './settings';
@@ -18,6 +19,18 @@ declare global {
       validateControllerSyntax: () => Promise<{ ok: boolean; reason?: string }>;
       rollbackController: () => Promise<{ ok: boolean; reason?: string }>;
       rerollCurrentAfterReply: () => Promise<{ ok: boolean; reason?: string }>;
+      localizeSnapshots: () => Promise<{
+        ok: boolean;
+        reason?: string;
+        result?: {
+          localized: number;
+          uplifted: number;
+          unresolved: number;
+          skipped: number;
+          mutated_messages: number;
+          warnings: string[];
+        };
+      }>;
     };
   }
 }
@@ -156,6 +169,14 @@ export function initGlobalApi() {
     validateControllerSyntax,
     rollbackController,
     rerollCurrentAfterReply: () => rerollCurrentAfterReplyWorkflow(),
+    localizeSnapshots: async () => {
+      try {
+        const result = await localizeSnapshotsForCurrentChat(getSettings());
+        return { ok: true, result };
+      } catch (error) {
+        return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+      }
+    },
   };
 }
 

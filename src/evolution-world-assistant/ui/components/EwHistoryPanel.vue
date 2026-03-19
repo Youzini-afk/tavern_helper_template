@@ -126,7 +126,7 @@ function normalizeRole(raw: unknown): FloorRole {
 
 function normalizeBindingMeta(raw: unknown):
   | {
-      role: 'source' | 'assistant_anchor';
+      role: 'source' | 'assistant_anchor' | 'legacy_user_anchor';
       paired_message_id?: number;
     }
   | null {
@@ -134,7 +134,8 @@ function normalizeBindingMeta(raw: unknown):
     return null;
   }
   const meta = raw as Record<string, unknown>;
-  const role = meta.role === 'source' || meta.role === 'assistant_anchor' ? meta.role : null;
+  const role =
+    meta.role === 'source' || meta.role === 'assistant_anchor' || meta.role === 'legacy_user_anchor' ? meta.role : null;
   if (!role) {
     return null;
   }
@@ -221,6 +222,11 @@ const timelineItems = computed(() => {
         role,
         anchor_kind: 'assistant_anchor',
         paired_message_id: bindingMeta.paired_message_id,
+      };
+    } else if (bindingMeta?.role === 'legacy_user_anchor' && role === 'user') {
+      semantic = {
+        role,
+        anchor_kind: 'legacy_user_anchor',
       };
     } else if (bindingMeta?.role === 'source' && role === 'user') {
       semantic = {
