@@ -13,38 +13,38 @@
 
           <!-- Normal Detail View -->
           <div v-if="!isComparing" class="hist-modal-body">
-            <div v-if="diff" class="hist-changes">
+            <div v-if="safeDiff" class="hist-changes">
               <div
-                v-for="[controllerKey, change] in Object.entries(diff.controllersChanged)"
+                v-for="[controllerKey, change] in Object.entries(safeDiff.controllersChanged)"
                 :key="`ctrl-${controllerKey}`"
                 class="hist-change-item hist-change--modified"
               >
                 <span class="hist-change-icon">≈</span>
                 <span>Controller {{ controllerKey }} · {{ change }}</span>
               </div>
-              <div v-for="name in diff.created" :key="'c-' + name" class="hist-change-item hist-change--created">
+              <div v-for="name in safeDiff.created" :key="'c-' + name" class="hist-change-item hist-change--created">
                 <span class="hist-change-icon">+</span>
                 <span class="hist-change-name">{{ name }}</span>
               </div>
-              <div v-for="name in diff.modified" :key="'m-' + name" class="hist-change-item hist-change--modified">
+              <div v-for="name in safeDiff.modified" :key="'m-' + name" class="hist-change-item hist-change--modified">
                 <span class="hist-change-icon">~</span>
                 <span class="hist-change-name">{{ name }}</span>
               </div>
-              <div v-for="name in diff.deleted" :key="'d-' + name" class="hist-change-item hist-change--deleted">
+              <div v-for="name in safeDiff.deleted" :key="'d-' + name" class="hist-change-item hist-change--deleted">
                 <span class="hist-change-icon">−</span>
                 <span class="hist-change-name">{{ name }}</span>
               </div>
-              <div v-for="name in diff.toggled" :key="'t-' + name" class="hist-change-item hist-change--toggled">
+              <div v-for="name in safeDiff.toggled" :key="'t-' + name" class="hist-change-item hist-change--toggled">
                 <span class="hist-change-icon">⇄</span>
                 <span class="hist-change-name">{{ name }}</span>
               </div>
               <div
                 v-if="
-                  !diff.created.length &&
-                  !diff.modified.length &&
-                  !diff.deleted.length &&
-                  !diff.toggled.length &&
-                  !Object.keys(diff.controllersChanged).length
+                  !safeDiff.created.length &&
+                  !safeDiff.modified.length &&
+                  !safeDiff.deleted.length &&
+                  !safeDiff.toggled.length &&
+                  !Object.keys(safeDiff.controllersChanged).length
                 "
                 class="hist-empty"
               >
@@ -72,18 +72,18 @@
               <div class="hist-meta-row">
                 <strong>可用版本数：</strong><span>{{ availableVersionCount }}</span>
               </div>
-              <div v-if="execution" class="hist-meta-row">
+              <div v-if="safeExecution" class="hist-meta-row">
                 <strong>执行状态：</strong>
-                <span>{{ execution.execution_status === 'skipped' ? '已跳过' : '已执行' }}</span>
+                <span>{{ safeExecution.execution_status === 'skipped' ? '已跳过' : '已执行' }}</span>
               </div>
-              <div v-if="execution?.skip_reason" class="hist-meta-row">
-                <strong>跳过原因：</strong><span>{{ execution.skip_reason }}</span>
+              <div v-if="safeExecution?.skip_reason" class="hist-meta-row">
+                <strong>跳过原因：</strong><span>{{ safeExecution.skip_reason }}</span>
               </div>
-              <div v-if="execution" class="hist-meta-row">
-                <strong>尝试工作流：</strong><span>{{ execution.attempted_flow_ids.length }}</span>
+              <div v-if="safeExecution" class="hist-meta-row">
+                <strong>尝试工作流：</strong><span>{{ safeExecution.attempted_flow_ids.length }}</span>
               </div>
-              <div v-if="execution" class="hist-meta-row">
-                <strong>失败工作流：</strong><span>{{ execution.failed_flow_ids.length }}</span>
+              <div v-if="safeExecution" class="hist-meta-row">
+                <strong>失败工作流：</strong><span>{{ safeExecution.failed_flow_ids.length }}</span>
               </div>
               <div v-if="matchedVersionKey" class="hist-meta-row">
                 <strong>展示版本键：</strong><code>{{ matchedVersionKey }}</code>
@@ -94,17 +94,17 @@
             </div>
 
             <!-- Snapshot content -->
-            <div v-if="snapshot" class="hist-snapshot-detail">
+            <div v-if="safeSnapshot" class="hist-snapshot-detail">
               <h4 class="hist-sub-title">快照内容</h4>
               <div
-                v-for="controller in snapshot.controllers"
+                v-for="controller in safeSnapshot.controllers"
                 :key="controller.entry_name || controller.flow_id || controller.flow_name"
                 class="hist-detail-block"
               >
                 <strong>Controller · {{ controller.flow_name || controller.flow_id || 'Legacy' }}</strong>
                 <pre>{{ truncate(controller.content, 500) }}</pre>
               </div>
-              <div v-for="entry in snapshot.dyn_entries" :key="entry.name" class="hist-detail-block">
+              <div v-for="entry in safeSnapshot.dyn_entries" :key="entry.name" class="hist-detail-block">
                 <strong>
                   <span class="hist-enabled-dot" :data-enabled="entry.enabled ? '1' : '0'" />
                   {{ entry.name }}
@@ -136,9 +136,9 @@
               <!-- Left: current floor -->
               <div class="hist-diff-col">
                 <h4 class="hist-diff-title">楼层 #{{ floorId }}</h4>
-                <div v-if="snapshot" class="hist-diff-entries">
+                <div v-if="safeSnapshot" class="hist-diff-entries">
                   <div
-                    v-for="controller in snapshot.controllers"
+                    v-for="controller in safeSnapshot.controllers"
                     :key="`left-${controller.entry_name || controller.flow_id || controller.flow_name}`"
                     class="hist-diff-entry"
                   >
@@ -146,7 +146,7 @@
                     <pre>{{ truncate(controller.content, 300) }}</pre>
                   </div>
                   <div
-                    v-for="e in snapshot.dyn_entries"
+                    v-for="e in safeSnapshot.dyn_entries"
                     :key="e.name"
                     class="hist-diff-entry"
                     :class="diffEntryClass(e.name, 'left')"
@@ -160,9 +160,9 @@
               <!-- Right: compare target -->
               <div class="hist-diff-col">
                 <h4 class="hist-diff-title">楼层 #{{ compareTargetId }}</h4>
-                <div v-if="compareSnapshot" class="hist-diff-entries">
+                <div v-if="safeCompareSnapshot" class="hist-diff-entries">
                   <div
-                    v-for="controller in compareSnapshot.controllers"
+                    v-for="controller in safeCompareSnapshot.controllers"
                     :key="`right-${controller.entry_name || controller.flow_id || controller.flow_name}`"
                     class="hist-diff-entry"
                   >
@@ -170,7 +170,7 @@
                     <pre>{{ truncate(controller.content, 300) }}</pre>
                   </div>
                   <div
-                    v-for="e in compareSnapshot.dyn_entries"
+                    v-for="e in safeCompareSnapshot.dyn_entries"
                     :key="e.name"
                     class="hist-diff-entry"
                     :class="diffEntryClass(e.name, 'right')"
@@ -191,7 +191,7 @@
 
 <script setup lang="ts">
 import { diffSnapshots, type FloorSnapshotReadResolution, type SnapshotDiff } from '../../runtime/floor-binding';
-import type { SnapshotData } from '../../runtime/snapshot-storage';
+import { upgradeSnapshotData, type SnapshotData } from '../../runtime/snapshot-storage';
 import { useEwStore } from '../store';
 
 const props = defineProps<{
@@ -224,13 +224,45 @@ const store = useEwStore();
 const isComparing = ref(false);
 const compareTargetId = ref<number | null>(null);
 
-const diff = computed<SnapshotDiff | null>(() => {
-  if (!props.snapshot) return null;
-  return diffSnapshots(props.prevSnapshot, props.snapshot);
+const safeExecution = computed(() => {
+  if (!props.execution) {
+    return null;
+  }
+  return {
+    execution_status: props.execution.execution_status === 'skipped' ? 'skipped' : 'executed',
+    skip_reason: typeof props.execution.skip_reason === 'string' ? props.execution.skip_reason : undefined,
+    attempted_flow_ids: Array.isArray(props.execution.attempted_flow_ids) ? props.execution.attempted_flow_ids : [],
+    failed_flow_ids: Array.isArray(props.execution.failed_flow_ids) ? props.execution.failed_flow_ids : [],
+    workflow_failed: Boolean(props.execution.workflow_failed),
+  };
+});
+
+const safeSnapshot = computed<SnapshotData | null>(() => {
+  if (!props.snapshot) {
+    return null;
+  }
+  return upgradeSnapshotData(props.snapshot) ?? null;
+});
+
+const safePrevSnapshot = computed<SnapshotData | null>(() => {
+  if (!props.prevSnapshot) {
+    return null;
+  }
+  return upgradeSnapshotData(props.prevSnapshot) ?? null;
+});
+
+const safeDiff = computed<SnapshotDiff | null>(() => {
+  if (!safeSnapshot.value) return null;
+  try {
+    return diffSnapshots(safePrevSnapshot.value, safeSnapshot.value);
+  } catch (error) {
+    console.error('[Evolution World] floor detail diff failed:', error);
+    return null;
+  }
 });
 
 const resolutionSummary = computed(() => {
-  if (!props.snapshot && props.execution?.execution_status === 'skipped') {
+  if (!safeSnapshot.value && safeExecution.value?.execution_status === 'skipped') {
     return '该楼存在 after-reply 执行记录，但本轮被跳过，因此没有生成新的楼层快照。';
   }
 
@@ -287,16 +319,21 @@ const otherFloors = computed(() =>
   store.floorSnapshots.filter(f => f.messageId !== props.floorId && f.snapshot !== null),
 );
 
-const compareSnapshot = computed<SnapshotData | null>(() => {
+const safeCompareSnapshot = computed<SnapshotData | null>(() => {
   if (compareTargetId.value === null) return null;
   const floor = store.floorSnapshots.find(f => f.messageId === compareTargetId.value);
-  return floor?.snapshot ?? null;
+  return floor?.snapshot ? upgradeSnapshotData(floor.snapshot) ?? null : null;
 });
 
 // 计算跨楼层 diff，用于对比视图中的条目着色
 const crossDiff = computed<SnapshotDiff | null>(() => {
-  if (!props.snapshot || !compareSnapshot.value) return null;
-  return diffSnapshots(props.snapshot, compareSnapshot.value);
+  if (!safeSnapshot.value || !safeCompareSnapshot.value) return null;
+  try {
+    return diffSnapshots(safeSnapshot.value, safeCompareSnapshot.value);
+  } catch (error) {
+    console.error('[Evolution World] floor compare diff failed:', error);
+    return null;
+  }
 });
 
 function diffEntryClass(name: string, side: 'left' | 'right'): string {
@@ -322,8 +359,9 @@ function startCompare() {
 }
 
 function truncate(str: string, maxLen: number): string {
-  if (str.length <= maxLen) return str;
-  return str.slice(0, maxLen) + '…';
+  const text = String(str ?? '');
+  if (text.length <= maxLen) return text;
+  return text.slice(0, maxLen) + '…';
 }
 </script>
 

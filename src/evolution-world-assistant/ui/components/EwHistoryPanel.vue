@@ -26,27 +26,43 @@
           class="hist-block"
           :data-has-snapshot="item.floor.snapshot ? '1' : '0'"
           :data-semantic="item.semantic.anchor_kind"
+          :data-selected="selectedFloorId === item.floor.messageId ? '1' : '0'"
+          role="button"
+          tabindex="0"
+          :title="`查看楼层 #${item.floor.messageId} 的快照详情`"
           @click="openFloor(item.floor.messageId)"
+          @keydown.enter.prevent="openFloor(item.floor.messageId)"
+          @keydown.space.prevent="openFloor(item.floor.messageId)"
         >
           <div class="hist-block-head">
             <div class="hist-block-head-main">
-              <span class="hist-block-floor">#{{ item.floor.messageId }}</span>
-              <span class="hist-role-chip" :class="`hist-role-chip--${item.semantic.role}`">
-                {{ roleLabel(item.semantic.role) }}
-              </span>
-              <span v-if="item.semantic.anchor_kind === 'assistant_anchor'" class="hist-anchor-chip hist-anchor-chip--assistant">
-                AI锚点
-              </span>
-              <span v-else-if="item.semantic.anchor_kind === 'source_user'" class="hist-anchor-chip hist-anchor-chip--source">
-                拦截源楼
-              </span>
-              <span v-if="item.semantic.rederive" class="hist-anchor-chip hist-anchor-chip--rederive">
-                {{ item.semantic.rederive.legacy_approx ? '重推导(approx)' : '重推导(exact)' }}
-              </span>
+              <div class="hist-block-topline">
+                <span class="hist-block-floor">#{{ item.floor.messageId }}</span>
+                <span class="hist-role-chip" :class="`hist-role-chip--${item.semantic.role}`">
+                  {{ roleLabel(item.semantic.role) }}
+                </span>
+              </div>
+              <div class="hist-block-badges">
+                <span
+                  v-if="item.semantic.anchor_kind === 'assistant_anchor'"
+                  class="hist-anchor-chip hist-anchor-chip--assistant"
+                >
+                  AI锚点
+                </span>
+                <span v-else-if="item.semantic.anchor_kind === 'source_user'" class="hist-anchor-chip hist-anchor-chip--source">
+                  拦截源楼
+                </span>
+                <span v-if="item.semantic.rederive" class="hist-anchor-chip hist-anchor-chip--rederive">
+                  {{ item.semantic.rederive.legacy_approx ? '重推导(approx)' : '重推导(exact)' }}
+                </span>
+              </div>
             </div>
-            <span class="hist-block-status" :class="statusClass(item)" :title="resolutionTitle(item)">
-              {{ resolutionLabel(item) }}
-            </span>
+            <div class="hist-block-head-side">
+              <span class="hist-block-status" :class="statusClass(item)" :title="resolutionTitle(item)">
+                {{ resolutionLabel(item) }}
+              </span>
+              <span class="hist-block-preview-hint">点击预览</span>
+            </div>
           </div>
           <div v-if="item.floor.snapshot" class="hist-block-changes">
             <span v-if="item.diff.created.length" class="hist-tag hist-tag--created">
@@ -488,22 +504,41 @@ async function onRebuildSelectedFloor() {
 
 .hist-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
   gap: 0.4rem;
 }
 
 .hist-block-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 0.35rem;
+  gap: 0.45rem;
 }
 
 .hist-block-head-main {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.22rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.hist-block-topline,
+.hist-block-badges {
+  display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.25rem;
   min-width: 0;
+}
+
+.hist-block-head-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.22rem;
+  flex-shrink: 0;
 }
 
 .hist-block {
@@ -519,13 +554,26 @@ async function onRebuildSelectedFloor() {
   min-height: 4.5rem;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.4rem;
 }
 
 .hist-block:hover {
   border-color: color-mix(in srgb, var(--ew-accent, #818cf8) 50%, transparent);
   transform: translateY(-2px);
   box-shadow: 0 4px 12px color-mix(in srgb, var(--ew-accent, #818cf8) 15%, transparent);
+}
+
+.hist-block:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--ew-accent, #818cf8) 70%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--ew-accent, #818cf8) 80%, transparent),
+    0 6px 16px color-mix(in srgb, var(--ew-accent, #818cf8) 18%, transparent);
+}
+
+.hist-block[data-selected='1'] {
+  border-color: color-mix(in srgb, #f59e0b 65%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #f59e0b 60%, transparent);
 }
 
 .hist-block[data-has-snapshot='0'][data-semantic='normal'] {
@@ -593,6 +641,12 @@ async function onRebuildSelectedFloor() {
   padding: 0.12rem 0.3rem;
   border-radius: 999px;
   border: 1px solid transparent;
+}
+
+.hist-block-preview-hint {
+  font-size: 0.58rem;
+  line-height: 1.2;
+  color: color-mix(in srgb, var(--SmartThemeBodyColor) 40%, transparent);
 }
 
 .hist-block-status--exact {
@@ -709,14 +763,20 @@ async function onRebuildSelectedFloor() {
     gap: 0.45rem;
   }
   .hist-grid {
-    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
   }
   .hist-block {
-    min-height: 3.5rem;
+    min-height: 4rem;
     padding: 0.35rem;
   }
   .hist-block-floor {
     font-size: 0.68rem;
+  }
+  .hist-block-head {
+    gap: 0.3rem;
+  }
+  .hist-block-head-side {
+    gap: 0.16rem;
   }
   .hist-tag {
     font-size: 0.58rem;
