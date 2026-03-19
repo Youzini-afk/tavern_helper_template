@@ -408,6 +408,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
         toastr.success('手动运行成功', 'Evolution World');
       }
     } finally {
+      refreshDebugRecords({ silent: true });
       busy.value = false;
     }
   }

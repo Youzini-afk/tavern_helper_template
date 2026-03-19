@@ -877,6 +877,7 @@ async function onRerollCurrentFloor() {
   }
 
   const result = await api.rerollCurrentAfterReply();
+  store.refreshDebugRecords({ silent: true });
   if (result.ok) {
     showEwNotice({
       title: 'Evolution World',

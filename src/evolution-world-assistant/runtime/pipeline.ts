@@ -55,6 +55,28 @@ export type RunWorkflowOutput = {
   skipped?: boolean;
 };
 
+function getHostRuntime(): Record<string, any> {
+  try {
+    if (window.parent && window.parent !== window) {
+      return window.parent as unknown as Record<string, any>;
+    }
+  } catch {
+    // ignore
+  }
+
+  return globalThis as Record<string, any>;
+}
+
+function getCurrentChatIdSafe(): string {
+  try {
+    const hostRuntime = getHostRuntime();
+    const sillyTavern = hostRuntime.SillyTavern ?? (globalThis as Record<string, any>).SillyTavern;
+    return String(sillyTavern?.getCurrentChatId?.() ?? sillyTavern?.chatId ?? 'unknown').trim() || 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
 function extractHttpStatus(reason: string): number | null {
   const match = reason.match(/HTTP\s+(\d{3})\b/i);
   return match ? Number.parseInt(match[1], 10) : null;
@@ -434,6 +456,22 @@ function saveIoSummary(requestId: string, chatId: string, mode: 'auto' | 'manual
   });
 }
 
+function persistIoSummarySafe(requestId: string, chatId: string, mode: 'auto' | 'manual', attempts: DispatchFlowAttempt[]) {
+  try {
+    saveIoSummary(requestId, chatId, mode, attempts);
+  } catch (error) {
+    console.warn('[Evolution World] saveIoSummary failed:', error);
+  }
+}
+
+function persistRunSummarySafe(summary: ReturnType<typeof RunSummarySchema.parse>) {
+  try {
+    setLastRun(summary);
+  } catch (error) {
+    console.warn('[Evolution World] setLastRun failed:', error);
+  }
+}
+
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -482,6 +520,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
   const startedAt = Date.now();
   const settings = getSettings();
   const requestId = uuidv4();
+  const currentChatId = getCurrentChatIdSafe();
   const preservedResults = [...(input.preserved_results ?? [])];
   let attempts: DispatchFlowAttempt[] = [];
   let currentStage: WorkflowExecutionStage = 'preparing';
@@ -583,7 +622,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
       settings.total_timeout_ms,
     );
     attempts = dispatchOutput.attempts;
-    saveIoSummary(requestId, currentChatId, input.mode, attempts);
+    persistIoSummarySafe(requestId, currentChatId, input.mode, attempts);
 
     throwIfWorkflowCancelled(input);
 
@@ -634,7 +673,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
       mode: input.mode,
       diagnostics: mergedPlan.diagnostics,
     });
-    setLastRun(summary);
+    persistRunSummarySafe(summary);
 
     input.onProgress?.({
       phase: 'completed',
@@ -660,9 +699,9 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
     });
     if (error instanceof DispatchFlowsError) {
       attempts = error.attempts;
-      saveIoSummary(requestId, currentChatId, input.mode, attempts);
+      persistIoSummarySafe(requestId, currentChatId, input.mode, attempts);
     } else if (attempts.length === 0) {
-      saveIoSummary(requestId, currentChatId, input.mode, []);
+      persistIoSummarySafe(requestId, currentChatId, input.mode, []);
     }
 
     const failureStage: WorkflowFailureDiagnostic['stage'] = (() => {
@@ -702,7 +741,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
       diagnostics: {},
       failure,
     });
-    setLastRun(summary);
+    persistRunSummarySafe(summary);
 
     return { ok: false, reason, request_id: requestId, attempts, results: preservedResults, failure };
   }
