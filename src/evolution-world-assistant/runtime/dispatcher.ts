@@ -1,6 +1,7 @@
 import { buildFlowRequest } from './context-builder';
 import { FlowRequestV1, FlowResponseSchema, FlowTriggerV1 } from './contracts';
 import { assembleOrderedPrompts, collectPromptComponents, PromptComponents } from './prompt-assembler';
+import { getHostRuntime } from './runtime-host';
 import {
   ContextCursor,
   DispatchFlowAttempt,
@@ -56,18 +57,6 @@ export const DEFAULT_WORKFLOW_SYSTEM_PROMPT = [
   'operations.worldbook 字段必须存在（允许为空数组）。',
   'version/flow_id/status/priority 等固定字段可省略，插件会自动补全。',
 ].join('\n');
-
-function getHostRuntime(): Record<string, any> {
-  try {
-    if (window.parent && window.parent !== window) {
-      return window.parent as unknown as Record<string, any>;
-    }
-  } catch {
-    // ignore cross-frame access failures and fall back to current window
-  }
-
-  return globalThis as Record<string, any>;
-}
 
 function resolveGenerateRaw(): ((options: Record<string, any>) => Promise<string>) | null {
   const hostRuntime = getHostRuntime();
@@ -151,31 +140,66 @@ function buildTemplateContext(base: Record<string, any>): Record<string, any> {
   });
 }
 
+function resolveTemplateExpression(templateContext: Record<string, any>, expression: string): unknown {
+  const normalizedPath = String(expression ?? '').trim();
+  if (!normalizedPath) {
+    return '';
+  }
+  return _.get(templateContext, normalizedPath);
+}
+
+function resolveTemplateString(templateContext: Record<string, any>, rawValue: string): unknown {
+  const exactMatch = rawValue.match(/^\{\{\s*([a-zA-Z0-9_.$]+)\s*\}\}$/);
+  if (exactMatch) {
+    return resolveTemplateExpression(templateContext, exactMatch[1]);
+  }
+
+  return rawValue.replace(/\{\{\s*([a-zA-Z0-9_.$]+)\s*\}\}/g, (_match, path) => {
+    const value = resolveTemplateExpression(templateContext, path);
+    if (value === undefined || value === null) {
+      return '';
+    }
+    if (_.isPlainObject(value) || Array.isArray(value)) {
+      return JSON.stringify(value);
+    }
+    return String(value);
+  });
+}
+
+function resolveTemplateNode(templateContext: Record<string, any>, node: unknown): unknown {
+  if (typeof node === 'string') {
+    return resolveTemplateString(templateContext, node);
+  }
+  if (Array.isArray(node)) {
+    return node.map(item => resolveTemplateNode(templateContext, item));
+  }
+  if (_.isPlainObject(node)) {
+    return _.mapValues(node as Record<string, unknown>, value => resolveTemplateNode(templateContext, value));
+  }
+  return node;
+}
+
 function applyTemplate(base: Record<string, any>, templateText: string): Record<string, any> {
   if (!templateText.trim()) {
     return base;
   }
 
-  const templateContext = buildTemplateContext(base);
-
-  const replaced = templateText.replace(/\{\{\s*([a-zA-Z0-9_.$]+)\s*\}\}/g, (_match, path) => {
-    const value = _.get(templateContext, path);
-    if (_.isPlainObject(value) || Array.isArray(value)) {
-      return JSON.stringify(value);
-    }
-    return value === undefined ? '' : String(value);
-  });
-
-  let templateObject: Record<string, any>;
+  let parsedTemplate: unknown;
   try {
-    const parsed = JSON.parse(replaced);
-    if (!_.isPlainObject(parsed)) {
-      throw new Error('request_template must parse to JSON object');
-    }
-    templateObject = parsed as Record<string, any>;
+    parsedTemplate = JSON.parse(templateText);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`flow request_template invalid: ${message}`);
+  }
+
+  if (!_.isPlainObject(parsedTemplate)) {
+    throw new Error('flow request_template invalid: request_template must parse to JSON object');
+  }
+
+  const templateContext = buildTemplateContext(base);
+  const templateObject = resolveTemplateNode(templateContext, parsedTemplate);
+  if (!_.isPlainObject(templateObject)) {
+    throw new Error('flow request_template invalid: resolved template must stay as JSON object');
   }
 
   return _.merge({}, base, templateObject);
@@ -929,6 +953,8 @@ async function executeFlowViaLlmConnector(
   }
 }
 
+void executeFlowViaLlmConnector;
+
 async function executeFlowViaGenerateRawCustomApi(
   flow: EwFlowConfig,
   apiPreset: EwApiPreset,
@@ -1124,6 +1150,8 @@ async function executeFlowViaMainApiStBackend(
   const targetLabel = String(requestBody.custom_url || requestBody.reverse_proxy || 'tavern://main_api');
   return executeFlowViaChatCompletionsBackend(flow, requestBody, targetLabel, onStreamText, abortSignal, isCancelled);
 }
+
+void executeFlowViaMainApiStBackend;
 
 async function executeFlow(
   settings: EwSettings,

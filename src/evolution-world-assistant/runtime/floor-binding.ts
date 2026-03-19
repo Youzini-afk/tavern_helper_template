@@ -1064,6 +1064,8 @@ function readInlineSnapshot(data: Record<string, unknown>, versionKey?: string):
   return values.length === 1 ? values[0] : null;
 }
 
+void readInlineSnapshot;
+
 function writeInlineSnapshotVersions(nextData: Record<string, unknown>, versions: Record<string, SnapshotData>) {
   nextData[EW_INLINE_SNAPSHOT_VERSIONS_KEY] = versions;
 }

@@ -1,9 +1,11 @@
 import { getEffectiveFlows } from './char-flows';
+import { FlowTriggerV1 } from './contracts';
 import { renderControllerTemplate } from './controller-renderer';
 import { dispatchFlows, DispatchFlowsError } from './dispatcher';
 import { uuidv4 } from './helpers';
 import { injectReplyInstructionOnce } from './injection';
 import { mergeFlowResults } from './merger';
+import { createWorkflowRequestContext, getCurrentChatIdSafe } from './runtime-host';
 import { getSettings, setLastIo, setLastRun } from './settings';
 import { commitMergedPlan } from './transaction';
 import {
@@ -25,7 +27,7 @@ type WorkflowExecutionStage = 'preparing' | 'dispatch' | 'merge' | 'commit' | 'c
 type RunWorkflowInput = {
   message_id: number;
   user_input?: string;
-  trigger?: Record<string, any>;
+  trigger?: FlowTriggerV1;
   mode: 'auto' | 'manual';
   inject_reply?: boolean;
   flow_ids?: string[];
@@ -54,28 +56,6 @@ export type RunWorkflowOutput = {
   /** true when the round was skipped (no flows scheduled due to run_every_n_floors or timing filter). */
   skipped?: boolean;
 };
-
-function getHostRuntime(): Record<string, any> {
-  try {
-    if (window.parent && window.parent !== window) {
-      return window.parent as unknown as Record<string, any>;
-    }
-  } catch {
-    // ignore
-  }
-
-  return globalThis as Record<string, any>;
-}
-
-function getCurrentChatIdSafe(): string {
-  try {
-    const hostRuntime = getHostRuntime();
-    const sillyTavern = hostRuntime.SillyTavern ?? (globalThis as Record<string, any>).SillyTavern;
-    return String(sillyTavern?.getCurrentChatId?.() ?? sillyTavern?.chatId ?? 'unknown').trim() || 'unknown';
-  } catch {
-    return 'unknown';
-  }
-}
 
 function extractHttpStatus(reason: string): number | null {
   const match = reason.match(/HTTP\s+(\d{3})\b/i);
@@ -229,6 +209,8 @@ function getFailureStageLabel(stage: WorkflowFailureDiagnostic['stage']): string
       return '未知阶段';
   }
 }
+
+void getFailureStageLabel;
 
 function classifyDispatchFlowFailure(reason: string) {
   const kind = inferFailureKind('dispatch', reason);
@@ -525,7 +507,14 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
   const startedAt = Date.now();
   const settings = getSettings();
   const requestId = uuidv4();
-  const currentChatId = getCurrentChatIdSafe();
+  const requestContext = createWorkflowRequestContext({
+    chat_id: getCurrentChatIdSafe(),
+    request_id: requestId,
+    message_id: input.message_id,
+    user_input: input.user_input,
+    trigger: input.trigger,
+  });
+  const currentChatId = requestContext.chat_id;
   const preservedResults = [...(input.preserved_results ?? [])];
   let attempts: DispatchFlowAttempt[] = [];
   let currentStage: WorkflowExecutionStage = 'preparing';
@@ -612,10 +601,10 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowO
       dispatchFlows({
         settings,
         flows: enabledFlows,
-        message_id: input.message_id,
-        user_input: input.user_input,
-        trigger: input.trigger as import('./contracts').FlowTriggerV1 | undefined,
-        request_id: requestId,
+        message_id: requestContext.message_id,
+        user_input: requestContext.user_input,
+        trigger: requestContext.trigger,
+        request_id: requestContext.request_id ?? requestId,
         context_cursor: input.context_cursor,
         job_type: input.job_type,
         writeback_policy: input.writeback_policy,

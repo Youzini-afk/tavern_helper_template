@@ -255,6 +255,8 @@ function stGetChatMessage(id: number): any {
   return null;
 }
 
+void stGetChatMessage;
+
 function processChatMessage(msg: any): string {
   return String(msg?.mes ?? msg?.message ?? '');
 }
@@ -276,11 +278,15 @@ function stGetChatMessages(range: string, _opts?: Record<string, any>): any[] {
   return chat.slice(start, end + 1);
 }
 
+void stGetChatMessages;
+
 function stMatchChatMessages(pattern: string | RegExp): any[] {
   const chat = getStChat();
   const regex = typeof pattern === 'string' ? new RegExp(pattern, 'i') : pattern;
   return chat.filter((msg: any) => regex.test(msg.mes ?? ''));
 }
+
+void stMatchChatMessages;
 
 function getChatMessageCompat(index: number, role?: 'user' | 'assistant' | 'system'): string {
   const chat = getStChat()

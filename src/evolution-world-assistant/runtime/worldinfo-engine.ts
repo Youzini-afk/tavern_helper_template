@@ -16,6 +16,7 @@
  */
 
 import { createRenderContext, evalEjsTemplate } from './ejs-internal';
+import { simpleHash } from './helpers';
 import { isLikelyMvuWorldInfoContent, isMvuTaggedWorldInfoNameOrComment } from './mvu-compat';
 import { EwSettings } from './types';
 
@@ -359,6 +360,34 @@ function parseRegexFromString(input: string): RegExp | null {
   }
 }
 
+function deterministicPercent(seed: string): number {
+  const hashed = simpleHash(seed).replace(/^h/, '');
+  const parsed = Number.parseInt(hashed.slice(0, 8), 16);
+  if (!Number.isFinite(parsed)) {
+    return 100;
+  }
+  return (parsed % 100) + 1;
+}
+
+function deterministicWeightedIndex(weights: number[], seed: string): number {
+  const normalized = weights.map(weight => Math.max(0, Math.trunc(Number(weight) || 0)));
+  const totalWeight = _.sum(normalized);
+  if (totalWeight <= 0) {
+    return -1;
+  }
+
+  const hashed = simpleHash(seed).replace(/^h/, '');
+  let rollValue = (Number.parseInt(hashed.slice(0, 8), 16) % totalWeight) + 1;
+  for (let i = 0; i < normalized.length; i += 1) {
+    rollValue -= normalized[i];
+    if (rollValue <= 0) {
+      return i;
+    }
+  }
+
+  return normalized.length - 1;
+}
+
 function matchKeys(haystack: string, needle: string, entry: NormalizedEntry): boolean {
   // Regex keyword
   const keyRegex = parseRegexFromString(needle.trim());
@@ -417,13 +446,19 @@ function getScore(trigger: string, entry: NormalizedEntry): number {
 // ---------------------------------------------------------------------------
 
 function selectActivatedEntries(entries: NormalizedEntry[], trigger: string): NormalizedEntry[] {
+  const activationSeedBase = simpleHash(String(trigger ?? ''));
   const activated = new Set<NormalizedEntry>();
 
   for (const entry of entries) {
     if (!entry.enabled) continue;
 
     // Probability check
-    if (entry.useProbability && entry.probability < _.random(1, 100)) continue;
+    if (entry.useProbability) {
+      const probabilityRoll = deterministicPercent(
+        `${activationSeedBase}:prob:${entry.worldbook}:${entry.uid}:${entry.name}`,
+      );
+      if (entry.probability < probabilityRoll) continue;
+    }
 
     // 🔵 Constant — always activated
     if (entry.constant) {
@@ -564,9 +599,10 @@ function selectActivatedEntries(entries: NormalizedEntry[], trigger: string): No
     const useWeights = members.filter(e => !e.groupOverride && !e.useGroupScoring);
     if (useWeights.length > 0) {
       const weights = useWeights.map(e => e.groupWeight);
-      const totalWeight = _.sum(weights);
-      let rollValue = _.random(1, totalWeight);
-      const winner = weights.findIndex(w => (rollValue -= w) <= 0);
+      const winner = deterministicWeightedIndex(
+        weights,
+        `${activationSeedBase}:group:${group}:${useWeights.map(entry => `${entry.worldbook}:${entry.uid}`).join('|')}`,
+      );
       if (winner >= 0) matched.push(useWeights[winner]);
     }
   }

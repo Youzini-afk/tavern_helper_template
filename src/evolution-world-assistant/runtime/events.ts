@@ -14,6 +14,7 @@ import { getMessageVersionInfo, simpleHash } from './helpers';
 import { resetHideState, runIncrementalHideCheck, scheduleHideSettingsApply } from './hide-engine';
 import { markIntercepted, resetInterceptGuard, wasRecentlyIntercepted } from './intercept-guard';
 import { runWorkflow, type RunWorkflowOutput } from './pipeline';
+import { getCurrentChatIdSafe, getHostWindow } from './runtime-host';
 import { getSettings, patchSettings } from './settings';
 import {
   clearAfterReplyPendingIfMatches,
@@ -131,29 +132,13 @@ function resolveAfterReplyContextWindowMs(settings: EwSettings): number {
   return Math.max(settings.total_timeout_ms + 10000, settings.gate_ttl_ms, 600000);
 }
 
-function getHostWindow(): Window & typeof globalThis {
-  try {
-    if (window.parent && window.parent !== window) {
-      return window.parent as Window & typeof globalThis;
-    }
-  } catch {
-    // ignore cross-frame access failures and fall back to current window
-  }
-
-  return window as Window & typeof globalThis;
-}
-
 function getChatDocument(): Document {
   const hostWindow = getHostWindow() as Record<string, any>;
   return hostWindow.SillyTavern?.Chat?.document ?? hostWindow.document ?? document;
 }
 
 function getCurrentChatKey(): string {
-  try {
-    return String(SillyTavern?.getCurrentChatId?.() ?? (SillyTavern as any)?.chatId ?? 'unknown');
-  } catch {
-    return 'unknown';
-  }
+  return getCurrentChatIdSafe();
 }
 
 function clearQueuedWorkflowTasks(reason: string) {

@@ -1,4 +1,4 @@
-﻿import { renderEjsContent } from './ejs-internal';
+import { renderEjsContent } from './ejs-internal';
 import { isLikelyMvuWorldInfoContent, stripBlockedPromptContents, stripMvuPromptArtifacts } from './mvu-compat';
 import { applyTavernRegex } from './regex-engine';
 import type { ContextCursor, EwFlowConfig, EwPromptOrderEntry, EwSettings } from './types';
@@ -720,8 +720,7 @@ export async function collectPromptComponents(
         detail: `range=0-${lastId}; hide_state=${shouldRespectHideState ? 'unhidden' : 'all'}`,
       });
       let strippedImageBlockCount = 0;
-      components.chatMessages = msgs
-        .slice(-flow.context_turns)
+      const sanitizedMessages = msgs
         .map((msg: any) => {
           const sanitized = sanitizeWorkflowChatMessage(String(msg.message ?? ''), settings);
           strippedImageBlockCount += sanitized.removedCount;
@@ -732,6 +731,7 @@ export async function collectPromptComponents(
           };
         })
         .filter((msg: any) => Boolean(msg.content.trim()));
+      components.chatMessages = sanitizedMessages.slice(-flow.context_turns);
 
       if (settings?.strip_workflow_image_blocks && strippedImageBlockCount > 0) {
         chatHistoryAttempts.push({

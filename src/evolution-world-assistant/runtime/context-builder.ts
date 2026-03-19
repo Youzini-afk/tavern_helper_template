@@ -1,5 +1,6 @@
 import { FlowRequestSchema, FlowRequestV1, FlowTriggerV1 } from './contracts';
 import { uuidv4 } from './helpers';
+import { createWorkflowRequestContext } from './runtime-host';
 import { ContextCursor, EwFlowConfig, EwSettings, WorkflowJobType, WorkflowWritebackPolicy } from './types';
 import { buildDynSnapshotFromEntry, resolveTargetWorldbook } from './worldbook-runtime';
 
@@ -58,35 +59,17 @@ async function collectDynEntryContext(settings: EwSettings, activeNamesInput: st
   }
 }
 
-function sanitizeTrigger(trigger: FlowTriggerV1 | undefined): FlowTriggerV1 | undefined {
-  if (!trigger) {
-    return undefined;
-  }
-
-  const next: Record<string, unknown> = {
-    timing: trigger.timing,
-    source: trigger.source,
-    generation_type: trigger.generation_type,
-  };
-
-  if (Number.isFinite(trigger.user_message_id)) {
-    next.user_message_id = trigger.user_message_id;
-  }
-
-  if (Number.isFinite(trigger.assistant_message_id)) {
-    next.assistant_message_id = trigger.assistant_message_id;
-  }
-
-  return next as FlowTriggerV1;
-}
-
 export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRequestV1> {
-  const chatId = String(
-    (typeof SillyTavern !== 'undefined' ? (SillyTavern?.getCurrentChatId?.() ?? (SillyTavern as any).chatId) : null) ??
-      'unknown',
-  );
-  const requestId = input.request_id ?? uuidv4();
-  const trigger = sanitizeTrigger(input.trigger);
+  const requestContext = createWorkflowRequestContext({
+    chat_id:
+      (typeof SillyTavern !== 'undefined'
+        ? (SillyTavern?.getCurrentChatId?.() ?? (SillyTavern as any).chatId)
+        : null) ?? 'unknown',
+    request_id: input.request_id ?? uuidv4(),
+    message_id: input.message_id,
+    user_input: input.user_input,
+    trigger: input.trigger,
+  });
   const ewDynEntries = await collectDynEntryContext(input.settings, input.active_dyn_entry_names);
   ewDynEntries.write_hint = {
     mode: input.flow.dyn_write.mode,
@@ -96,11 +79,11 @@ export async function buildFlowRequest(input: BuildRequestInput): Promise<FlowRe
 
   const payload = FlowRequestSchema.parse({
     version: 'ew-flow/v1',
-    request_id: requestId,
-    chat_id: chatId,
-    message_id: input.message_id,
-    ...(input.user_input ? { user_input: input.user_input } : {}),
-    ...(trigger ? { trigger } : {}),
+    request_id: requestContext.request_id ?? uuidv4(),
+    chat_id: requestContext.chat_id,
+    message_id: requestContext.message_id,
+    ...(requestContext.user_input ? { user_input: requestContext.user_input } : {}),
+    ...(requestContext.trigger ? { trigger: requestContext.trigger } : {}),
     flow: {
       id: input.flow.id,
       name: input.flow.name,
