@@ -150,6 +150,15 @@
   <!-- ── D. 运行日志区 ── -->
   <EwSectionCard v-model="logSectionOpen" title="运行记录" subtitle="最近一次执行的结构化摘要。" collapsible>
     <template v-if="logSectionOpen">
+      <div class="dbg-toolbar">
+        <button type="button" class="ew-btn" :disabled="store.busy" @click="store.refreshDebugRecords">
+          刷新记录
+        </button>
+        <span v-if="lastRunChatMismatch || lastIoChatMismatch" class="dbg-stale-hint">
+          当前显示的记录不属于这个聊天，已为你保留但建议先刷新确认。
+        </span>
+      </div>
+
       <!-- Run Summary -->
       <div v-if="store.lastRun" class="dbg-run-summary">
         <div class="dbg-run-header">
@@ -161,6 +170,10 @@
             · {{ store.lastRun.flow_count }} 工作流 · {{ store.lastRun.elapsed_ms }}ms
           </span>
           <span class="dbg-run-time">{{ formatTime(store.lastRun.at) }}</span>
+        </div>
+        <div v-if="store.lastRun.chat_id" class="dbg-run-chatline">
+          聊天：{{ store.lastRun.chat_id }}
+          <template v-if="lastRunChatMismatch"> · 当前不是这条记录所属聊天</template>
         </div>
         <div v-if="store.lastRun.failure" class="dbg-failure-card" :data-stage="store.lastRun.failure.stage">
           <div class="dbg-failure-card__header">
@@ -198,6 +211,10 @@
       <!-- Flow IO Summary -->
       <template v-if="store.lastIo && store.lastIo.flows.length > 0">
         <h4 class="dbg-io-title">请求 / 响应详情</h4>
+        <div v-if="store.lastIo.chat_id" class="dbg-run-chatline">
+          聊天：{{ store.lastIo.chat_id }}
+          <template v-if="lastIoChatMismatch"> · 当前不是这条记录所属聊天</template>
+        </div>
         <div
           v-for="(flowIo, idx) in store.lastIo.flows"
           :key="idx"
@@ -275,6 +292,15 @@ const dynEntries = computed(() => {
 });
 
 const controllerEntries = computed(() => store.snapshotPreview?.controllers ?? []);
+const currentChatId = computed(() => getCurrentChatIdSafe());
+const lastRunChatMismatch = computed(() => {
+  const chatId = store.lastRun?.chat_id?.trim();
+  return Boolean(chatId && currentChatId.value && chatId !== currentChatId.value);
+});
+const lastIoChatMismatch = computed(() => {
+  const chatId = store.lastIo?.chat_id?.trim();
+  return Boolean(chatId && currentChatId.value && chatId !== currentChatId.value);
+});
 
 watch(
   () => store.promptPreview,
@@ -388,6 +414,16 @@ function formatFailureKind(kind: string): string {
       return '已取消';
     default:
       return '未知错误';
+  }
+}
+
+function getCurrentChatIdSafe(): string {
+  try {
+    const runtime = globalThis as Record<string, any>;
+    const sillyTavern = runtime.SillyTavern;
+    return String(sillyTavern?.getCurrentChatId?.() ?? sillyTavern?.chatId ?? '').trim();
+  } catch {
+    return '';
   }
 }
 </script>
@@ -665,6 +701,17 @@ function formatFailureKind(kind: string): string {
 .dbg-run-meta {
   font-size: 0.78rem;
   color: color-mix(in srgb, var(--SmartThemeBodyColor) 65%, transparent);
+}
+
+.dbg-stale-hint {
+  font-size: 0.74rem;
+  color: #fde68a;
+}
+
+.dbg-run-chatline {
+  margin-top: 0.4rem;
+  font-size: 0.73rem;
+  color: color-mix(in srgb, var(--SmartThemeBodyColor) 55%, transparent);
 }
 
 .dbg-run-time {

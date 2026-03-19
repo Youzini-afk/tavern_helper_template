@@ -20,6 +20,8 @@ import {
   getLastIo,
   getLastRun,
   getSettings,
+  loadLastIo,
+  loadLastRun,
   patchSettings,
   persistSettingsDraft,
   replaceSettings,
@@ -213,6 +215,10 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     ([uiOpen, tab, scope], [prevUiOpen, prevTab, prevScope]) => {
       scheduleCharFlowRefreshWatch();
 
+      if (uiOpen && tab === 'debug' && (!prevUiOpen || prevTab !== 'debug')) {
+        refreshDebugRecords();
+      }
+
       if (!uiOpen || tab !== 'flows' || scope !== 'character') {
         return;
       }
@@ -223,6 +229,11 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     },
     { immediate: true },
   );
+
+  function refreshDebugRecords() {
+    lastRun.value = loadLastRun();
+    lastIo.value = loadLastIo();
+  }
 
   function addApiPreset() {
     const next = klona(settings.value);
@@ -1033,6 +1044,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     promptPreview,
     snapshotPreview,
     previewFlowId,
+    refreshDebugRecords,
     loadPromptPreview,
     loadSnapshotPreview,
     // 历史记录
