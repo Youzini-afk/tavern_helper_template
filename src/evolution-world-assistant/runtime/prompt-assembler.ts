@@ -1,4 +1,5 @@
 import { renderEjsContent } from './ejs-internal';
+import { isEwHiddenMessageIndex } from './hide-engine';
 import { isLikelyMvuWorldInfoContent, stripBlockedPromptContents, stripMvuPromptArtifacts } from './mvu-compat';
 import { applyTavernRegex } from './regex-engine';
 import type { ContextCursor, EwFlowConfig, EwPromptOrderEntry, EwSettings } from './types';
@@ -56,6 +57,13 @@ type PromptMarkerDiagnostic = {
   selectedSource?: string;
   attempts: PromptDiagnosticAttempt[];
   note?: string;
+  source_mode?: 'host_processed' | 'raw_chat' | 'raw_chat_fallback';
+  fallback_reason?: string;
+  raw_count?: number;
+  processed_count?: number;
+  filtered_hidden_count?: number;
+  compression_wrapper_detected?: boolean;
+  regex_applied?: boolean;
 };
 
 type PromptDiagnosticMap = Partial<Record<PromptDiagnosticKey, PromptMarkerDiagnostic>>;
@@ -278,6 +286,175 @@ function getRuntimeChatMessages(range: string, opts?: Record<string, any>): any[
   return getChatMessages(range, opts);
 }
 
+function getRuntimeRawChat(): any[] {
+  const ctx = getRuntimeContext();
+  if (Array.isArray(ctx?.chat)) {
+    return ctx.chat;
+  }
+
+  const hostRuntime = getHostRuntime();
+  const hostChat = hostRuntime.SillyTavern?.getContext?.()?.chat;
+  if (Array.isArray(hostChat)) {
+    return hostChat;
+  }
+
+  return [];
+}
+
+function resolveWorkflowChatRole(msg: any): 'system' | 'user' | 'assistant' {
+  if (msg?.role === 'system' || msg?.role === 'user' || msg?.role === 'assistant') {
+    return msg.role;
+  }
+  if (msg?.is_user === true) {
+    return 'user';
+  }
+  if (msg?.is_system === true) {
+    return 'system';
+  }
+  return 'assistant';
+}
+
+function resolveWorkflowChatText(msg: any): string {
+  const candidates = [msg?.mes, msg?.message, msg?.text];
+  for (const value of candidates) {
+    if (typeof value === 'string') {
+      return value;
+    }
+  }
+  return '';
+}
+
+function resolveWorkflowChatMessageId(msg: any, fallbackIndex: number): number {
+  const resolved = Number(msg?.message_id ?? msg?.mesid ?? fallbackIndex);
+  return Number.isFinite(resolved) ? Math.max(0, Math.trunc(resolved)) : Math.max(0, fallbackIndex);
+}
+
+function shouldFilterWorkflowHiddenMessage(settings: EwSettings | undefined, messageId: number): boolean {
+  const hideState = settings?.hide_settings;
+  if (!hideState?.enabled || !hideState.affect_workflow_context) {
+    return false;
+  }
+  return isEwHiddenMessageIndex(messageId);
+}
+
+type WorkflowChatMessage = {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+  name?: string;
+  message_id: number;
+};
+
+type WorkflowChatCollectionResult = {
+  messages: WorkflowChatMessage[];
+  total_count: number;
+  filtered_hidden_count: number;
+};
+
+function collectProcessedWorkflowChatMessages(
+  lastId: number,
+  settings?: EwSettings,
+): WorkflowChatCollectionResult {
+  if (lastId < 0) {
+    return { messages: [], total_count: 0, filtered_hidden_count: 0 };
+  }
+
+  const msgs = getRuntimeChatMessages(`0-${lastId}`);
+  let filteredHiddenCount = 0;
+  const normalized = (Array.isArray(msgs) ? msgs : [])
+    .map((msg: any, index: number) => {
+      const messageId = resolveWorkflowChatMessageId(msg, index);
+      if (shouldFilterWorkflowHiddenMessage(settings, messageId)) {
+        filteredHiddenCount += 1;
+        return null;
+      }
+
+      const sanitized = sanitizeWorkflowChatMessage(resolveWorkflowChatText(msg), settings);
+      return {
+        role: resolveWorkflowChatRole(msg),
+        content: sanitized.content,
+        name: typeof msg?.name === 'string' ? msg.name : undefined,
+        message_id: messageId,
+      } satisfies WorkflowChatMessage;
+    })
+    .filter((msg): msg is WorkflowChatMessage => Boolean(msg?.content.trim()));
+
+  return {
+    messages: normalized,
+    total_count: normalized.length,
+    filtered_hidden_count: filteredHiddenCount,
+  };
+}
+
+function collectRawWorkflowChatMessages(lastId: number, settings?: EwSettings): WorkflowChatCollectionResult {
+  if (lastId < 0) {
+    return { messages: [], total_count: 0, filtered_hidden_count: 0 };
+  }
+
+  const rawChat = getRuntimeRawChat().slice(0, lastId + 1);
+  let filteredHiddenCount = 0;
+  const normalized = rawChat
+    .map((msg: any, index: number) => {
+      const messageId = resolveWorkflowChatMessageId(msg, index);
+      if (shouldFilterWorkflowHiddenMessage(settings, messageId)) {
+        filteredHiddenCount += 1;
+        return null;
+      }
+
+      const sanitized = sanitizeWorkflowChatMessage(resolveWorkflowChatText(msg), settings);
+      return {
+        role: resolveWorkflowChatRole(msg),
+        content: sanitized.content,
+        name: typeof msg?.name === 'string' ? msg.name : undefined,
+        message_id: messageId,
+      } satisfies WorkflowChatMessage;
+    })
+    .filter((msg): msg is WorkflowChatMessage => Boolean(msg?.content.trim()));
+
+  return {
+    messages: normalized,
+    total_count: normalized.length,
+    filtered_hidden_count: filteredHiddenCount,
+  };
+}
+
+const WORKFLOW_CHAT_COMPRESSION_MARKERS = [
+  /【压缩相邻消息_聊天记录开头】/i,
+  /【压缩相邻消息_聊天记录结尾】/i,
+  /<chathistory>/i,
+  /<\/chathistory>/i,
+];
+
+function detectCompressedWorkflowChatHistory(
+  processedMessages: WorkflowChatMessage[],
+  rawCount: number,
+): { detected: boolean; reason?: string } {
+  if (processedMessages.length === 0) {
+    return { detected: false };
+  }
+
+  const allContent = processedMessages.map(msg => msg.content).join('\n');
+  const containsKnownMarkers = WORKFLOW_CHAT_COMPRESSION_MARKERS.some(pattern => pattern.test(allContent));
+  const additionalSettingsCount = (allContent.match(/<\/?additional_settings>/gi) ?? []).length;
+  const allSystem = processedMessages.every(msg => msg.role === 'system');
+  const dialogueCount = processedMessages.filter(msg => msg.role === 'user' || msg.role === 'assistant').length;
+  const suspiciouslyFewMessages =
+    rawCount >= 6 && processedMessages.length <= Math.max(2, Math.floor(rawCount / 4));
+
+  if (containsKnownMarkers && allSystem) {
+    return { detected: true, reason: '宿主聊天历史命中了压缩相邻消息包装标记，且当前结果只剩 system 块。' };
+  }
+
+  if (containsKnownMarkers && suspiciouslyFewMessages && dialogueCount === 0) {
+    return { detected: true, reason: '宿主聊天历史被压缩包装后只剩少量 system 块，缺少正常 user/assistant 轮次。' };
+  }
+
+  if (additionalSettingsCount >= 2 && suspiciouslyFewMessages && dialogueCount === 0) {
+    return { detected: true, reason: '宿主聊天历史主要由 additional_settings 包装壳组成，已判定为压缩污染。' };
+  }
+
+  return { detected: false };
+}
+
 function describeAttempt(label: string, value: unknown, detail?: string): PromptDiagnosticAttempt {
   if (typeof value === 'string') {
     const trimmed = value.trim();
@@ -410,6 +587,15 @@ function formatDiagnosticBlock(
     `原始长度: ${rawLength}`,
     renderedLength === undefined ? '' : `渲染长度: ${renderedLength}`,
     `命中来源: ${diagnostic.selectedSource ?? '无'}`,
+    diagnostic.source_mode ? `上下文源: ${diagnostic.source_mode}` : '',
+    diagnostic.fallback_reason ? `回退原因: ${diagnostic.fallback_reason}` : '',
+    diagnostic.raw_count === undefined ? '' : `原始聊天条数: ${diagnostic.raw_count}`,
+    diagnostic.processed_count === undefined ? '' : `宿主处理后条数: ${diagnostic.processed_count}`,
+    diagnostic.filtered_hidden_count === undefined ? '' : `过滤隐藏楼层: ${diagnostic.filtered_hidden_count}`,
+    diagnostic.compression_wrapper_detected === undefined
+      ? ''
+      : `检测到聊天压缩包装: ${diagnostic.compression_wrapper_detected ? '是' : '否'}`,
+    diagnostic.regex_applied === undefined ? '' : `已应用酒馆正则: ${diagnostic.regex_applied ? '是' : '否'}`,
     diagnostic.note ? `附加信息: ${diagnostic.note}` : '',
     '来源尝试:',
     ...diagnostic.attempts.map(attempt => `- ${formatAttempt(attempt)}`),
@@ -709,45 +895,86 @@ export async function collectPromptComponents(
     ];
 
     if (lastId >= 0) {
-      const hideState = settings?.hide_settings;
-      const shouldRespectHideState = Boolean(hideState?.enabled && hideState?.affect_workflow_context);
-      const chatMessageOptions = shouldRespectHideState ? { hide_state: 'unhidden' as const } : undefined;
-      const msgs = getRuntimeChatMessages(`0-${lastId}`, chatMessageOptions);
+      const processedResult = collectProcessedWorkflowChatMessages(lastId, settings);
+      const rawResult = collectRawWorkflowChatMessages(lastId, settings);
+      const compressionCheck = detectCompressedWorkflowChatHistory(processedResult.messages, rawResult.total_count);
+      const contextMode = settings?.workflow_chat_context_mode ?? 'host_processed';
+      const shouldPreferRaw = contextMode === 'raw_chat_preferred' && rawResult.total_count > 0;
+      const shouldFallbackToRaw =
+        contextMode === 'host_processed' &&
+        rawResult.total_count > 0 &&
+        (compressionCheck.detected || (processedResult.total_count === 0 && rawResult.total_count > 0));
+      const selectedSourceMode = shouldPreferRaw
+        ? 'raw_chat'
+        : shouldFallbackToRaw
+          ? 'raw_chat_fallback'
+          : 'host_processed';
+      const selectedMessages =
+        selectedSourceMode === 'host_processed' || rawResult.total_count === 0
+          ? processedResult.messages
+          : rawResult.messages;
+
       chatHistoryAttempts.push({
         label: 'getChatMessages()',
-        hasValue: Array.isArray(msgs) && msgs.length > 0,
-        length: Array.isArray(msgs) ? msgs.length : 0,
-        detail: `range=0-${lastId}; hide_state=${shouldRespectHideState ? 'unhidden' : 'all'}`,
+        hasValue: processedResult.total_count > 0,
+        length: processedResult.total_count,
+        detail: `range=0-${lastId}; filtered_hidden=${processedResult.filtered_hidden_count}`,
       });
-      let strippedImageBlockCount = 0;
-      const sanitizedMessages = msgs
-        .map((msg: any) => {
-          const sanitized = sanitizeWorkflowChatMessage(String(msg.message ?? ''), settings);
-          strippedImageBlockCount += sanitized.removedCount;
-          return {
-            role: msg.role as 'system' | 'user' | 'assistant',
-            content: sanitized.content,
-            name: msg.name,
-          };
-        })
-        .filter((msg: any) => Boolean(msg.content.trim()));
-      components.chatMessages = sanitizedMessages.slice(-flow.context_turns);
-
-      if (settings?.strip_workflow_image_blocks && strippedImageBlockCount > 0) {
+      chatHistoryAttempts.push({
+        label: 'ctx.chat(raw)',
+        hasValue: rawResult.total_count > 0,
+        length: rawResult.total_count,
+        detail: `range=0-${lastId}; filtered_hidden=${rawResult.filtered_hidden_count}`,
+      });
+      if (compressionCheck.detected) {
         chatHistoryAttempts.push({
-          label: 'stripWorkflowImageBlocks()',
+          label: 'compression-wrapper-detected',
           hasValue: true,
-          length: strippedImageBlockCount,
-          detail: `removed=${strippedImageBlockCount}`,
+          length: processedResult.total_count,
+          detail: compressionCheck.reason ?? 'detected',
         });
       }
-    }
 
-    components.diagnostics.chatHistory = {
-      selectedSource: components.chatMessages.length > 0 ? 'getChatMessages()' : undefined,
-      attempts: chatHistoryAttempts,
-      note: `context_turns=${flow.context_turns}; 实际纳入=${components.chatMessages.length}`,
-    };
+      components.chatMessages = selectedMessages
+        .slice(-flow.context_turns)
+        .map(msg => ({ role: msg.role, content: msg.content, name: msg.name }));
+
+      components.diagnostics.chatHistory = {
+        selectedSource:
+          selectedSourceMode === 'host_processed'
+            ? 'getChatMessages()'
+            : selectedSourceMode === 'raw_chat_fallback'
+              ? 'ctx.chat(raw) ← fallback'
+              : 'ctx.chat(raw)',
+        attempts: chatHistoryAttempts,
+        note:
+          selectedSourceMode === 'raw_chat_fallback'
+            ? `context_turns=${flow.context_turns}; 实际纳入=${components.chatMessages.length}; 已因聊天压缩污染回退到原始聊天`
+            : `context_turns=${flow.context_turns}; 实际纳入=${components.chatMessages.length}`,
+        source_mode: selectedSourceMode,
+        fallback_reason: selectedSourceMode === 'raw_chat_fallback' ? compressionCheck.reason ?? '宿主聊天结果不可用' : undefined,
+        raw_count: rawResult.total_count,
+        processed_count: processedResult.total_count,
+        filtered_hidden_count:
+          selectedSourceMode === 'host_processed'
+            ? processedResult.filtered_hidden_count
+            : rawResult.filtered_hidden_count,
+        compression_wrapper_detected: compressionCheck.detected,
+        regex_applied: false,
+      };
+    } else {
+      components.diagnostics.chatHistory = {
+        selectedSource: undefined,
+        attempts: chatHistoryAttempts,
+        note: `context_turns=${flow.context_turns}; 实际纳入=${components.chatMessages.length}`,
+        source_mode: settings?.workflow_chat_context_mode === 'raw_chat_preferred' ? 'raw_chat' : 'host_processed',
+        raw_count: 0,
+        processed_count: 0,
+        filtered_hidden_count: 0,
+        compression_wrapper_detected: false,
+        regex_applied: false,
+      };
+    }
   } catch (e) {
     console.debug('[Evolution World] getChatMessages failed:', e);
     components.diagnostics.chatHistory = appendDiagnosticNote(
@@ -851,6 +1078,12 @@ export async function collectPromptComponents(
   // （预设 + 全局 + 角色卡局部，跳过 markdownOnly）
   if (flow.use_tavern_regex && components.chatMessages.length > 0) {
     applyTavernRegex(components.chatMessages);
+    if (components.diagnostics.chatHistory) {
+      components.diagnostics.chatHistory.regex_applied = true;
+      components.diagnostics.chatHistory.note = components.diagnostics.chatHistory.note
+        ? `${components.diagnostics.chatHistory.note}; 已对工作流聊天副本应用酒馆正则`
+        : '已对工作流聊天副本应用酒馆正则';
+    }
   }
 
   return components;
@@ -1072,8 +1305,8 @@ function resolveMarkerContent(identifier: string, components: PromptComponents):
  * assemble ordered prompts → inject entry names) but does NOT send
  * anything to the AI. Returns the messages array for UI display.
  */
-export async function previewPrompt(flow: EwFlowConfig): Promise<PromptPreviewMessage[]> {
-  const components = await collectPromptComponents(flow);
+export async function previewPrompt(flow: EwFlowConfig, settings?: EwSettings): Promise<PromptPreviewMessage[]> {
+  const components = await collectPromptComponents(flow, settings);
   const messages = await assembleOrderedPrompts(flow.prompt_order, components, { includeMarkerPlaceholders: true });
   return messages;
 }

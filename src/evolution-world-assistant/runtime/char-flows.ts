@@ -8,6 +8,7 @@
  * 但会保留 api_preset_id，用于在刷新后继续绑定到同一个全局 API 预设。
  */
 
+import { simpleHash } from './helpers';
 import { EwFlowConfig, EwFlowConfigSchema, EwSettings } from './types';
 import { ensureDefaultEntry, resolveTargetWorldbook } from './worldbook-runtime';
 
@@ -55,6 +56,31 @@ function sanitizeFlow(flow: EwFlowConfig): Record<string, unknown> {
   return obj;
 }
 
+function normalizeLoadedFlowIds(flows: EwFlowConfig[], source: string): EwFlowConfig[] {
+  const usedIds = new Set<string>();
+  return flows.map((flow, index) => {
+    const rawId = String(flow.id ?? '').trim();
+    const baseId = rawId || `flow_${index + 1}_${simpleHash(`${source}:${index}:${flow.name || 'flow'}`)}`;
+    let nextId = baseId;
+    let counter = 2;
+    while (usedIds.has(nextId)) {
+      nextId = `${baseId}__${counter}`;
+      counter += 1;
+    }
+    usedIds.add(nextId);
+
+    if (nextId === flow.id) {
+      return flow;
+    }
+
+    console.warn(`[Evolution World] normalized duplicate char flow id "${flow.id}" -> "${nextId}" (${source})`);
+    return EwFlowConfigSchema.parse({
+      ...flow,
+      id: nextId,
+    });
+  });
+}
+
 export function readCharFlowDraft(charName: string): EwFlowConfig[] | null {
   const storageKey = getCharFlowDraftStorageKey(charName);
   if (!storageKey) {
@@ -76,7 +102,7 @@ export function readCharFlowDraft(charName: string): EwFlowConfig[] | null {
     for (const item of parsed.flows) {
       flows.push(EwFlowConfigSchema.parse(item));
     }
-    return flows;
+    return normalizeLoadedFlowIds(flows, 'char-flow-draft');
   } catch (error) {
     console.warn('[Evolution World] Failed to read char flow draft cache:', error);
     return null;
@@ -164,7 +190,7 @@ export async function readCharFlows(settings: EwSettings): Promise<EwFlowConfig[
         console.warn('[Evolution World] skipped invalid char flow entry');
       }
     }
-    return result;
+    return normalizeLoadedFlowIds(result, 'char-flows');
   } catch (e) {
     console.debug('[Evolution World] readCharFlows failed:', e);
     return [];

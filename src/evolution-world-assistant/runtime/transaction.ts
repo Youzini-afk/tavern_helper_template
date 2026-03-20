@@ -374,6 +374,9 @@ export async function commitMergedPlan(
       dynSnapshots,
       versionInfo.swipe_id,
       versionInfo.content_hash,
+      {
+        persist_empty_snapshot: true,
+      },
     );
   }
 

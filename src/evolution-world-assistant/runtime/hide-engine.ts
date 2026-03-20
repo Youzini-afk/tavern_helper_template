@@ -38,6 +38,10 @@ let scheduledHideApplyTimer: ReturnType<typeof setTimeout> | null = null;
  */
 const ewHiddenIndices = new Set<number>();
 
+export function isEwHiddenMessageIndex(index: number): boolean {
+  return ewHiddenIndices.has(index);
+}
+
 // ── 辅助函数 ───────────────────────────────────────────────────────────
 
 function getChat(): any[] | null {

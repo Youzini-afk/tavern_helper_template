@@ -1095,6 +1095,9 @@ export async function markFloorEntries(
   dynSnapshots?: DynSnapshot[],
   swipeId?: number,
   contentHash?: string,
+  options?: {
+    persist_empty_snapshot?: boolean;
+  },
 ): Promise<void> {
   const messages = getChatMessages(messageId);
   if (messages.length === 0) {
@@ -1132,13 +1135,14 @@ export async function markFloorEntries(
   const hasSnapshotPayload = Boolean(
     normalizedControllerSnapshots.length > 0 || normalizedDynSnapshots.length > 0 || normalizedEntryNames.length > 0,
   );
+  const shouldPersistSnapshot = hasSnapshotPayload || Boolean(options?.persist_empty_snapshot);
 
   const nextData: Record<string, unknown> = {
     ...msg.data,
   };
   clearFloorSnapshotFields(nextData);
 
-  if (!hasSnapshotPayload) {
+  if (!shouldPersistSnapshot) {
     if (previousSnapshotFileName) {
       if (!previousSnapshotFileOwned) {
         console.info(

@@ -203,6 +203,12 @@
                     <option value="before_reply">回复前拦截</option>
                   </select>
                 </EwFieldRow>
+                <EwFieldRow label="工作流聊天上下文" :help="help('workflow_chat_context_mode')">
+                  <select v-model="store.settings.workflow_chat_context_mode">
+                    <option value="host_processed">兼容宿主处理（污染时自动回退）</option>
+                    <option value="raw_chat_preferred">原始聊天优先</option>
+                  </select>
+                </EwFieldRow>
                 <EwFieldRow label="回复后延迟(秒)" :help="help('after_reply_delay_seconds')">
                   <input
                     v-model.number="store.settings.after_reply_delay_seconds"

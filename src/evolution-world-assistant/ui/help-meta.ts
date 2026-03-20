@@ -37,6 +37,13 @@ const FIELD_HELP_LIST: FieldHelpMeta[] = [
     detailHelp: '串行模式下后续工作流可读取前序结果；并行模式更快，但冲突由优先级和顺序合并。',
   },
   {
+    key: 'workflow_chat_context_mode',
+    label: '工作流聊天上下文',
+    shortHelp: '决定工作流聊天记录优先读取宿主加工结果，还是直接读取原始聊天。',
+    detailHelp:
+      '“兼容宿主处理”会优先沿用酒馆当前 getChatMessages 结果，但一旦检测到聊天压缩包装，会自动回退到原始 ctx.chat；“原始聊天优先”则默认直接读取原始聊天，更适合和压缩相邻消息等脚本共存。',
+  },
+  {
     key: 'after_reply_delay_seconds',
     label: '回复后延迟',
     shortHelp: 'AI 回复完成后，等待多少秒再开始这一轮 EW 工作流。',

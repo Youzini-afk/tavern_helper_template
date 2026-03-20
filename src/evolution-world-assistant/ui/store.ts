@@ -915,7 +915,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     previewFlowId.value = flow.id;
     busy.value = true;
     try {
-      promptPreview.value = await previewPrompt(flow);
+        promptPreview.value = await previewPrompt(flow, settings.value);
       showEwNotice({
         title: '调试',
         message: `Prompt 预览已生成（${promptPreview.value.length} 条消息）`,

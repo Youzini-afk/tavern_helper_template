@@ -374,6 +374,11 @@ const resolutionMeta = {
     title: '该楼存在 after-reply 执行记录，但本轮因自动触发间隔或无匹配工作流而跳过。',
     tone: 'skipped',
   },
+  executed_empty: {
+    label: '空快照',
+    title: '该楼工作流已执行成功，但当时受管条目为空，所以没有可见条目差异。',
+    tone: 'fallback',
+  },
 } as const;
 
 function resolutionLabel(item: TimelineItem): string {
@@ -387,6 +392,14 @@ function resolutionLabel(item: TimelineItem): string {
   const execution = floorExecutionMap.value.get(item.floor.messageId);
   if (!item.floor.snapshot && execution?.execution_status === 'skipped') {
     return resolutionMeta.skipped.label;
+  }
+  if (
+    !item.floor.snapshot &&
+    execution?.execution_status === 'executed' &&
+    !execution.workflow_failed &&
+    (execution.attempted_flow_ids?.length ?? 0) > 0
+  ) {
+    return resolutionMeta.executed_empty.label;
   }
   return resolutionMeta[item.floor.resolution].label;
 }
@@ -404,6 +417,14 @@ function resolutionTitle(item: TimelineItem): string {
   if (!item.floor.snapshot && execution?.execution_status === 'skipped') {
     const reasonText = execution.skip_reason ? `跳过原因：${execution.skip_reason}。` : '';
     return `${resolutionMeta.skipped.title}${reasonText}`;
+  }
+  if (
+    !item.floor.snapshot &&
+    execution?.execution_status === 'executed' &&
+    !execution.workflow_failed &&
+    (execution.attempted_flow_ids?.length ?? 0) > 0
+  ) {
+    return `${resolutionMeta.executed_empty.title}这通常说明这是一个“空基线”楼层，而不是工作流没跑。`;
   }
 
   const sourceText =
@@ -427,6 +448,14 @@ function statusClass(item: TimelineItem): string {
   const execution = floorExecutionMap.value.get(item.floor.messageId);
   if (!item.floor.snapshot && execution?.execution_status === 'skipped') {
     return `hist-block-status--${resolutionMeta.skipped.tone}`;
+  }
+  if (
+    !item.floor.snapshot &&
+    execution?.execution_status === 'executed' &&
+    !execution.workflow_failed &&
+    (execution.attempted_flow_ids?.length ?? 0) > 0
+  ) {
+    return `hist-block-status--${resolutionMeta.executed_empty.tone}`;
   }
   return `hist-block-status--${resolutionMeta[item.floor.resolution].tone}`;
 }
