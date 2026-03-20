@@ -25,6 +25,7 @@
           :key="item.floor.messageId"
           class="hist-block"
           :data-has-snapshot="item.floor.snapshot ? '1' : '0'"
+          :data-has-execution="item.has_execution ? '1' : '0'"
           :data-semantic="item.semantic.anchor_kind"
           :data-selected="selectedFloorId === item.floor.messageId ? '1' : '0'"
           role="button"
@@ -142,6 +143,7 @@ type TimelineItem = {
   floor: (typeof store.floorSnapshots)[number];
   diff: SnapshotDiff;
   semantic: TimelineSemantic;
+  has_execution: boolean;
 };
 
 function normalizeRole(raw: unknown): FloorRole {
@@ -240,12 +242,6 @@ const emptyDiff: SnapshotDiff = { created: [], modified: [], deleted: [], toggle
 const timelineItems = computed(() => {
   const items: TimelineItem[] = [];
   let previousSnapshot: SnapshotData | null = null;
-  const floorArtifactMap = new Map<number, boolean>();
-
-  for (const floor of store.floorSnapshots) {
-    const execution = floorExecutionMap.value.get(floor.messageId);
-    floorArtifactMap.set(floor.messageId, Boolean(floor.snapshot || execution));
-  }
 
   for (let index = 0; index < store.floorSnapshots.length; index += 1) {
     const floor = store.floorSnapshots[index];
@@ -255,7 +251,8 @@ const timelineItems = computed(() => {
     const role = runtimeMeta?.role ?? 'other';
     const bindingMeta = runtimeMeta?.binding_meta;
     const rederiveMeta = runtimeMeta?.rederive_meta;
-    const hasArtifacts = Boolean(floorArtifactMap.get(floor.messageId));
+    const hasExecution = Boolean(floorExecutionMap.value.get(floor.messageId));
+    const hasSnapshot = Boolean(currentSnapshot);
 
     let semantic: TimelineSemantic = {
       role,
@@ -280,12 +277,12 @@ const timelineItems = computed(() => {
         anchor_kind: 'source_user',
         paired_message_id: bindingMeta.paired_message_id,
       };
-    } else if (role === 'assistant' && hasArtifacts) {
+    } else if (role === 'assistant' && hasSnapshot) {
       semantic = {
         role,
         anchor_kind: 'assistant_anchor',
       };
-    } else if (role === 'user' && hasArtifacts) {
+    } else if (role === 'user' && hasSnapshot) {
       semantic = {
         role,
         anchor_kind: 'legacy_user_anchor',
@@ -294,8 +291,8 @@ const timelineItems = computed(() => {
       const nextFloor = store.floorSnapshots[index + 1];
       const nextRuntimeMeta = nextFloor ? floorRuntimeMap.value.get(nextFloor.messageId) : null;
       const nextRole = nextRuntimeMeta?.role ?? 'other';
-      const nextHasArtifacts = nextFloor ? Boolean(floorArtifactMap.get(nextFloor.messageId)) : false;
-      if (nextFloor && nextRole === 'assistant' && nextHasArtifacts) {
+      const nextHasSnapshot = Boolean(nextFloor?.snapshot);
+      if (nextFloor && nextRole === 'assistant' && nextHasSnapshot) {
         semantic = {
           role,
           anchor_kind: 'source_user',
@@ -304,7 +301,7 @@ const timelineItems = computed(() => {
       }
     }
 
-    items.push({ floor, diff, semantic });
+    items.push({ floor, diff, semantic, has_execution: hasExecution });
     if (currentSnapshot) {
       previousSnapshot = currentSnapshot;
     }
@@ -314,7 +311,7 @@ const timelineItems = computed(() => {
 });
 
 const assistantAnchorCount = computed(
-  () => timelineItems.value.filter(item => item.semantic.anchor_kind === 'assistant_anchor').length,
+  () => timelineItems.value.filter(item => item.semantic.anchor_kind === 'assistant_anchor' && item.floor.snapshot).length,
 );
 const sourceFloorCount = computed(
   () => timelineItems.value.filter(item => item.semantic.anchor_kind === 'source_user').length,
@@ -626,7 +623,7 @@ async function onRebuildSelectedFloor() {
   box-shadow: 0 0 0 1px color-mix(in srgb, #f59e0b 60%, transparent);
 }
 
-.hist-block[data-has-snapshot='0'][data-semantic='normal'] {
+.hist-block[data-has-snapshot='0'][data-has-execution='0'][data-semantic='normal'] {
   opacity: 0.4;
 }
 

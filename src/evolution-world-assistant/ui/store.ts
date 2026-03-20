@@ -955,7 +955,7 @@ export const useEwStore = defineStore('evolution-world-store', () => {
     try {
       const floors = await collectAllFloorSnapshots();
       floorSnapshots.value = floors.map(floor => {
-        const execution = readFloorWorkflowExecution(floor.messageId);
+        const execution = readFloorWorkflowExecution(floor.messageId, 'history');
         return {
           ...floor,
           execution: execution

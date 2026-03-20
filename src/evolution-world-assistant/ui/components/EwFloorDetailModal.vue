@@ -263,6 +263,14 @@ const resolutionSummary = computed(() => {
   if (!safeSnapshot.value && safeExecution.value?.execution_status === 'skipped') {
     return '该楼存在 after-reply 执行记录，但本轮被跳过，因此没有生成新的楼层快照。';
   }
+  if (
+    !safeSnapshot.value &&
+    safeExecution.value?.execution_status === 'executed' &&
+    !safeExecution.value.workflow_failed &&
+    safeExecution.value.attempted_flow_ids.length > 0
+  ) {
+    return '该楼工作流已执行，但这一轮没有产出可展示的快照差异。通常这是空快照或受管条目未变化，不是历史面板损坏。';
+  }
 
   switch (props.resolution) {
     case 'exact':

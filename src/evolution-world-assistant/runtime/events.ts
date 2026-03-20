@@ -707,7 +707,40 @@ async function readFloorWorkflowExecutionMapComplete(messageId: number): Promise
   return Object.keys(external).length > 0 ? external : inline;
 }
 
-export function readFloorWorkflowExecution(messageId: number): FloorWorkflowExecutionState | null {
+function selectExecutionStateForHistory(
+  map: FloorWorkflowExecutionVersionedMap,
+  versionInfo: { version_key: string; swipe_id?: number },
+): FloorWorkflowExecutionState | null {
+  const exact = map[versionInfo.version_key];
+  if (exact) {
+    return exact;
+  }
+
+  const entries = Object.entries(map) as Array<[string, FloorWorkflowExecutionState]>;
+  if (entries.length === 0) {
+    return null;
+  }
+
+  const stableEntries = entries.filter(([key]) => !String(key).includes('@rev:'));
+  const effectiveEntries = stableEntries.length > 0 ? stableEntries : entries;
+  if (effectiveEntries.length === 1) {
+    return effectiveEntries[0][1];
+  }
+
+  for (let index = effectiveEntries.length - 1; index >= 0; index -= 1) {
+    const [, state] = effectiveEntries[index];
+    if (Number(state.swipe_id ?? -1) === Number(versionInfo.swipe_id ?? -1)) {
+      return state;
+    }
+  }
+
+  return effectiveEntries[effectiveEntries.length - 1]?.[1] ?? null;
+}
+
+export function readFloorWorkflowExecution(
+  messageId: number,
+  mode: 'strict' | 'history' = 'strict',
+): FloorWorkflowExecutionState | null {
   const msg = getChatMessages(messageId)[0];
   if (!msg) {
     return null;
@@ -717,6 +750,10 @@ export function readFloorWorkflowExecution(messageId: number): FloorWorkflowExec
   const exact = map[versionInfo.version_key];
   if (exact) {
     return exact;
+  }
+
+  if (mode === 'history') {
+    return selectExecutionStateForHistory(map, versionInfo);
   }
 
   const values = Object.values(map);
