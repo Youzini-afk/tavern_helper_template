@@ -292,16 +292,16 @@ function selectSnapshotFromSources(
     }
   }
 
+  if (mode === 'strict') {
+    return buildSnapshotReadResult(null, 'missing', null);
+  }
+
   for (const source of sources) {
     const entries = getVersionEntries(source.versions);
     if (entries.length === 1) {
       const [matchedVersionKey, snapshot] = entries[0];
       return buildSnapshotReadResult(source, 'single_fallback', snapshot, matchedVersionKey);
     }
-  }
-
-  if (mode === 'strict') {
-    return buildSnapshotReadResult(null, 'missing', null);
   }
 
   for (const source of sources) {
@@ -1872,6 +1872,8 @@ async function restoreWorldbookFromSnapshots(
 
   await replaceWorldbook(target.worldbook_name, nextEntries, { render: 'debounced' });
 }
+
+export { selectSnapshotFromSources as selectSnapshotFromSourcesForTest };
 
 // ── Event Handlers ──────────────────────────────────────────
 

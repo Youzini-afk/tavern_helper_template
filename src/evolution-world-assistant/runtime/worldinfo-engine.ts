@@ -610,6 +610,8 @@ function selectActivatedEntries(entries: NormalizedEntry[], trigger: string): No
   return ungrouped.concat(matched).sort(sortEntries);
 }
 
+export { selectActivatedEntries as selectActivatedEntriesForTest };
+
 // Fix #3: Sort with depth dimension, matching ST's worldInfoSorter
 function calcDepth(entry: NormalizedEntry, maxDepth: number): number {
   const offset = DEPTH_MAPPING[entry.position];
