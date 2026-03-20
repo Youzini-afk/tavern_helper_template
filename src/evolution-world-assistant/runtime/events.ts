@@ -7,6 +7,7 @@ import {
   initFloorBindingEvents,
   pinMessageSnapshotToCurrentVersion,
   readFloorSnapshotByMessageId,
+  repairCurrentChatSuspiciousEmptySnapshots,
   rebindFloorSnapshotToMessage,
   rollbackBeforeFloor,
 } from './floor-binding';
@@ -1415,12 +1416,13 @@ async function resolveFailedOnlyRerollTarget(
   settings: EwSettings,
   messageId: number,
 ): Promise<FailedOnlyRerollResolution> {
-  const executionState = await readFloorWorkflowExecutionComplete(messageId);
+  const executionState = await readFloorWorkflowExecutionComplete(messageId, 'history');
   if (!executionState) {
     return { ok: false, reason: '当前楼还没有可用的失败执行记录' };
   }
 
-  // readFloorWorkflowExecution 已按当前可见版本读取；这里无需再做二次版本校验。
+  // 对历史楼层和旧版本数据，failed_only 重roll 也必须允许 history fallback，
+  // 否则会出现“历史面板还能读到旧快照，但重roll认为本楼没有执行记录”的语义分裂。
 
   if (executionState.failed_flow_ids.length === 0) {
     if (executionState.workflow_failed && executionState.attempted_flow_ids.length > 0) {
@@ -3373,7 +3375,18 @@ export function initRuntimeEvents() {
       }, 300);
       setTimeout(() => {
         if (getSettings().enabled) {
-          void compactCurrentChatArtifacts(getSettings());
+          void (async () => {
+            try {
+              await compactCurrentChatArtifacts(getSettings());
+            } catch (error) {
+              console.warn('[Evolution World] artifact compaction during chat change failed:', error);
+            }
+            try {
+              await repairCurrentChatSuspiciousEmptySnapshots();
+            } catch (error) {
+              console.warn('[Evolution World] suspicious empty snapshot repair during chat change failed:', error);
+            }
+          })();
         }
       }, 900);
     }),
@@ -3383,7 +3396,18 @@ export function initRuntimeEvents() {
   initFloorBindingEvents(getSettings);
   setTimeout(() => {
     if (getSettings().enabled) {
-      void compactCurrentChatArtifacts(getSettings());
+      void (async () => {
+        try {
+          await compactCurrentChatArtifacts(getSettings());
+        } catch (error) {
+          console.warn('[Evolution World] artifact compaction during init failed:', error);
+        }
+        try {
+          await repairCurrentChatSuspiciousEmptySnapshots();
+        } catch (error) {
+          console.warn('[Evolution World] suspicious empty snapshot repair during init failed:', error);
+        }
+      })();
     }
   }, 900);
 }

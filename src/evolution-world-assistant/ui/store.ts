@@ -10,8 +10,6 @@ import { createDefaultApiPreset, createDefaultFlow } from '../runtime/factory';
 import {
   collectAllFloorSnapshots,
   collectLatestSnapshots,
-  markFloorEntries,
-  readFloorSnapshotByMessageId,
   rollbackToFloor,
   type FloorSnapshot,
 } from '../runtime/floor-binding';
@@ -952,57 +950,9 @@ export const useEwStore = defineStore('evolution-world-store', () => {
 
   // ── 历史记录 ──────────────────────────────────────────────
 
-  async function backfillHistoricalEmptySnapshots(): Promise<number> {
-    if (!settings.value.enabled || !settings.value.floor_binding_enabled) {
-      return 0;
-    }
-
-    const lastId = getLastMessageId();
-    if (lastId < 0) {
-      return 0;
-    }
-
-    let backfilled = 0;
-    const messages = getChatMessages(`0-${lastId}`);
-    for (const msg of messages) {
-      if (String(msg?.role ?? '') !== 'assistant') {
-        continue;
-      }
-
-      const snapshotState = await readFloorSnapshotByMessageId(msg.message_id, 'strict');
-      if (snapshotState?.snapshot) {
-        continue;
-      }
-
-      const execution =
-        (await readFloorWorkflowExecutionComplete(msg.message_id, 'history')) ??
-        readFloorWorkflowExecution(msg.message_id, 'history');
-      if (!execution) {
-        continue;
-      }
-
-      if (execution.execution_status !== 'executed' || execution.workflow_failed) {
-        continue;
-      }
-
-      if ((execution.attempted_flow_ids?.length ?? 0) <= 0) {
-        continue;
-      }
-
-      const versionInfo = getMessageVersionInfo(msg);
-      await markFloorEntries(settings.value, msg.message_id, [], [], [], versionInfo.swipe_id, versionInfo.content_hash, {
-        persist_empty_snapshot: true,
-      });
-      backfilled += 1;
-    }
-
-    return backfilled;
-  }
-
   async function loadFloorSnapshots() {
     busy.value = true;
     try {
-      const backfilled = await backfillHistoricalEmptySnapshots();
       const floors = await collectAllFloorSnapshots();
       floorSnapshots.value = await Promise.all(
         floors.map(async floor => {
@@ -1019,13 +969,10 @@ export const useEwStore = defineStore('evolution-world-store', () => {
                   failed_flow_ids: [...execution.failed_flow_ids],
                   workflow_failed: execution.workflow_failed,
                 }
-              : undefined,
+            : undefined,
           } satisfies FloorSnapshot;
         }),
       );
-      if (backfilled > 0) {
-        showEwNotice({ title: '历史', message: `已回填 ${backfilled} 个空快照基线`, level: 'info' });
-      }
       showEwNotice({ title: '历史', message: `已加载 ${floorSnapshots.value.length} 个楼层`, level: 'success' });
     } catch (e) {
       console.error('[Evolution World] loadFloorSnapshots failed:', e);
