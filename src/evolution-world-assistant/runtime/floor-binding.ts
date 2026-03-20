@@ -1425,22 +1425,31 @@ export async function migrateSnapshots(direction: 'to_file' | 'to_message_data')
       const writtenVersionKeys = Object.keys(writtenStore?.versions ?? {});
       const versionCountMatches = writtenVersionKeys.length === inlineVersionKeys.length;
       const hasAllVersions = inlineVersionKeys.every(key => Boolean(writtenStore?.versions?.[key]));
-      if (
-        !writtenStore ||
-        !versionCountMatches ||
-        !hasAllVersions ||
-        !isSnapshotStoreOwnedByCurrentChat(fileName, writtenStore)
-      ) {
+      const ownerOk = isSnapshotStoreOwnedByCurrentChat(fileName, writtenStore);
+      if (!writtenStore || !versionCountMatches || !hasAllVersions || !ownerOk) {
         console.warn(
           `[Evolution World] Migration to_file verification failed for floor #${msg.message_id}: expected ${inlineVersionKeys.length} versions, got ${writtenVersionKeys.length}`,
           {
+            message_id: msg.message_id,
+            file_name: fileName,
+            expected_version_count: inlineVersionKeys.length,
+            actual_version_count: writtenVersionKeys.length,
             expected_version_keys: inlineVersionKeys,
             actual_version_keys: writtenVersionKeys,
-            owner_ok: isSnapshotStoreOwnedByCurrentChat(fileName, writtenStore),
+            owner_ok: ownerOk,
           },
         );
         continue;
       }
+
+      console.debug('[Evolution World] Migration to_file verified', {
+        message_id: msg.message_id,
+        file_name: fileName,
+        expected_version_count: inlineVersionKeys.length,
+        actual_version_count: writtenVersionKeys.length,
+        version_keys: writtenVersionKeys,
+        owner_ok: ownerOk,
+      });
 
       const versionInfo = getMessageVersionInfo(msg);
       const nextData: Record<string, unknown> = { ...msg.data };

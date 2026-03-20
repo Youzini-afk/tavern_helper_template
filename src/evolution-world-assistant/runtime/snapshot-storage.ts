@@ -96,15 +96,21 @@ function snapshotVersionKey(data: SnapshotData): string {
   return buildMessageVersionKey(Number(data.swipe_id ?? 0), String(data.content_hash ?? '').trim());
 }
 
-function buildArchivedSnapshotVersionKey(baseKey: string, store: SnapshotVersionStore): string {
-  const revisionStamp = Date.now();
+function buildArchivedSnapshotVersionKey(
+  baseKey: string,
+  store: SnapshotVersionStore,
+  revisionStamp = Date.now(),
+): { archivedKey: string; collisionCount: number } {
   let candidate = `${baseKey}@rev:${revisionStamp}`;
   let counter = 0;
   while (store.versions[candidate]) {
     counter += 1;
     candidate = `${baseKey}@rev:${revisionStamp}_${counter}`;
   }
-  return candidate;
+  return {
+    archivedKey: candidate,
+    collisionCount: counter,
+  };
 }
 
 function buildChatFingerprint(chatId: string): string {
@@ -264,7 +270,14 @@ export async function writeSnapshot(
     const existingJson = JSON.stringify(existing);
     const nextJson = JSON.stringify(data);
     if (existingJson !== nextJson) {
-      currentStore.versions[buildArchivedSnapshotVersionKey(versionKey, currentStore)] = existing;
+      const { archivedKey, collisionCount } = buildArchivedSnapshotVersionKey(versionKey, currentStore);
+      currentStore.versions[archivedKey] = existing;
+      console.debug('[Evolution World] Snapshot version archived before overwrite', {
+        file_name: fileName,
+        version_key: versionKey,
+        archived_key: archivedKey,
+        collision_count: collisionCount,
+      });
     }
   }
   currentStore.versions[versionKey] = data;
@@ -384,6 +397,7 @@ export async function cleanupSnapshotFiles(
 // ── 迁移 ────────────────────────────────────────────────
 
 export {
+  buildArchivedSnapshotVersionKey as buildArchivedSnapshotVersionKeyForTest,
   buildChatFingerprint,
   buildFileName,
   buildFilePrefix,
