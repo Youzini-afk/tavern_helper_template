@@ -35,6 +35,7 @@ const EW_SWIPE_ID_KEY = 'ew_snapshot_swipe_id';
 const EW_CONTENT_HASH_KEY = 'ew_snapshot_content_hash';
 const EW_INLINE_SNAPSHOT_VERSIONS_KEY = 'ew_snapshot_versions';
 const EW_FLOOR_WORKFLOW_EXECUTION_KEY = 'ew_workflow_execution';
+const EW_WORKFLOW_REPLAY_CAPSULE_KEY = 'ew_workflow_replay_capsule';
 const EW_BEFORE_REPLY_BINDING_KEY = 'ew_before_reply_binding';
 
 export type FloorSnapshotReadResolution =
@@ -1504,23 +1505,37 @@ export async function migrateSnapshots(direction: 'to_file' | 'to_message_data')
       if (!snapshotFile) continue;
 
       const store = await readSnapshotStore(snapshotFile);
-      const nextData: Record<string, unknown> = { ...msg.data };
-      const keepExternalArtifacts =
-        Object.keys(store?.workflow_execution ?? {}).length > 0 || Object.keys(store?.replay_capsules ?? {}).length > 0;
-      if (!keepExternalArtifacts) {
-        delete nextData[EW_SNAPSHOT_FILE_KEY];
+      if (!store) {
+        console.warn(`[Evolution World] Migration to_message_data skipped unreadable artifact store: ${snapshotFile}`);
+        continue;
       }
+
+      const nextData: Record<string, unknown> = { ...msg.data };
+      delete nextData[EW_SNAPSHOT_FILE_KEY];
       clearInlineSnapshotFields(nextData);
 
-      if (store && Object.keys(store.versions).length > 0) {
+      if (Object.keys(store.versions).length > 0) {
         writeInlineSnapshotVersions(nextData, store.versions);
         const versionInfo = getMessageVersionInfo(msg);
         nextData[EW_SWIPE_ID_KEY] = versionInfo.swipe_id;
         nextData[EW_CONTENT_HASH_KEY] = versionInfo.content_hash;
       }
 
+      if (Object.keys(store.workflow_execution ?? {}).length > 0) {
+        nextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY] = store.workflow_execution;
+      } else {
+        delete nextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY];
+      }
+
+      if (Object.keys(store.replay_capsules ?? {}).length > 0) {
+        nextData[EW_WORKFLOW_REPLAY_CAPSULE_KEY] = store.replay_capsules;
+      } else {
+        delete nextData[EW_WORKFLOW_REPLAY_CAPSULE_KEY];
+      }
+
       await setChatMessages([{ message_id: msg.message_id, data: nextData }], { refresh: 'none' });
-      if (!keepExternalArtifacts && isSnapshotStoreOwnedByCurrentChat(snapshotFile, store)) {
+
+      if (isSnapshotStoreOwnedByCurrentChat(snapshotFile, store)) {
         await deleteSnapshot(snapshotFile);
       }
       migrated++;

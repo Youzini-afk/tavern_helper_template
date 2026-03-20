@@ -155,7 +155,11 @@ async function resolveArtifactStoreForMessage(
         store.owner.chat_id === expectedOwner.chat_id &&
         store.owner.chat_fingerprint === expectedOwner.chat_fingerprint;
       const nameMatches = candidate === currentNamed || candidate === legacyNamed;
-      if (!ownerMatches && !nameMatches) {
+      if (store.owner) {
+        if (!ownerMatches) {
+          continue;
+        }
+      } else if (!nameMatches) {
         continue;
       }
       return {
@@ -767,7 +771,10 @@ export function readFloorWorkflowExecution(
   return null;
 }
 
-async function readFloorWorkflowExecutionComplete(messageId: number): Promise<FloorWorkflowExecutionState | null> {
+export async function readFloorWorkflowExecutionComplete(
+  messageId: number,
+  mode: 'strict' | 'history' = 'strict',
+): Promise<FloorWorkflowExecutionState | null> {
   const msg = getChatMessages(messageId)[0];
   if (!msg) {
     return null;
@@ -777,6 +784,10 @@ async function readFloorWorkflowExecutionComplete(messageId: number): Promise<Fl
   const exact = map[versionInfo.version_key];
   if (exact) {
     return exact;
+  }
+
+  if (mode === 'history') {
+    return selectExecutionStateForHistory(map, versionInfo);
   }
 
   const values = Object.values(map);
@@ -1009,6 +1020,11 @@ async function readWorkflowReplayCapsuleMapComplete(messageId: number): Promise<
 
 function hasWorkflowReplayCapsule(messageId: number): boolean {
   const map = readWorkflowReplayCapsuleMap(messageId);
+  return Object.keys(map).length > 0;
+}
+
+async function hasWorkflowReplayCapsuleComplete(messageId: number): Promise<boolean> {
+  const map = await readWorkflowReplayCapsuleMapComplete(messageId);
   return Object.keys(map).length > 0;
 }
 
@@ -3035,8 +3051,9 @@ export async function rederiveWorkflowAtFloor(input: RederiveWorkflowInput): Pro
   }
 
   const hasCapsule =
-    hasWorkflowReplayCapsule(anchorMessageId) ||
-    (Number.isFinite(beforeReplySourceMessageId) && hasWorkflowReplayCapsule(beforeReplySourceMessageId));
+    (await hasWorkflowReplayCapsuleComplete(anchorMessageId)) ||
+    (Number.isFinite(beforeReplySourceMessageId) &&
+      (await hasWorkflowReplayCapsuleComplete(beforeReplySourceMessageId)));
   if (!hasCapsule && !input.confirm_legacy) {
     return { ok: false, reason: 'legacy_confirmation_required' };
   }
