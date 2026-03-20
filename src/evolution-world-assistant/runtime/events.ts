@@ -114,14 +114,18 @@ const workflowTaskQueue: Array<{
   resolve: (value: unknown) => void;
   reject: (reason?: unknown) => void;
 }> = [];
+const queuedBeforeReplyJobKeys = new Set<string>();
 const queuedAfterReplyJobKeys = new Set<string>();
 const queuedAfterReplyDedupKeys = new Set<string>();
 const failedAfterReplyJobsByChat = new Map<string, FailedAfterReplyQueueJob[]>();
 let workflowTaskDrainPromise: Promise<void> | null = null;
 let workflowTaskSeq = 0;
 /** Time-windowed dedup: fallback only, not the primary identity check. */
+const lastBeforeReplyTriggerByIdentityKey = new Map<string, number>();
 const lastAfterReplyTriggerByIdentityKey = new Map<string, number>();
+const MIN_BEFORE_REPLY_INTERVAL_MS = 2500;
 const MIN_AFTER_REPLY_INTERVAL_MS = 3000;
+let runtimeEventsInitialized = false;
 
 function resolveWorkflowJobPriority(jobType: WorkflowJobType): number {
   if (jobType === 'live_auto') {
@@ -150,8 +154,10 @@ function clearQueuedWorkflowTasks(reason: string) {
   for (const task of workflowTaskQueue.splice(0, workflowTaskQueue.length)) {
     task.reject(new Error(reason));
   }
+  queuedBeforeReplyJobKeys.clear();
   queuedAfterReplyJobKeys.clear();
   queuedAfterReplyDedupKeys.clear();
+  lastBeforeReplyTriggerByIdentityKey.clear();
   lastAfterReplyTriggerByIdentityKey.clear();
 }
 
@@ -2062,10 +2068,27 @@ function installTavernHelperHook() {
       return win._ew_originalGenerate.apply(this, args);
     }
 
-    // Mark for deduplication before running workflow
-    markIntercepted(userInput);
-
     const messageId = getRuntimeState().last_send?.message_id ?? getLastMessageId();
+    const identityKey = buildBeforeReplyIdentityKey(messageId, genType, userInput);
+    if (queuedBeforeReplyJobKeys.has(identityKey)) {
+      console.debug(`[Evolution World] before_reply skipped in TavernHelper hook: duplicate in-flight (${identityKey})`);
+      return '';
+    }
+    const lastTriggerAt = lastBeforeReplyTriggerByIdentityKey.get(identityKey) ?? 0;
+    if (Date.now() - lastTriggerAt < MIN_BEFORE_REPLY_INTERVAL_MS) {
+      console.debug(
+        `[Evolution World] before_reply skipped in TavernHelper hook: identity-windowed dedup (${Date.now() - lastTriggerAt}ms, key=${identityKey})`,
+      );
+      return '';
+    }
+
+    // Mark for deduplication before running workflow
+    markIntercepted(userInput, {
+      messageId,
+      generationType: genType,
+    });
+    queuedBeforeReplyJobKeys.add(identityKey);
+    lastBeforeReplyTriggerByIdentityKey.set(identityKey, Date.now());
 
     let workflowOutcome: WorkflowExecutionOutcome = {
       shouldAbortGeneration: false,
@@ -2098,6 +2121,8 @@ function installTavernHelperHook() {
       });
     } catch (e) {
       console.error('[Evolution World] Error in TavernHelper.generate hook:', e);
+    } finally {
+      queuedBeforeReplyJobKeys.delete(identityKey);
     }
 
     // If workflow failed with stop_generation policy, do NOT call original generate
@@ -2167,6 +2192,7 @@ async function onGenerationAfterCommands(
   const messageId = getRuntimeState().last_send?.message_id ?? getLastMessageId();
   const genType = getRuntimeState().last_generation?.type ?? '';
   const userInput = resolveFallbackWorkflowUserInput(genType);
+  const identityKey = buildBeforeReplyIdentityKey(messageId, genType || type, userInput);
   const isNonSendType = NON_SEND_GENERATION_TYPES.has(genType);
 
   // Only block on empty input for normal send — continue/regen/swipe can proceed without it
@@ -2176,7 +2202,25 @@ async function onGenerationAfterCommands(
   }
 
   // Dedup check 2: hash-based guard against recent TavernHelper interception
-  if (wasRecentlyIntercepted(userInput)) {
+  if (queuedBeforeReplyJobKeys.has(identityKey)) {
+    console.debug('[Evolution World] GENERATION_AFTER_COMMANDS skipped: duplicate before_reply job already in-flight');
+    return;
+  }
+
+  const lastTriggerAt = lastBeforeReplyTriggerByIdentityKey.get(identityKey) ?? 0;
+  if (Date.now() - lastTriggerAt < MIN_BEFORE_REPLY_INTERVAL_MS) {
+    console.debug(
+      `[Evolution World] GENERATION_AFTER_COMMANDS skipped: identity-windowed before_reply dedup (${Date.now() - lastTriggerAt}ms, key=${identityKey})`,
+    );
+    return;
+  }
+
+  if (
+    wasRecentlyIntercepted(userInput, {
+      messageId,
+      generationType: genType || type,
+    })
+  ) {
     console.debug(
       '[Evolution World] GENERATION_AFTER_COMMANDS skipped: recently intercepted by TavernHelper hook (hash match)',
     );
@@ -2185,6 +2229,8 @@ async function onGenerationAfterCommands(
 
   console.debug('[Evolution World] GENERATION_AFTER_COMMANDS executing workflow (fallback path)');
   try {
+    queuedBeforeReplyJobKeys.add(identityKey);
+    lastBeforeReplyTriggerByIdentityKey.set(identityKey, Date.now());
     await enqueueWorkflowJob('live_auto', `before_reply:fallback:${messageId}`, async () => {
       setProcessing(true);
       try {
@@ -2213,6 +2259,8 @@ async function onGenerationAfterCommands(
     });
   } catch (error) {
     console.error('[Evolution World] GENERATION_AFTER_COMMANDS workflow failed:', error);
+  } finally {
+    queuedBeforeReplyJobKeys.delete(identityKey);
   }
 }
 
@@ -2255,6 +2303,13 @@ function appendTriggerMessageIds(
   }
 
   return trigger;
+}
+
+function buildBeforeReplyIdentityKey(messageId: number, generationType: string, userInput: string): string {
+  const normalizedText = String(userInput ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return `${getCurrentChatKey()}:before_reply:${messageId}:${generationType}:${simpleHash(normalizedText)}`;
 }
 
 function buildAfterReplyDedupKey(messageText: string, pendingUserMessageId: number | null): string {
@@ -2856,6 +2911,11 @@ export async function rerollCurrentAfterReplyWorkflow(): Promise<{ ok: boolean; 
 }
 
 export function initRuntimeEvents() {
+  if (runtimeEventsInitialized) {
+    return;
+  }
+  runtimeEventsInitialized = true;
+
   // Primary path: TavernHelper.generate hook
   installTavernHelperHook();
 
@@ -2920,6 +2980,7 @@ export function initRuntimeEvents() {
 }
 
 export function disposeRuntimeEvents() {
+  runtimeEventsInitialized = false;
   for (const stopper of listenerStops.splice(0, listenerStops.length)) {
     stopper.stop();
   }

@@ -212,6 +212,25 @@ function toErrorMessage(error: unknown): string {
   return String(error);
 }
 
+function shouldFallbackFromGenerateRawCustomApiError(error: unknown): boolean {
+  const message = toErrorMessage(error);
+  if (!message.trim()) {
+    return false;
+  }
+
+  if (
+    /上游 API|HTTP\s+\d{3}|response schema invalid|model output is not a JSON object|unexpected token|response_extract_regex|timeout|cancelled|workflow cancelled/i.test(
+      message,
+    )
+  ) {
+    return false;
+  }
+
+  return /generateRaw is unavailable|custom_api.+(unsupported|not supported|not implemented)|is not a function|Cannot read propert/i.test(
+    message,
+  );
+}
+
 function parseStBackendErrorPayload(errTxt: string): {
   message: string;
   code?: string;
@@ -1282,6 +1301,9 @@ async function executeFlow(
             isCancelled,
           );
         } catch (error) {
+          if (!shouldFallbackFromGenerateRawCustomApiError(error)) {
+            throw error;
+          }
           console.warn(
             `[EW] Flow "${flow.id}": generateRaw.custom_api failed, fallback to ST backend — ${toErrorMessage(error)}`,
           );
