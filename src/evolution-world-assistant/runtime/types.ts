@@ -360,7 +360,7 @@ export const EwSettingsSchema = z.object({
   strip_workflow_image_blocks: z.boolean().default(true),
   auto_reroll_max_attempts: z.coerce.number().int().min(1).default(1),
   auto_reroll_interval_seconds: z.coerce.number().min(0).default(0),
-  parallel_dispatch_interval_seconds: z.coerce.number().min(0).default(10),
+  parallel_dispatch_interval_seconds: z.coerce.number().min(0).default(0),
   serial_dispatch_interval_seconds: z.coerce.number().min(0).default(2),
   workflow_timing: z.enum(['after_reply', 'before_reply']).default('after_reply'),
   reroll_scope: z.enum(['all', 'failed_only', 'queued_failed']).default('all'),

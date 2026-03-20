@@ -72,9 +72,10 @@ const FIELD_HELP_LIST: FieldHelpMeta[] = [
   },
   {
     key: 'parallel_dispatch_interval_seconds',
-    label: '并行发出间隔',
-    shortHelp: '并行模式下，每条工作流请求相对前一条错开发出的秒数。',
-    detailHelp: '0 表示真正同时发出；例如设为 1，则第 1 条立即发、第 2 条 1 秒后发、第 3 条 2 秒后发，用于削峰。',
+    label: '并行错峰间隔',
+    shortHelp: '并行模式下，同一批次里的第 2、3... 条工作流要不要故意晚几秒再发。',
+    detailHelp:
+      '这不是自动重roll，也不是重复执行，而是同一轮里多条工作流的错峰发出间隔。0 表示真正同时发出；例如设为 1，则第 1 条立即发、第 2 条 1 秒后发、第 3 条 2 秒后发。默认建议保持 0，只有接口需要削峰时再调大。',
     placeholder: '0',
     isAdvanced: true,
   },

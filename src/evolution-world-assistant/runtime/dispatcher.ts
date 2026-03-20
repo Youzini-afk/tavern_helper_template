@@ -1472,7 +1472,7 @@ export async function dispatchFlows(input: DispatchInput): Promise<DispatchFlows
           flow_id: flow.id,
           flow_name: flow.name,
           flow_order: index,
-          message: `并行调度错峰中：工作流「${flow.name || flow.id}」将在 ${delayMs / 1000} 秒后发出…`,
+          message: `同一批次还有后续工作流待发出：工作流「${flow.name || flow.id}」将在 ${delayMs / 1000} 秒后开始请求…`,
         });
         await waitDispatchDelay(delayMs, input.abortSignal, input.isCancelled);
       }

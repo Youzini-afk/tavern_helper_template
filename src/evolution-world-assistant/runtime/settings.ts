@@ -281,6 +281,12 @@ function normalizeSettings(raw: unknown): EwSettings {
       obj['controller_entry_prefix'] = oldName.endsWith('/') ? oldName : oldName + '/';
       delete obj['controller_entry_name'];
     }
+    // Migrate legacy implicit parallel staggering.
+    // Old versions defaulted to 10s, which is easily misread as a duplicate reroll.
+    // Treat that legacy default as unsafe and collapse it back to true parallel dispatch.
+    if (Number(obj['parallel_dispatch_interval_seconds'] ?? 0) === 10) {
+      obj['parallel_dispatch_interval_seconds'] = 0;
+    }
   }
 
   const parsed = EwSettingsSchema.safeParse(raw);

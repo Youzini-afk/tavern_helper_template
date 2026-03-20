@@ -231,7 +231,7 @@
                     }}</span>
                   </button>
                 </EwFieldRow>
-                <EwFieldRow label="并行间隔(秒)" :help="help('parallel_dispatch_interval_seconds')">
+                <EwFieldRow label="并行错峰间隔(秒)" :help="help('parallel_dispatch_interval_seconds')">
                   <input
                     v-model.number="store.settings.parallel_dispatch_interval_seconds"
                     type="number"
