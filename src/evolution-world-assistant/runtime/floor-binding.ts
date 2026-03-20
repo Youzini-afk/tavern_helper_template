@@ -8,6 +8,7 @@ import {
   buildSnapshotStoreOwner,
   cleanupSnapshotFiles,
   deleteSnapshot,
+  hasSnapshotStorePayload,
   readSnapshotStore,
   writeSnapshot,
   writeSnapshotStore,
@@ -415,9 +416,11 @@ export async function pinMessageSnapshotToCurrentVersion(messageId: number): Pro
       ? sourceFileName
       : buildFileName(getCharName(), getChatId(), messageId);
     const writableStore: SnapshotVersionStore = {
-      version: 'ew-snapshot/v2',
+      version: sourceStore.version,
       updated_at: Date.now(),
       versions: { ...sourceStore.versions },
+      workflow_execution: { ...sourceStore.workflow_execution },
+      replay_capsules: { ...sourceStore.replay_capsules },
       owner: buildSnapshotStoreOwner(getCharName(), getChatId()),
     };
     if (readResult.resolution !== 'exact') {
@@ -840,9 +843,11 @@ export async function localizeSnapshotsForCurrentChat(settings: EwSettings): Pro
 
       const localizedFileName = buildFileName(charName, chatId, Number(msg.message_id));
       const localizedStore: SnapshotVersionStore = {
-        version: 'ew-snapshot/v2',
+        version: store.version,
         updated_at: Date.now(),
         versions: { ...store.versions },
+        workflow_execution: { ...store.workflow_execution },
+        replay_capsules: { ...store.replay_capsules },
         owner: buildSnapshotStoreOwner(charName, chatId),
       };
       await writeSnapshotStore(localizedFileName, localizedStore);
@@ -1072,9 +1077,11 @@ function writeInlineSnapshotVersions(nextData: Record<string, unknown>, versions
 
 function buildSnapshotStoreFromVersions(versions: Record<string, SnapshotData>): SnapshotVersionStore {
   return {
-    version: 'ew-snapshot/v2',
+    version: 'ew-message-store/v3',
     updated_at: Date.now(),
     versions: { ...versions },
+    workflow_execution: {},
+    replay_capsules: {},
     owner: buildSnapshotStoreOwner(getCharName(), getChatId()),
   };
 }
@@ -1152,7 +1159,7 @@ export async function markFloorEntries(
         const existingStore = previousSnapshotStore;
         if (existingStore) {
           delete existingStore.versions[versionKey];
-          if (Object.keys(existingStore.versions).length > 0) {
+          if (hasSnapshotStorePayload(existingStore)) {
             await writeSnapshotStore(previousSnapshotFileName, existingStore);
             nextData[EW_SNAPSHOT_FILE_KEY] = previousSnapshotFileName;
           } else {
@@ -1204,6 +1211,9 @@ export async function markFloorEntries(
         content_hash: effectiveContentHash,
       };
       writeInlineSnapshotVersions(nextData, inlineVersions);
+      if (previousSnapshotFileName && previousSnapshotStore && hasSnapshotStorePayload(previousSnapshotStore)) {
+        nextData[EW_SNAPSHOT_FILE_KEY] = previousSnapshotFileName;
+      }
       nextData[EW_SWIPE_ID_KEY] = effectiveSwipeId;
       if (effectiveContentHash) nextData[EW_CONTENT_HASH_KEY] = effectiveContentHash;
     }
@@ -1220,7 +1230,17 @@ export async function markFloorEntries(
     nextData[EW_SWIPE_ID_KEY] = effectiveSwipeId;
     if (effectiveContentHash) nextData[EW_CONTENT_HASH_KEY] = effectiveContentHash;
     if (previousSnapshotFileName && previousSnapshotFileOwned) {
-      await deleteSnapshot(previousSnapshotFileName);
+      if (previousSnapshotStore) {
+        delete previousSnapshotStore.versions[versionKey];
+        if (hasSnapshotStorePayload(previousSnapshotStore)) {
+          await writeSnapshotStore(previousSnapshotFileName, previousSnapshotStore);
+          nextData[EW_SNAPSHOT_FILE_KEY] = previousSnapshotFileName;
+        } else {
+          await deleteSnapshot(previousSnapshotFileName);
+        }
+      } else {
+        await deleteSnapshot(previousSnapshotFileName);
+      }
     }
   }
 
@@ -1379,6 +1399,11 @@ export async function purgeAndRestoreForChat(settings: EwSettings): Promise<void
         const allMsgIds: number[] = [];
         for (const msg of allMessages) {
           allMsgIds.push(msg.message_id);
+          const directFileName =
+            typeof msg?.data?.[EW_SNAPSHOT_FILE_KEY] === 'string' ? String(msg.data[EW_SNAPSHOT_FILE_KEY]).trim() : '';
+          if (directFileName) {
+            keepFiles.add(directFileName);
+          }
           const sources = await loadSnapshotVersionSources(msg);
           for (const source of sources) {
             if (source.source === 'file' && source.fileName) {
@@ -1424,6 +1449,11 @@ export async function migrateSnapshots(direction: 'to_file' | 'to_message_data')
 
       const fileName = buildFileName(charName, chatId, msg.message_id);
       const store = buildSnapshotStoreFromVersions(inlineVersions);
+      const existingStore = await readSnapshotStore(fileName);
+      if (existingStore) {
+        store.workflow_execution = { ...existingStore.workflow_execution };
+        store.replay_capsules = { ...existingStore.replay_capsules };
+      }
       await writeSnapshotStore(fileName, store);
       const writtenStore = await readSnapshotStore(fileName);
       const writtenVersionKeys = Object.keys(writtenStore?.versions ?? {});
@@ -1475,7 +1505,11 @@ export async function migrateSnapshots(direction: 'to_file' | 'to_message_data')
 
       const store = await readSnapshotStore(snapshotFile);
       const nextData: Record<string, unknown> = { ...msg.data };
-      delete nextData[EW_SNAPSHOT_FILE_KEY];
+      const keepExternalArtifacts =
+        Object.keys(store?.workflow_execution ?? {}).length > 0 || Object.keys(store?.replay_capsules ?? {}).length > 0;
+      if (!keepExternalArtifacts) {
+        delete nextData[EW_SNAPSHOT_FILE_KEY];
+      }
       clearInlineSnapshotFields(nextData);
 
       if (store && Object.keys(store.versions).length > 0) {
@@ -1486,7 +1520,7 @@ export async function migrateSnapshots(direction: 'to_file' | 'to_message_data')
       }
 
       await setChatMessages([{ message_id: msg.message_id, data: nextData }], { refresh: 'none' });
-      if (isSnapshotStoreOwnedByCurrentChat(snapshotFile, store)) {
+      if (!keepExternalArtifacts && isSnapshotStoreOwnedByCurrentChat(snapshotFile, store)) {
         await deleteSnapshot(snapshotFile);
       }
       migrated++;

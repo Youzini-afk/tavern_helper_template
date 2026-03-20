@@ -1,16 +1,19 @@
 /**
- * File-based snapshot storage via ST's /api/files endpoint.
+ * File-based artifact storage via ST's /api/files endpoint.
  *
- * Stores per-message worldbook snapshots (Dyn entries + Controller)
+ * Stores per-message worldbook snapshots plus workflow execution artifacts
  * as JSON files on the server, keeping chat message data lightweight.
  *
- * File naming: ew__{charName}__{chatId}__msg-{messageId}.json
+ * File naming: ew__{charName}__{chatId}__fp-{fingerprint}__msg-{messageId}.json
  * (flat layout — ST file API doesn't support subdirectories)
  */
 
 import { buildMessageVersionKey, simpleHash } from './helpers';
 import type { ControllerEntrySnapshot, DynSnapshot } from './types';
 import { normalizeDynSnapshotData } from './worldbook-runtime';
+
+export const FILE_ARTIFACT_VERSION = 'ew-message-store/v3';
+export const FILE_ARTIFACT_REVISION_LIMIT = 2;
 
 export type SnapshotData = {
   controllers: ControllerEntrySnapshot[];
@@ -21,10 +24,15 @@ export type SnapshotData = {
   content_hash?: string;
 };
 
+export type ExternalArtifactVersionMap = Record<string, Record<string, unknown>>;
+export type ExternalArtifactKind = 'workflow_execution' | 'replay_capsules';
+
 export type SnapshotVersionStore = {
-  version: 'ew-snapshot/v2';
+  version: typeof FILE_ARTIFACT_VERSION;
   updated_at: number;
   versions: Record<string, SnapshotData>;
+  workflow_execution: ExternalArtifactVersionMap;
+  replay_capsules: ExternalArtifactVersionMap;
   owner?: SnapshotStoreOwner;
 };
 
@@ -88,7 +96,6 @@ export function upgradeSnapshotData(raw: any): SnapshotData | null {
     };
   }
 
-  // Unknown format
   return null;
 }
 
@@ -96,9 +103,38 @@ function snapshotVersionKey(data: SnapshotData): string {
   return buildMessageVersionKey(Number(data.swipe_id ?? 0), String(data.content_hash ?? '').trim());
 }
 
-function buildArchivedSnapshotVersionKey(
+type ParsedArchivedVersionKey = {
+  baseKey: string;
+  stamp: number;
+  counter: number;
+};
+
+function parseArchivedVersionKey(key: string): ParsedArchivedVersionKey | null {
+  const marker = '@rev:';
+  const markerIndex = key.indexOf(marker);
+  if (markerIndex < 0) {
+    return null;
+  }
+
+  const baseKey = key.slice(0, markerIndex);
+  const suffix = key.slice(markerIndex + marker.length);
+  const [stampRaw, counterRaw] = suffix.split('_');
+  const stamp = Number(stampRaw);
+  const counter = Number(counterRaw ?? 0);
+  if (!Number.isFinite(stamp)) {
+    return null;
+  }
+
+  return {
+    baseKey,
+    stamp,
+    counter: Number.isFinite(counter) ? counter : 0,
+  };
+}
+
+export function buildArchivedSnapshotVersionKey(
   baseKey: string,
-  store: SnapshotVersionStore,
+  store: Pick<SnapshotVersionStore, 'versions'>,
   revisionStamp = Date.now(),
 ): { archivedKey: string; collisionCount: number } {
   let candidate = `${baseKey}@rev:${revisionStamp}`;
@@ -111,6 +147,57 @@ function buildArchivedSnapshotVersionKey(
     archivedKey: candidate,
     collisionCount: counter,
   };
+}
+
+export function buildArchivedArtifactVersionKey<T>(
+  baseKey: string,
+  map: Record<string, T>,
+  revisionStamp = Date.now(),
+): string {
+  let candidate = `${baseKey}@rev:${revisionStamp}`;
+  let counter = 0;
+  while (map[candidate]) {
+    counter += 1;
+    candidate = `${baseKey}@rev:${revisionStamp}_${counter}`;
+  }
+  return candidate;
+}
+
+export function pruneArchivedVersionedEntries<T>(
+  map: Record<string, T>,
+  baseKey: string,
+  keepRecent = FILE_ARTIFACT_REVISION_LIMIT,
+): void {
+  const archivedEntries = Object.keys(map)
+    .map(key => ({ key, parsed: parseArchivedVersionKey(key) }))
+    .filter(
+      (entry): entry is { key: string; parsed: ParsedArchivedVersionKey } =>
+        Boolean(entry.parsed) && entry.parsed.baseKey === baseKey,
+    )
+    .sort((left, right) => {
+      if (left.parsed.stamp !== right.parsed.stamp) {
+        return right.parsed.stamp - left.parsed.stamp;
+      }
+      return right.parsed.counter - left.parsed.counter;
+    });
+
+  for (const entry of archivedEntries.slice(Math.max(0, keepRecent))) {
+    delete map[entry.key];
+  }
+}
+
+export function pruneAllVersionedEntries<T>(
+  map: Record<string, T>,
+  keepRecent = FILE_ARTIFACT_REVISION_LIMIT,
+): void {
+  const baseKeys = new Set<string>();
+  for (const key of Object.keys(map)) {
+    const archived = parseArchivedVersionKey(key);
+    baseKeys.add(archived ? archived.baseKey : key);
+  }
+  for (const baseKey of baseKeys) {
+    pruneArchivedVersionedEntries(map, baseKey, keepRecent);
+  }
 }
 
 function buildChatFingerprint(chatId: string): string {
@@ -147,9 +234,63 @@ function normalizeSnapshotStoreOwner(raw: unknown): SnapshotStoreOwner | undefin
   };
 }
 
+function normalizeExternalArtifactVersionMap(raw: unknown): ExternalArtifactVersionMap {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {};
+  }
+
+  const result: ExternalArtifactVersionMap = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      continue;
+    }
+    result[String(key)] = { ...(value as Record<string, unknown>) };
+  }
+  return result;
+}
+
+function createEmptyStore(owner?: SnapshotStoreOwner): SnapshotVersionStore {
+  return {
+    version: FILE_ARTIFACT_VERSION,
+    updated_at: Date.now(),
+    versions: {},
+    workflow_execution: {},
+    replay_capsules: {},
+    owner,
+  };
+}
+
 function normalizeSnapshotVersionStore(raw: any): SnapshotVersionStore | null {
   if (!raw || typeof raw !== 'object') {
     return null;
+  }
+
+  if (
+    raw.version === FILE_ARTIFACT_VERSION &&
+    raw.versions &&
+    typeof raw.versions === 'object' &&
+    !Array.isArray(raw.versions)
+  ) {
+    const versions: Record<string, SnapshotData> = {};
+    for (const [key, value] of Object.entries(raw.versions as Record<string, unknown>)) {
+      const upgraded = upgradeSnapshotData(value);
+      if (upgraded) {
+        versions[String(key)] = upgraded;
+      }
+    }
+    const workflowExecution = normalizeExternalArtifactVersionMap(raw.workflow_execution);
+    const replayCapsules = normalizeExternalArtifactVersionMap(raw.replay_capsules);
+    pruneAllVersionedEntries(versions, FILE_ARTIFACT_REVISION_LIMIT);
+    pruneAllVersionedEntries(workflowExecution, FILE_ARTIFACT_REVISION_LIMIT);
+    pruneAllVersionedEntries(replayCapsules, FILE_ARTIFACT_REVISION_LIMIT);
+    return {
+      version: FILE_ARTIFACT_VERSION,
+      updated_at: Number(raw.updated_at ?? Date.now()),
+      versions,
+      workflow_execution: workflowExecution,
+      replay_capsules: replayCapsules,
+      owner: normalizeSnapshotStoreOwner(raw.owner),
+    };
   }
 
   if (
@@ -165,10 +306,13 @@ function normalizeSnapshotVersionStore(raw: any): SnapshotVersionStore | null {
         versions[String(key)] = upgraded;
       }
     }
+    pruneAllVersionedEntries(versions, FILE_ARTIFACT_REVISION_LIMIT);
     return {
-      version: 'ew-snapshot/v2',
+      version: FILE_ARTIFACT_VERSION,
       updated_at: Number(raw.updated_at ?? Date.now()),
       versions,
+      workflow_execution: {},
+      replay_capsules: {},
       owner: normalizeSnapshotStoreOwner(raw.owner),
     };
   }
@@ -179,18 +323,17 @@ function normalizeSnapshotVersionStore(raw: any): SnapshotVersionStore | null {
   }
 
   return {
-    version: 'ew-snapshot/v2',
+    version: FILE_ARTIFACT_VERSION,
     updated_at: Date.now(),
     versions: {
       [snapshotVersionKey(upgraded)]: upgraded,
     },
+    workflow_execution: {},
+    replay_capsules: {},
   };
 }
 
-// ── 辅助函数 ──────────────────────────────────────────────────
-
 function sanitizeSegment(s: string): string {
-  // 仅允许字母数字、下划线、连字符
   return s.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60);
 }
 
@@ -214,7 +357,6 @@ async function getHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-  // ST 可能需要 CSRF token
   if (typeof SillyTavern !== 'undefined' && SillyTavern.getRequestHeaders) {
     const stHeaders = SillyTavern.getRequestHeaders();
     if (stHeaders && typeof stHeaders === 'object') {
@@ -224,10 +366,60 @@ async function getHeaders(): Promise<Record<string, string>> {
   return headers;
 }
 
-// ── 写入 ────────────────────────────────────────────────────
+function cloneStore(store: SnapshotVersionStore): SnapshotVersionStore {
+  return {
+    version: FILE_ARTIFACT_VERSION,
+    updated_at: Date.now(),
+    versions: { ...store.versions },
+    workflow_execution: { ...store.workflow_execution },
+    replay_capsules: { ...store.replay_capsules },
+    owner: store.owner,
+  };
+}
+
+export function getExternalArtifactMap(
+  store: SnapshotVersionStore | null | undefined,
+  kind: ExternalArtifactKind,
+): ExternalArtifactVersionMap {
+  if (!store) {
+    return {};
+  }
+  return {
+    ...(kind === 'workflow_execution' ? store.workflow_execution : store.replay_capsules),
+  };
+}
+
+export function setExternalArtifactMap(
+  store: SnapshotVersionStore,
+  kind: ExternalArtifactKind,
+  map: ExternalArtifactVersionMap,
+): void {
+  if (kind === 'workflow_execution') {
+    store.workflow_execution = { ...map };
+  } else {
+    store.replay_capsules = { ...map };
+  }
+}
+
+export function hasSnapshotStorePayload(store: SnapshotVersionStore | null | undefined): boolean {
+  if (!store) {
+    return false;
+  }
+  return Boolean(
+    Object.keys(store.versions).length > 0 ||
+      Object.keys(store.workflow_execution).length > 0 ||
+      Object.keys(store.replay_capsules).length > 0,
+  );
+}
 
 async function persistSnapshotStore(fileName: string, store: SnapshotVersionStore): Promise<void> {
-  const jsonContent = JSON.stringify(store);
+  const sanitizedStore = cloneStore(store);
+  sanitizedStore.updated_at = Date.now();
+  pruneAllVersionedEntries(sanitizedStore.versions, FILE_ARTIFACT_REVISION_LIMIT);
+  pruneAllVersionedEntries(sanitizedStore.workflow_execution, FILE_ARTIFACT_REVISION_LIMIT);
+  pruneAllVersionedEntries(sanitizedStore.replay_capsules, FILE_ARTIFACT_REVISION_LIMIT);
+
+  const jsonContent = JSON.stringify(sanitizedStore);
   const base64Content = btoa(unescape(encodeURIComponent(jsonContent)));
 
   const response = await fetch('/api/files/upload', {
@@ -242,12 +434,10 @@ async function persistSnapshotStore(fileName: string, store: SnapshotVersionStor
 }
 
 export async function writeSnapshotStore(fileName: string, store: SnapshotVersionStore): Promise<void> {
-  await persistSnapshotStore(fileName, {
-    version: 'ew-snapshot/v2',
-    updated_at: Date.now(),
-    versions: { ...store.versions },
-    owner: store.owner,
-  });
+  const nextStore = cloneStore(store);
+  nextStore.version = FILE_ARTIFACT_VERSION;
+  nextStore.updated_at = Date.now();
+  await persistSnapshotStore(fileName, nextStore);
 }
 
 export async function writeSnapshot(
@@ -257,13 +447,10 @@ export async function writeSnapshot(
   data: SnapshotData,
 ): Promise<string> {
   const fileName = buildFileName(charName, chatId, messageId);
-  const currentStore = (await readSnapshotStore(fileName)) ?? {
-    version: 'ew-snapshot/v2' as const,
-    updated_at: Date.now(),
-    versions: {},
-    owner: buildSnapshotStoreOwner(charName, chatId),
-  };
+  const currentStore =
+    (await readSnapshotStore(fileName)) ?? createEmptyStore(buildSnapshotStoreOwner(charName, chatId));
   currentStore.updated_at = Date.now();
+  currentStore.owner = buildSnapshotStoreOwner(charName, chatId);
   const versionKey = snapshotVersionKey(data);
   const existing = currentStore.versions[versionKey];
   if (existing) {
@@ -281,15 +468,13 @@ export async function writeSnapshot(
     }
   }
   currentStore.versions[versionKey] = data;
-  currentStore.owner = buildSnapshotStoreOwner(charName, chatId);
+  pruneArchivedVersionedEntries(currentStore.versions, versionKey, FILE_ARTIFACT_REVISION_LIMIT);
 
   await persistSnapshotStore(fileName, currentStore);
 
   console.debug(`[Evolution World] Snapshot written: ${fileName}`);
   return fileName;
 }
-
-// ── 读取 ─────────────────────────────────────────────────────
 
 export async function readSnapshotStore(fileName: string): Promise<SnapshotVersionStore | null> {
   try {
@@ -320,8 +505,6 @@ export async function readSnapshot(fileName: string, versionKey?: string): Promi
   return values.length === 1 ? values[0] : null;
 }
 
-// ── 删除 ───────────────────────────────────────────────────
-
 export async function deleteSnapshot(fileName: string): Promise<void> {
   try {
     const response = await fetch('/api/files/delete', {
@@ -337,15 +520,6 @@ export async function deleteSnapshot(fileName: string): Promise<void> {
   }
 }
 
-// ── 批量操作 ─────────────────────────────────────────
-
-/**
- * Find all snapshot files for a given chat.
- * Uses /api/files/verify with a set of candidate filenames.
- *
- * Since ST doesn't provide a "list files" API, we verify files
- * based on message IDs found in the current chat.
- */
 export async function findSnapshotFiles(charName: string, chatId: string, messageIds: number[]): Promise<string[]> {
   const prefix = buildFilePrefix(charName, chatId);
   const legacyPrefix = buildLegacyFilePrefix(charName, chatId);
@@ -374,9 +548,6 @@ export async function findSnapshotFiles(charName: string, chatId: string, messag
   }
 }
 
-/**
- * Delete all snapshot files for a given chat that are NOT in the keep list.
- */
 export async function cleanupSnapshotFiles(
   charName: string,
   chatId: string,
@@ -394,14 +565,12 @@ export async function cleanupSnapshotFiles(
   return deleted;
 }
 
-// ── 迁移 ────────────────────────────────────────────────
-
 export {
-  buildArchivedSnapshotVersionKey as buildArchivedSnapshotVersionKeyForTest,
   buildChatFingerprint,
   buildFileName,
   buildFilePrefix,
   buildLegacyFileName,
   buildLegacyFilePrefix,
   buildSnapshotStoreOwner,
+  createEmptyStore as createEmptySnapshotStore,
 };

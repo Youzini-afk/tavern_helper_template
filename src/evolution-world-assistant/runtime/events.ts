@@ -15,6 +15,20 @@ import { resetHideState, runIncrementalHideCheck, scheduleHideSettingsApply } fr
 import { markIntercepted, resetInterceptGuard, wasRecentlyIntercepted } from './intercept-guard';
 import { runWorkflow, type RunWorkflowOutput } from './pipeline';
 import { getCurrentChatIdSafe, getHostWindow } from './runtime-host';
+import {
+  buildArchivedArtifactVersionKey,
+  buildFileName,
+  buildLegacyFileName,
+  buildSnapshotStoreOwner,
+  createEmptySnapshotStore,
+  deleteSnapshot,
+  hasSnapshotStorePayload,
+  pruneAllVersionedEntries,
+  pruneArchivedVersionedEntries,
+  readSnapshotStore,
+  writeSnapshotStore,
+  type SnapshotVersionStore,
+} from './snapshot-storage';
 import { getSettings, patchSettings } from './settings';
 import {
   clearAfterReplyPendingIfMatches,
@@ -51,6 +65,9 @@ const EW_FLOOR_WORKFLOW_EXECUTION_KEY = 'ew_workflow_execution';
 const EW_BEFORE_REPLY_BINDING_KEY = 'ew_before_reply_binding';
 const EW_REDERIVE_META_KEY = 'ew_rederive_meta';
 const EW_WORKFLOW_REPLAY_CAPSULE_KEY = 'ew_workflow_replay_capsule';
+const EW_SNAPSHOT_FILE_KEY = 'ew_snapshot_file';
+const EW_SWIPE_ID_KEY = 'ew_snapshot_swipe_id';
+const EW_CONTENT_HASH_KEY = 'ew_snapshot_content_hash';
 
 type FloorWorkflowStoredResult = {
   flow_id: string;
@@ -68,10 +85,12 @@ type FloorWorkflowExecutionState = {
   content_hash?: string;
   attempted_flow_ids: string[];
   successful_results: FloorWorkflowStoredResult[];
+  successful_flow_ids?: string[];
   failed_flow_ids: string[];
   workflow_failed: boolean;
   execution_status: 'executed' | 'skipped';
   skip_reason?: string;
+  details_externalized?: boolean;
 };
 
 type BeforeReplyBindingMigrationResult = {
@@ -87,6 +106,71 @@ type BeforeReplyBindingMigrationResult = {
 
 function buildExecutionVersionKey(state: { swipe_id?: number; content_hash?: string }): string {
   return `sw:${Math.max(0, Math.trunc(Number(state.swipe_id ?? 0) || 0))}|${String(state.content_hash ?? '').trim()}`;
+}
+
+function getCurrentCharacterNameSafe(): string {
+  return getCurrentCharacterName?.() ?? 'unknown';
+}
+
+function buildArtifactFileCandidates(messageId: number, message?: any): string[] {
+  const candidates: string[] = [];
+  const explicit =
+    typeof message?.data?.[EW_SNAPSHOT_FILE_KEY] === 'string' ? String(message.data[EW_SNAPSHOT_FILE_KEY]).trim() : '';
+  if (explicit) {
+    candidates.push(explicit);
+  }
+
+  const chatId = getCurrentChatKey();
+  const charName = getCurrentCharacterNameSafe();
+  const currentNamed = buildFileName(charName, chatId, messageId);
+  if (!candidates.includes(currentNamed)) {
+    candidates.push(currentNamed);
+  }
+  const legacyNamed = buildLegacyFileName(charName, chatId, messageId);
+  if (!candidates.includes(legacyNamed)) {
+    candidates.push(legacyNamed);
+  }
+  return candidates;
+}
+
+async function resolveArtifactStoreForMessage(
+  messageId: number,
+): Promise<{ message: any; fileName: string; store: SnapshotVersionStore } | null> {
+  const message = getChatMessages(messageId)[0];
+  if (!message) {
+    return null;
+  }
+
+  const chatId = getCurrentChatKey();
+  const charName = getCurrentCharacterNameSafe();
+  const currentNamed = buildFileName(charName, chatId, messageId);
+  const legacyNamed = buildLegacyFileName(charName, chatId, messageId);
+  const expectedOwner = buildSnapshotStoreOwner(charName, chatId);
+  for (const candidate of buildArtifactFileCandidates(messageId, message)) {
+    const store = await readSnapshotStore(candidate);
+    if (store) {
+      const ownerMatches =
+        store.owner &&
+        store.owner.char_name === expectedOwner.char_name &&
+        store.owner.chat_id === expectedOwner.chat_id &&
+        store.owner.chat_fingerprint === expectedOwner.chat_fingerprint;
+      const nameMatches = candidate === currentNamed || candidate === legacyNamed;
+      if (!ownerMatches && !nameMatches) {
+        continue;
+      }
+      return {
+        message,
+        fileName: candidate,
+        store,
+      };
+    }
+  }
+
+  return {
+    message,
+    fileName: currentNamed,
+    store: createEmptySnapshotStore(buildSnapshotStoreOwner(charName, chatId)),
+  };
 }
 
 type FailedAfterReplyQueueJob = {
@@ -127,6 +211,7 @@ const lastAfterReplyTriggerByIdentityKey = new Map<string, number>();
 const MIN_BEFORE_REPLY_INTERVAL_MS = 2500;
 const MIN_AFTER_REPLY_INTERVAL_MS = 3000;
 let runtimeEventsInitialized = false;
+const artifactCompactionInFlightByChat = new Map<string, Promise<{ compacted: number; warnings: string[] }>>();
 
 function resolveWorkflowJobPriority(jobType: WorkflowJobType): number {
   if (jobType === 'live_auto') {
@@ -514,6 +599,9 @@ function normalizeFloorWorkflowExecutionState(raw: unknown): FloorWorkflowExecut
   const attemptedFlowIds = Array.isArray(obj.attempted_flow_ids)
     ? obj.attempted_flow_ids.map(value => String(value ?? '').trim()).filter(Boolean)
     : [];
+  const successfulFlowIds = Array.isArray(obj.successful_flow_ids)
+    ? obj.successful_flow_ids.map(value => String(value ?? '').trim()).filter(Boolean)
+    : successfulResults.map(item => item.flow_id);
 
   const executionStatus = obj.execution_status === 'skipped' ? 'skipped' : 'executed';
   const skipReason = typeof obj.skip_reason === 'string' ? String(obj.skip_reason).trim() : '';
@@ -525,10 +613,12 @@ function normalizeFloorWorkflowExecutionState(raw: unknown): FloorWorkflowExecut
     content_hash: typeof obj.content_hash === 'string' ? obj.content_hash : undefined,
     attempted_flow_ids: _.uniq(attemptedFlowIds),
     successful_results: successfulResults,
+    successful_flow_ids: _.uniq(successfulFlowIds),
     failed_flow_ids: _.uniq(failedFlowIds),
     workflow_failed: Boolean(obj.workflow_failed),
     execution_status: executionStatus,
     skip_reason: skipReason || undefined,
+    details_externalized: Boolean(obj.details_externalized),
   };
 }
 
@@ -576,6 +666,47 @@ function readFloorWorkflowExecutionMap(messageId: number): FloorWorkflowExecutio
   }
 }
 
+function buildFloorWorkflowExecutionSummaryState(state: FloorWorkflowExecutionState): FloorWorkflowExecutionState {
+  return {
+    ...state,
+    successful_results: [],
+    successful_flow_ids: _.uniq(state.successful_flow_ids ?? state.successful_results.map(result => result.flow_id)),
+    details_externalized: true,
+  };
+}
+
+function buildFloorWorkflowExecutionSummaryMap(
+  map: FloorWorkflowExecutionVersionedMap,
+): FloorWorkflowExecutionVersionedMap {
+  const summaryMap: FloorWorkflowExecutionVersionedMap = {};
+  for (const [key, value] of Object.entries(map)) {
+    const normalized = normalizeFloorWorkflowExecutionState(value);
+    if (!normalized) {
+      continue;
+    }
+    summaryMap[key] = buildFloorWorkflowExecutionSummaryState(normalized);
+  }
+  pruneAllVersionedEntries(summaryMap, 2);
+  return summaryMap;
+}
+
+function isExecutionSummaryOnlyMap(raw: unknown): boolean {
+  const map = normalizeFloorWorkflowExecutionMap(raw);
+  const values = Object.values(map);
+  return values.length > 0 && values.every(value => Boolean(value.details_externalized));
+}
+
+async function readFloorWorkflowExecutionMapComplete(messageId: number): Promise<FloorWorkflowExecutionVersionedMap> {
+  const inline = readFloorWorkflowExecutionMap(messageId);
+  const resolved = await resolveArtifactStoreForMessage(messageId);
+  if (!resolved) {
+    return inline;
+  }
+
+  const external = normalizeFloorWorkflowExecutionMap(resolved.store.workflow_execution);
+  return Object.keys(external).length > 0 ? external : inline;
+}
+
 export function readFloorWorkflowExecution(messageId: number): FloorWorkflowExecutionState | null {
   const msg = getChatMessages(messageId)[0];
   if (!msg) {
@@ -599,47 +730,119 @@ export function readFloorWorkflowExecution(messageId: number): FloorWorkflowExec
   return null;
 }
 
-function buildArchivedVersionedKey<T>(baseKey: string, map: Record<string, T>): string {
-  let candidate = `${baseKey}@rev:${Date.now()}`;
-  let counter = 0;
-  while (map[candidate]) {
-    counter += 1;
-    candidate = `${baseKey}@rev:${Date.now()}_${counter}`;
+async function readFloorWorkflowExecutionComplete(messageId: number): Promise<FloorWorkflowExecutionState | null> {
+  const msg = getChatMessages(messageId)[0];
+  if (!msg) {
+    return null;
   }
-  return candidate;
+  const versionInfo = getMessageVersionInfo(msg);
+  const map = await readFloorWorkflowExecutionMapComplete(messageId);
+  const exact = map[versionInfo.version_key];
+  if (exact) {
+    return exact;
+  }
+
+  const values = Object.values(map);
+  if (values.length === 1) {
+    const only = values[0];
+    if (!only.content_hash) {
+      return only;
+    }
+  }
+
+  return null;
+}
+
+function syncArtifactMessageVersionMeta(nextData: Record<string, unknown>, message: any): void {
+  const versionInfo = getMessageVersionInfo(message);
+  nextData[EW_SWIPE_ID_KEY] = versionInfo.swipe_id;
+  if (String(versionInfo.content_hash ?? '').trim()) {
+    nextData[EW_CONTENT_HASH_KEY] = versionInfo.content_hash;
+  } else {
+    delete nextData[EW_CONTENT_HASH_KEY];
+  }
+}
+
+async function persistFloorWorkflowExecutionMap(
+  messageId: number,
+  map: FloorWorkflowExecutionVersionedMap,
+): Promise<void> {
+  const resolved = await resolveArtifactStoreForMessage(messageId);
+  if (!resolved) {
+    return;
+  }
+
+  const normalizedMap = normalizeFloorWorkflowExecutionMap(map);
+  pruneAllVersionedEntries(normalizedMap, 2);
+  const { message, fileName } = resolved;
+  const nextData: Record<string, unknown> = {
+    ...(message.data ?? {}),
+  };
+
+  if (getSettings().snapshot_storage === 'file') {
+    try {
+      const chatId = getCurrentChatKey();
+      const charName = getCurrentCharacterNameSafe();
+      const store = resolved.store ?? createEmptySnapshotStore(buildSnapshotStoreOwner(charName, chatId));
+      store.owner = buildSnapshotStoreOwner(charName, chatId);
+      store.workflow_execution = { ...normalizedMap };
+      pruneAllVersionedEntries(store.workflow_execution, 2);
+
+      if (Object.keys(normalizedMap).length > 0) {
+        await writeSnapshotStore(fileName, store);
+        nextData[EW_SNAPSHOT_FILE_KEY] = fileName;
+        nextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY] = buildFloorWorkflowExecutionSummaryMap(normalizedMap);
+        syncArtifactMessageVersionMeta(nextData, message);
+      } else {
+        delete nextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY];
+        if (hasSnapshotStorePayload(store)) {
+          await writeSnapshotStore(fileName, store);
+          nextData[EW_SNAPSHOT_FILE_KEY] = fileName;
+        } else {
+          delete nextData[EW_SNAPSHOT_FILE_KEY];
+          await deleteSnapshot(fileName);
+        }
+      }
+    } catch (error) {
+      console.warn('[Evolution World] workflow execution artifact externalization failed, falling back to message data:', error);
+      if (Object.keys(normalizedMap).length > 0) {
+        nextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY] = normalizedMap;
+      } else {
+        delete nextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY];
+      }
+    }
+  } else {
+    if (Object.keys(normalizedMap).length > 0) {
+      nextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY] = normalizedMap;
+    } else {
+      delete nextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY];
+    }
+  }
+
+  await setChatMessages([{ message_id: messageId, data: nextData }], { refresh: 'none' });
 }
 
 async function writeFloorWorkflowExecution(
   messageId: number,
   state: FloorWorkflowExecutionState | null,
 ): Promise<void> {
-  const message = getChatMessages(messageId)[0];
-  if (!message) {
-    return;
-  }
-
-  const nextData: Record<string, unknown> = {
-    ...(message.data ?? {}),
-  };
-
   if (state) {
-    const map = readFloorWorkflowExecutionMap(messageId);
+    const map = await readFloorWorkflowExecutionMapComplete(messageId);
     const versionKey = buildExecutionVersionKey(state);
     const existing = map[versionKey];
     if (existing) {
       const existingJson = JSON.stringify(existing);
       const nextJson = JSON.stringify(state);
       if (existingJson !== nextJson) {
-        map[buildArchivedVersionedKey(versionKey, map)] = existing;
+        map[buildArchivedArtifactVersionKey(versionKey, map)] = existing;
       }
     }
     map[versionKey] = state;
-    nextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY] = map;
-  } else {
-    delete nextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY];
+    pruneArchivedVersionedEntries(map, versionKey, 2);
+    await persistFloorWorkflowExecutionMap(messageId, map);
+    return;
   }
-
-  await setChatMessages([{ message_id: messageId, data: nextData }], { refresh: 'none' });
+  await persistFloorWorkflowExecutionMap(messageId, {});
 }
 
 async function pinFloorWorkflowExecutionToCurrentVersion(
@@ -657,7 +860,7 @@ async function pinFloorWorkflowExecutionToCurrentVersion(
 
   const versionInfo = getMessageVersionInfo(message);
   const targetKey = buildExecutionVersionKey(versionInfo);
-  const map = readFloorWorkflowExecutionMap(messageId);
+  const map = await readFloorWorkflowExecutionMapComplete(messageId);
   if (map[targetKey]) {
     return false;
   }
@@ -668,12 +871,7 @@ async function pinFloorWorkflowExecutionToCurrentVersion(
     content_hash: versionInfo.content_hash,
   };
 
-  const nextData: Record<string, unknown> = {
-    ...(message.data ?? {}),
-    [EW_FLOOR_WORKFLOW_EXECUTION_KEY]: map,
-  };
-
-  await setChatMessages([{ message_id: messageId, data: nextData }], { refresh: 'none' });
+  await persistFloorWorkflowExecutionMap(messageId, map);
   return true;
 }
 
@@ -724,6 +922,7 @@ function normalizeWorkflowReplayCapsuleMap(raw: unknown): Record<string, Workflo
             .filter(item => item && typeof item === 'object' && !Array.isArray(item))
             .map(item => ({ ...(item as Record<string, unknown>) }))
         : undefined,
+      details_externalized: Boolean(obj.details_externalized),
     };
   }
   return map;
@@ -734,9 +933,105 @@ function readWorkflowReplayCapsuleMap(messageId: number): Record<string, Workflo
   return normalizeWorkflowReplayCapsuleMap(message?.data?.[EW_WORKFLOW_REPLAY_CAPSULE_KEY]);
 }
 
+function buildWorkflowReplayCapsuleSummary(capsule: WorkflowReplayCapsule): WorkflowReplayCapsule {
+  return {
+    ...capsule,
+    assembled_messages: undefined,
+    request_preview: undefined,
+    details_externalized: true,
+  };
+}
+
+function buildWorkflowReplayCapsuleSummaryMap(
+  map: Record<string, WorkflowReplayCapsule>,
+): Record<string, WorkflowReplayCapsule> {
+  const summaryMap: Record<string, WorkflowReplayCapsule> = {};
+  for (const [key, value] of Object.entries(map)) {
+    summaryMap[key] = buildWorkflowReplayCapsuleSummary(value);
+  }
+  pruneAllVersionedEntries(summaryMap, 2);
+  return summaryMap;
+}
+
+function isWorkflowReplayCapsuleSummaryMap(raw: unknown): boolean {
+  const map = normalizeWorkflowReplayCapsuleMap(raw);
+  const values = Object.values(map);
+  return values.length > 0 && values.every(value => Boolean(value.details_externalized));
+}
+
+async function readWorkflowReplayCapsuleMapComplete(messageId: number): Promise<Record<string, WorkflowReplayCapsule>> {
+  const inline = readWorkflowReplayCapsuleMap(messageId);
+  const resolved = await resolveArtifactStoreForMessage(messageId);
+  if (!resolved) {
+    return inline;
+  }
+
+  const external = normalizeWorkflowReplayCapsuleMap(resolved.store.replay_capsules);
+  return Object.keys(external).length > 0 ? external : inline;
+}
+
 function hasWorkflowReplayCapsule(messageId: number): boolean {
   const map = readWorkflowReplayCapsuleMap(messageId);
   return Object.keys(map).length > 0;
+}
+
+async function persistWorkflowReplayCapsuleMap(
+  messageId: number,
+  map: Record<string, WorkflowReplayCapsule>,
+): Promise<void> {
+  const resolved = await resolveArtifactStoreForMessage(messageId);
+  if (!resolved) {
+    return;
+  }
+
+  const normalizedMap = normalizeWorkflowReplayCapsuleMap(map);
+  pruneAllVersionedEntries(normalizedMap, 2);
+  const { message, fileName } = resolved;
+  const nextData: Record<string, unknown> = {
+    ...(message.data ?? {}),
+  };
+
+  if (getSettings().snapshot_storage === 'file') {
+    try {
+      const chatId = getCurrentChatKey();
+      const charName = getCurrentCharacterNameSafe();
+      const store = resolved.store ?? createEmptySnapshotStore(buildSnapshotStoreOwner(charName, chatId));
+      store.owner = buildSnapshotStoreOwner(charName, chatId);
+      store.replay_capsules = { ...normalizedMap };
+      pruneAllVersionedEntries(store.replay_capsules, 2);
+
+      if (Object.keys(normalizedMap).length > 0) {
+        await writeSnapshotStore(fileName, store);
+        nextData[EW_SNAPSHOT_FILE_KEY] = fileName;
+        nextData[EW_WORKFLOW_REPLAY_CAPSULE_KEY] = buildWorkflowReplayCapsuleSummaryMap(normalizedMap);
+        syncArtifactMessageVersionMeta(nextData, message);
+      } else {
+        delete nextData[EW_WORKFLOW_REPLAY_CAPSULE_KEY];
+        if (hasSnapshotStorePayload(store)) {
+          await writeSnapshotStore(fileName, store);
+          nextData[EW_SNAPSHOT_FILE_KEY] = fileName;
+        } else {
+          delete nextData[EW_SNAPSHOT_FILE_KEY];
+          await deleteSnapshot(fileName);
+        }
+      }
+    } catch (error) {
+      console.warn('[Evolution World] replay capsule externalization failed, falling back to message data:', error);
+      if (Object.keys(normalizedMap).length > 0) {
+        nextData[EW_WORKFLOW_REPLAY_CAPSULE_KEY] = normalizedMap;
+      } else {
+        delete nextData[EW_WORKFLOW_REPLAY_CAPSULE_KEY];
+      }
+    }
+  } else {
+    if (Object.keys(normalizedMap).length > 0) {
+      nextData[EW_WORKFLOW_REPLAY_CAPSULE_KEY] = normalizedMap;
+    } else {
+      delete nextData[EW_WORKFLOW_REPLAY_CAPSULE_KEY];
+    }
+  }
+
+  await setChatMessages([{ message_id: messageId, data: nextData }], { refresh: 'none' });
 }
 
 async function writeWorkflowReplayCapsule(
@@ -744,31 +1039,29 @@ async function writeWorkflowReplayCapsule(
   capsule: WorkflowReplayCapsule,
   versionInfo?: { version_key: string },
 ): Promise<void> {
-  const message = getChatMessages(messageId)[0];
-  if (!message) {
+  const resolved = await resolveArtifactStoreForMessage(messageId);
+  if (!resolved) {
     return;
   }
+  const message = resolved.message;
   const effectiveVersion = versionInfo?.version_key ? versionInfo : getMessageVersionInfo(message);
   const key = String(effectiveVersion.version_key ?? '').trim();
   if (!key) {
     return;
   }
 
-  const map = readWorkflowReplayCapsuleMap(messageId);
+  const map = await readWorkflowReplayCapsuleMapComplete(messageId);
   const existing = map[key];
   if (existing) {
     const existingJson = JSON.stringify(existing);
     const nextJson = JSON.stringify(capsule);
     if (existingJson !== nextJson) {
-      map[buildArchivedVersionedKey(key, map)] = existing;
+      map[buildArchivedArtifactVersionKey(key, map)] = existing;
     }
   }
   map[key] = capsule;
-  const nextData: Record<string, unknown> = {
-    ...(message.data ?? {}),
-    [EW_WORKFLOW_REPLAY_CAPSULE_KEY]: map,
-  };
-  await setChatMessages([{ message_id: messageId, data: nextData }], { refresh: 'none' });
+  pruneArchivedVersionedEntries(map, key, 2);
+  await persistWorkflowReplayCapsuleMap(messageId, map);
 }
 
 async function migrateFloorWorkflowCapsuleToAssistant(
@@ -785,14 +1078,14 @@ async function migrateFloorWorkflowCapsuleToAssistant(
     return { migrated: false, reason: 'message_not_found' };
   }
 
-  const sourceMap = readWorkflowReplayCapsuleMap(sourceMessageId);
+  const sourceMap = await readWorkflowReplayCapsuleMapComplete(sourceMessageId);
   const sourceVersionInfo = getMessageVersionInfo(sourceMsg);
   const sourceCapsule = sourceMap[sourceVersionInfo.version_key];
   if (!sourceCapsule) {
     return { migrated: false, reason: 'source_capsule_missing' };
   }
 
-  const assistantMap = readWorkflowReplayCapsuleMap(assistantMessageId);
+  const assistantMap = await readWorkflowReplayCapsuleMapComplete(assistantMessageId);
   const assistantVersionInfo = getMessageVersionInfo(assistantMsg);
   assistantMap[assistantVersionInfo.version_key] = {
     ...sourceCapsule,
@@ -801,28 +1094,8 @@ async function migrateFloorWorkflowCapsuleToAssistant(
     target_role: 'assistant',
   };
   delete sourceMap[sourceVersionInfo.version_key];
-
-  const sourceNextData: Record<string, unknown> = {
-    ...(sourceMsg.data ?? {}),
-  };
-  if (Object.keys(sourceMap).length > 0) {
-    sourceNextData[EW_WORKFLOW_REPLAY_CAPSULE_KEY] = sourceMap;
-  } else {
-    delete sourceNextData[EW_WORKFLOW_REPLAY_CAPSULE_KEY];
-  }
-
-  const assistantNextData: Record<string, unknown> = {
-    ...(assistantMsg.data ?? {}),
-    [EW_WORKFLOW_REPLAY_CAPSULE_KEY]: assistantMap,
-  };
-
-  await setChatMessages(
-    [
-      { message_id: sourceMessageId, data: sourceNextData },
-      { message_id: assistantMessageId, data: assistantNextData },
-    ],
-    { refresh: 'none' },
-  );
+  await persistWorkflowReplayCapsuleMap(sourceMessageId, sourceMap);
+  await persistWorkflowReplayCapsuleMap(assistantMessageId, assistantMap);
 
   return { migrated: true };
 }
@@ -861,14 +1134,14 @@ async function migrateFloorWorkflowExecutionToAssistant(
 
   const sourceVersionInfo = getMessageVersionInfo(sourceMsg);
   const assistantVersionInfo = getMessageVersionInfo(assistantMsg);
-  const sourceMap = readFloorWorkflowExecutionMap(sourceMessageId);
+  const sourceMap = await readFloorWorkflowExecutionMapComplete(sourceMessageId);
   const sourceResolved = resolveExecutionStateForVersion(sourceMap, buildExecutionVersionKey(sourceVersionInfo));
   if (!sourceResolved) {
     return { migrated: false, reason: 'source_execution_missing' };
   }
 
   const sourceNextMap = { ...sourceMap };
-  const assistantMap = readFloorWorkflowExecutionMap(assistantMessageId);
+  const assistantMap = await readFloorWorkflowExecutionMapComplete(assistantMessageId);
   const assistantNextMap = { ...assistantMap };
   const assistantVersionKey = buildExecutionVersionKey(assistantVersionInfo);
   let mutated = false;
@@ -890,28 +1163,8 @@ async function migrateFloorWorkflowExecutionToAssistant(
   if (!mutated) {
     return { migrated: false, reason: 'already_migrated' };
   }
-
-  const sourceNextData: Record<string, unknown> = {
-    ...(sourceMsg.data ?? {}),
-  };
-  if (Object.keys(sourceNextMap).length > 0) {
-    sourceNextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY] = sourceNextMap;
-  } else {
-    delete sourceNextData[EW_FLOOR_WORKFLOW_EXECUTION_KEY];
-  }
-
-  const assistantNextData: Record<string, unknown> = {
-    ...(assistantMsg.data ?? {}),
-    [EW_FLOOR_WORKFLOW_EXECUTION_KEY]: assistantNextMap,
-  };
-
-  await setChatMessages(
-    [
-      { message_id: sourceMessageId, data: sourceNextData },
-      { message_id: assistantMessageId, data: assistantNextData },
-    ],
-    { refresh: 'none' },
-  );
+  await persistFloorWorkflowExecutionMap(sourceMessageId, sourceNextMap);
+  await persistFloorWorkflowExecutionMap(assistantMessageId, assistantNextMap);
 
   return { migrated: true };
 }
@@ -1085,6 +1338,7 @@ function buildFloorWorkflowExecutionState(
     content_hash: versionInfo?.content_hash,
     attempted_flow_ids: [...attemptedFlowIds],
     successful_results: [...successfulResults.values()],
+    successful_flow_ids: [...successfulResults.keys()],
     failed_flow_ids: [...failedFlowIds],
     workflow_failed: workflowFailed,
     execution_status: meta?.execution_status ?? 'executed',
@@ -1108,7 +1362,7 @@ async function resolveFailedOnlyRerollTarget(
   settings: EwSettings,
   messageId: number,
 ): Promise<FailedOnlyRerollResolution> {
-  const executionState = readFloorWorkflowExecution(messageId);
+  const executionState = await readFloorWorkflowExecutionComplete(messageId);
   if (!executionState) {
     return { ok: false, reason: '当前楼还没有可用的失败执行记录' };
   }
@@ -1321,6 +1575,7 @@ type WorkflowReplayCapsule = {
   legacy_approx: boolean;
   assembled_messages?: Array<{ role: string; content: string; name?: string }>;
   request_preview?: Array<Record<string, unknown>>;
+  details_externalized?: boolean;
 };
 
 type ExecuteWorkflowOptions = {
@@ -1929,7 +2184,12 @@ async function executeWorkflowWithPolicy(
     if (capsuleMessage) {
       const versionInfo = getMessageVersionInfo(capsuleMessage);
       const flowIds = _.uniq(result.attempts.map(attempt => String(attempt.flow.id ?? '').trim()).filter(Boolean));
-      const capsuleMode: WorkflowCapsuleMode = options.rederiveOptions?.capsule_mode === 'light' ? 'light' : 'full';
+      const capsuleMode: WorkflowCapsuleMode =
+        options.rederiveOptions?.capsule_mode === 'full'
+          ? 'full'
+          : options.jobType === 'historical_rederive'
+            ? 'full'
+            : 'light';
       const replayCapsule: WorkflowReplayCapsule = {
         at: Date.now(),
         request_id: result.request_id,
@@ -2646,6 +2906,69 @@ async function writeRederiveMeta(
   await setChatMessages([{ message_id: messageId, data: nextData }], { refresh: 'none' });
 }
 
+export async function compactCurrentChatArtifacts(
+  settings = getSettings(),
+): Promise<{ compacted: number; warnings: string[] }> {
+  if (settings.snapshot_storage !== 'file') {
+    return { compacted: 0, warnings: [] };
+  }
+
+  const chatKey = getCurrentChatKey();
+  const existing = artifactCompactionInFlightByChat.get(chatKey);
+  if (existing) {
+    return existing;
+  }
+
+  const task = (async () => {
+    const warnings: string[] = [];
+    let compacted = 0;
+    const lastId = getLastMessageId();
+    if (lastId < 0) {
+      return { compacted, warnings };
+    }
+
+    const allMessages = getChatMessages(`0-${lastId}`);
+    for (const msg of allMessages) {
+      const rawExecution = msg?.data?.[EW_FLOOR_WORKFLOW_EXECUTION_KEY];
+      const rawCapsule = msg?.data?.[EW_WORKFLOW_REPLAY_CAPSULE_KEY];
+      const executionMap = normalizeFloorWorkflowExecutionMap(rawExecution);
+      const capsuleMap = normalizeWorkflowReplayCapsuleMap(rawCapsule);
+      const shouldCompactExecution =
+        Object.keys(executionMap).length > 0 && !isExecutionSummaryOnlyMap(rawExecution);
+      const shouldCompactCapsule =
+        Object.keys(capsuleMap).length > 0 && !isWorkflowReplayCapsuleSummaryMap(rawCapsule);
+      if (!shouldCompactExecution && !shouldCompactCapsule) {
+        continue;
+      }
+
+      try {
+        if (shouldCompactExecution) {
+          await persistFloorWorkflowExecutionMap(msg.message_id, executionMap);
+        }
+        if (shouldCompactCapsule) {
+          await persistWorkflowReplayCapsuleMap(msg.message_id, capsuleMap);
+        }
+        compacted += 1;
+      } catch (error) {
+        warnings.push(`message #${msg.message_id}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    if (warnings.length > 0) {
+      console.warn('[Evolution World] artifact compaction warnings:', warnings);
+    }
+
+    return { compacted, warnings };
+  })();
+
+  artifactCompactionInFlightByChat.set(chatKey, task);
+  try {
+    return await task;
+  } finally {
+    artifactCompactionInFlightByChat.delete(chatKey);
+  }
+}
+
 export async function rederiveWorkflowAtFloor(input: RederiveWorkflowInput): Promise<RederiveWorkflowResult> {
   const settings = getSettings();
   if (!settings.enabled) {
@@ -2994,11 +3317,21 @@ export function initRuntimeEvents() {
         // Re-install TavernHelper hook in case it was overwritten during chat change
         installTavernHelperHook();
       }, 300);
+      setTimeout(() => {
+        if (getSettings().enabled) {
+          void compactCurrentChatArtifacts(getSettings());
+        }
+      }, 900);
     }),
   );
 
   // Initialize floor binding event listeners for automatic cleanup.
   initFloorBindingEvents(getSettings);
+  setTimeout(() => {
+    if (getSettings().enabled) {
+      void compactCurrentChatArtifacts(getSettings());
+    }
+  }, 900);
 }
 
 export function disposeRuntimeEvents() {
