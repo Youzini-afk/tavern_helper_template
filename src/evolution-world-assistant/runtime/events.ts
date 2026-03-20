@@ -117,6 +117,7 @@ const workflowTaskQueue: Array<{
 const queuedBeforeReplyJobKeys = new Set<string>();
 const queuedAfterReplyJobKeys = new Set<string>();
 const queuedAfterReplyDedupKeys = new Set<string>();
+const processedAfterReplyIdentityKeys = new Set<string>();
 const failedAfterReplyJobsByChat = new Map<string, FailedAfterReplyQueueJob[]>();
 let workflowTaskDrainPromise: Promise<void> | null = null;
 let workflowTaskSeq = 0;
@@ -157,6 +158,7 @@ function clearQueuedWorkflowTasks(reason: string) {
   queuedBeforeReplyJobKeys.clear();
   queuedAfterReplyJobKeys.clear();
   queuedAfterReplyDedupKeys.clear();
+  processedAfterReplyIdentityKeys.clear();
   lastBeforeReplyTriggerByIdentityKey.clear();
   lastAfterReplyTriggerByIdentityKey.clear();
 }
@@ -2372,6 +2374,11 @@ async function onAfterReplyMessage(messageId: number, type: string, source: 'mes
     return;
   }
 
+  if (processedAfterReplyIdentityKeys.has(identityKey)) {
+    console.debug(`[Evolution World] after_reply skipped: identity already processed (${source}, key=${identityKey})`);
+    return;
+  }
+
   const lastTriggerAt = lastAfterReplyTriggerByIdentityKey.get(identityKey) ?? 0;
   if (Date.now() - lastTriggerAt < MIN_AFTER_REPLY_INTERVAL_MS) {
     console.debug(
@@ -2421,6 +2428,7 @@ async function onAfterReplyMessage(messageId: number, type: string, source: 'mes
       });
       markAfterReplyHandled(messageId, messageText);
     } finally {
+      processedAfterReplyIdentityKeys.add(identityKey);
       clearAfterReplyPendingIfMatches(pendingUserMessageId);
       clearSendContextIfMatches(pendingUserMessageId, userInput);
       queuedAfterReplyJobKeys.delete(queueKey);
@@ -2911,10 +2919,12 @@ export async function rerollCurrentAfterReplyWorkflow(): Promise<{ ok: boolean; 
 }
 
 export function initRuntimeEvents() {
-  if (runtimeEventsInitialized) {
+  const hostWindow = getHostWindow() as Record<string, any>;
+  if (runtimeEventsInitialized || hostWindow.__ewRuntimeEventsInitialized) {
     return;
   }
   runtimeEventsInitialized = true;
+  hostWindow.__ewRuntimeEventsInitialized = true;
 
   // Primary path: TavernHelper.generate hook
   installTavernHelperHook();
@@ -2981,6 +2991,8 @@ export function initRuntimeEvents() {
 
 export function disposeRuntimeEvents() {
   runtimeEventsInitialized = false;
+  const hostWindow = getHostWindow() as Record<string, any>;
+  delete hostWindow.__ewRuntimeEventsInitialized;
   for (const stopper of listenerStops.splice(0, listenerStops.length)) {
     stopper.stop();
   }
