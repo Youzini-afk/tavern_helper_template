@@ -15,6 +15,7 @@ type SendIntentRecord = {
 };
 
 type GenerationRecord = {
+  seq: number;
   type: string;
   params: {
     automatic_trigger?: boolean;
@@ -29,6 +30,7 @@ type AfterReplyRecord = {
   pending_user_message_id: number | null;
   pending_user_input: string;
   pending_generation_type: string;
+  pending_generation_seq: number;
   pending_at: number;
   last_handled_assistant_message_id: number | null;
   last_handled_hash: string;
@@ -64,6 +66,7 @@ const state: RuntimeState = {
     pending_user_message_id: null,
     pending_user_input: '',
     pending_generation_type: '',
+    pending_generation_seq: 0,
     pending_at: 0,
     last_handled_assistant_message_id: null,
     last_handled_hash: '',
@@ -72,6 +75,8 @@ const state: RuntimeState = {
   before_reply_binding_pending: null,
   is_processing: false,
 };
+
+let generationSeq = 0;
 
 export function getRuntimeState(): RuntimeState {
   return state;
@@ -99,7 +104,9 @@ export function recordUserSendIntent(user_input: string) {
 }
 
 export function recordGeneration(type: string, params: Record<string, any> | undefined, dry_run: boolean) {
+  generationSeq += 1;
   state.last_generation = {
+    seq: generationSeq,
     type,
     params: (params ?? {}) as GenerationRecord['params'],
     dry_run,
@@ -107,6 +114,7 @@ export function recordGeneration(type: string, params: Record<string, any> | und
   };
 
   state.after_reply.pending_generation_type = type;
+  state.after_reply.pending_generation_seq = state.last_generation.seq;
   if (!state.after_reply.pending_at) {
     state.after_reply.pending_at = now();
   }
@@ -136,6 +144,7 @@ export function clearAfterReplyPending() {
   state.after_reply.pending_user_message_id = null;
   state.after_reply.pending_user_input = '';
   state.after_reply.pending_generation_type = '';
+  state.after_reply.pending_generation_seq = 0;
   state.after_reply.pending_at = 0;
 }
 
@@ -232,6 +241,7 @@ export function resetRuntimeState() {
   state.last_send = null;
   state.last_send_intent = null;
   state.last_generation = null;
+  generationSeq = 0;
   clearAfterReplyPending();
   clearBeforeReplyBindingPending();
   state.after_reply.last_handled_assistant_message_id = null;

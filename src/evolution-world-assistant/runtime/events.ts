@@ -2323,10 +2323,15 @@ function buildAfterReplyDedupKey(messageText: string, pendingUserMessageId: numb
   return `${getCurrentChatKey()}:${userMessagePart}:${contentHash}`;
 }
 
-function buildAfterReplyIdentityKey(chatKey: string, messageId: number, messageText: string): string {
-  const msg = getChatMessages(messageId)[0];
-  const versionInfo = getMessageVersionInfo(msg);
-  return `${chatKey}:assistant:${messageId}:${versionInfo.version_key}:${simpleHash(messageText.trim())}`;
+function buildAfterReplyIdentityKey(input: {
+  chatKey: string;
+  messageId: number;
+  generationSeq: number;
+  pendingUserMessageId: number | null;
+  generationType: string;
+}): string {
+  const userMessagePart = Number.isFinite(input.pendingUserMessageId) ? `user:${input.pendingUserMessageId}` : 'user:unknown';
+  return `${input.chatKey}:assistant:${input.messageId}:gen:${Math.max(0, Math.trunc(input.generationSeq || 0))}:${userMessagePart}:${String(input.generationType || 'normal').trim() || 'normal'}`;
 }
 
 async function onAfterReplyMessage(messageId: number, type: string, source: 'message_received' | 'generation_ended') {
@@ -2365,9 +2370,16 @@ async function onAfterReplyMessage(messageId: number, type: string, source: 'mes
   }
 
   const chatKey = getCurrentChatKey();
+  const generationSeq = getRuntimeState().after_reply.pending_generation_seq || getRuntimeState().last_generation?.seq || 0;
   const queueKey = `${chatKey}:${messageId}`;
   const dedupKey = buildAfterReplyDedupKey(messageText, pendingUserMessageId);
-  const identityKey = buildAfterReplyIdentityKey(chatKey, messageId, messageText);
+  const identityKey = buildAfterReplyIdentityKey({
+    chatKey,
+    messageId,
+    generationSeq,
+    pendingUserMessageId,
+    generationType: type,
+  });
 
   if (queuedAfterReplyJobKeys.has(queueKey) || queuedAfterReplyDedupKeys.has(dedupKey)) {
     console.debug(`[Evolution World] after_reply skipped as duplicate (${source}): ${dedupKey}`);
