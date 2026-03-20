@@ -709,7 +709,16 @@ async function readFloorWorkflowExecutionMapComplete(messageId: number): Promise
   }
 
   const external = normalizeFloorWorkflowExecutionMap(resolved.store.workflow_execution);
-  return Object.keys(external).length > 0 ? external : inline;
+  if (Object.keys(external).length === 0) {
+    return inline;
+  }
+  if (Object.keys(inline).length === 0) {
+    return external;
+  }
+  return {
+    ...inline,
+    ...external,
+  };
 }
 
 function selectExecutionStateForHistory(
@@ -1016,7 +1025,16 @@ async function readWorkflowReplayCapsuleMapComplete(messageId: number): Promise<
   }
 
   const external = normalizeWorkflowReplayCapsuleMap(resolved.store.replay_capsules);
-  return Object.keys(external).length > 0 ? external : inline;
+  if (Object.keys(external).length === 0) {
+    return inline;
+  }
+  if (Object.keys(inline).length === 0) {
+    return external;
+  }
+  return {
+    ...inline,
+    ...external,
+  };
 }
 
 function hasWorkflowReplayCapsule(messageId: number): boolean {
