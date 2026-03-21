@@ -3,6 +3,168 @@
 
     <!-- ═══ Mobile Tab View ═══ -->
     <template v-if="isMobile">
+
+      <!-- ═══ Mobile Browse Mode ═══ -->
+      <template v-if="panelMode === 'browse'">
+        <div class="mobile-browse-view">
+          <!-- Mobile browse toolbar -->
+          <section class="wb-toolbar browse-toolbar mobile-browse-toolbar">
+            <div ref="worldbookPickerRef" class="worldbook-picker">
+              <button class="worldbook-picker-trigger" type="button" @click="toggleWorldbookPicker">
+                <span class="worldbook-picker-trigger-text" :title="selectedWorldbookName || '请选择世界书'">
+                  {{ selectedWorldbookName || '请选择' }}
+                </span>
+                <span class="worldbook-picker-trigger-arrow">▾</span>
+              </button>
+              <div v-if="worldbookPickerOpen" class="worldbook-picker-dropdown">
+                <input
+                  ref="worldbookPickerSearchInputRef"
+                  v-model="worldbookPickerSearchText"
+                  type="text"
+                  class="text-input worldbook-picker-search"
+                  placeholder="搜索..."
+                  @keydown.enter.prevent="filteredSelectableWorldbookNames[0] && selectWorldbookFromPicker(filteredSelectableWorldbookNames[0])"
+                />
+                <div class="worldbook-picker-list">
+                  <button
+                    v-for="name in filteredSelectableWorldbookNames"
+                    :key="`mbrowse-wb-${name}`"
+                    class="worldbook-picker-item"
+                    :class="{ active: name === selectedWorldbookName }"
+                    type="button"
+                    @click="selectWorldbookFromPicker(name)"
+                  >
+                    {{ name }}
+                  </button>
+                  <div v-if="!filteredSelectableWorldbookNames.length" class="empty-note">无匹配</div>
+                </div>
+              </div>
+            </div>
+            <input v-model="searchText" type="text" class="text-input browse-search" placeholder="🔍 搜索..." />
+            <button class="btn" type="button" :class="{ 'glow-pulse': hasUnsavedChanges }" :disabled="!hasUnsavedChanges" @click="saveCurrentWorldbook">💾</button>
+          </section>
+
+          <!-- Mobile browse card list -->
+          <div class="browse-scroll-area mobile-browse-scroll">
+            <section class="browse-bindings mobile-browse-bindings">
+              <span v-if="bindings.global.length" class="binding-tag global">🟢 全局</span>
+              <span v-if="bindings.charPrimary" class="binding-tag char">🔵 角色</span>
+              <span v-if="bindings.chat" class="binding-tag chat">🟡 聊天</span>
+              <span class="browse-entry-count">{{ filteredEntries.length }} / {{ draftEntries.length }}</span>
+              <button class="btn mini" type="button" :disabled="!selectedWorldbookName" @click="addEntry">+</button>
+            </section>
+            <div class="browse-grid mobile-browse-grid">
+              <article
+                v-for="entry in filteredEntries"
+                :key="`mbrowse-card-${entry.uid}`"
+                class="browse-card"
+                :class="{
+                  expanded: expandedBrowseCardUids.has(entry.uid),
+                  disabled: !entry.enabled,
+                }"
+                :data-status="getEntryVisualStatus(entry)"
+              >
+                <div class="browse-card-header" @click="toggleBrowseCard(entry.uid)">
+                  <span class="entry-status-dot" :data-status="getEntryVisualStatus(entry)"></span>
+                  <span class="browse-card-title">{{ entry.name || `条目 ${entry.uid}` }}</span>
+                  <label class="browse-toggle-wrap" @click.stop>
+                    <input type="checkbox" :checked="entry.enabled" @change="browseToggleEnabled(entry)" />
+                    <span class="browse-toggle-label">{{ entry.enabled ? 'ON' : 'OFF' }}</span>
+                  </label>
+                </div>
+                <div v-if="!expandedBrowseCardUids.has(entry.uid) && entry.strategy.keys.length" class="browse-card-keys" @click="toggleBrowseCard(entry.uid)">
+                  <span v-for="(k, ki) in entry.strategy.keys.slice(0, 4)" :key="`mbk-${entry.uid}-${ki}`" class="browse-key-chip">{{ String(k) }}</span>
+                  <span v-if="entry.strategy.keys.length > 4" class="browse-key-chip more">+{{ entry.strategy.keys.length - 4 }}</span>
+                </div>
+                <div v-if="!expandedBrowseCardUids.has(entry.uid)" class="browse-card-preview" @click="toggleBrowseCard(entry.uid)">
+                  {{ browseGetContentPreview(entry) }}
+                </div>
+                <div v-if="!expandedBrowseCardUids.has(entry.uid)" class="browse-card-meta" @click="toggleBrowseCard(entry.uid)">
+                  <span class="browse-meta-pill" :data-status="getEntryVisualStatus(entry)">{{ browseGetStrategyLabel(entry) }}</span>
+                  <span class="browse-meta-pill">📍 {{ browseGetPositionLabel(entry) }}</span>
+                </div>
+
+                <!-- Mobile expanded inline editor -->
+                <div v-if="expandedBrowseCardUids.has(entry.uid)" class="browse-card-expanded">
+                  <label class="field">
+                    <span>备注</span>
+                    <input class="text-input" type="text" v-model="entry.name" placeholder="名称" />
+                  </label>
+                  <label class="field">
+                    <span>主要关键词</span>
+                    <textarea
+                      class="text-input browse-keys-input"
+                      :value="entry.strategy.keys.map(k => String(k)).join(', ')"
+                      @change="entry.strategy.keys = ($event.target as HTMLTextAreaElement).value.split(',').map(s => s.trim()).filter(Boolean) as any"
+                      placeholder="逗号分隔"
+                      rows="1"
+                    ></textarea>
+                  </label>
+                  <label class="field">
+                    <span>内容</span>
+                    <textarea
+                      class="text-input browse-content-input"
+                      v-model="entry.content"
+                      placeholder="条目内容..."
+                    ></textarea>
+                  </label>
+                  <div class="browse-config-grid mobile-config-grid">
+                    <label class="field">
+                      <span>策略</span>
+                      <select class="text-input" v-model="entry.strategy.type">
+                        <option value="constant">🔵 常驻</option>
+                        <option value="selective">🟢 关键词</option>
+                        <option value="vectorized">🔗 向量化</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span>位置</span>
+                      <select class="text-input" :value="(() => { const opt = positionSelectOptions.find(o => o.type === entry.position.type && (o.type !== 'at_depth' || o.role === entry.position.role)); return opt?.value ?? entry.position.type; })()" @change="(() => { const v = ($event.target as HTMLSelectElement).value as PositionSelectValue; const opt = positionSelectOptions.find(o => o.value === v); if (opt) { entry.position.type = opt.type; if (opt.role) entry.position.role = opt.role; } })()">
+                        <option v-for="opt in positionSelectOptions" :key="`mbrowse-pos-${entry.uid}-${opt.value}`" :value="opt.value">{{ opt.label }}</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span>权重</span>
+                      <input class="text-input" type="number" v-model.number="entry.position.order" />
+                    </label>
+                  </div>
+                  <div class="browse-recursion-row">
+                    <label class="checkbox-inline">
+                      <input type="checkbox" v-model="entry.recursion.prevent_incoming" />
+                      <span>🚫 不可递归命中</span>
+                    </label>
+                    <label class="checkbox-inline">
+                      <input type="checkbox" v-model="entry.recursion.prevent_outgoing" />
+                      <span>🚫 阻止后续递归</span>
+                    </label>
+                  </div>
+                  <div class="browse-card-actions">
+                    <button class="btn mini danger" type="button" @click="removeSelectedEntry" @mousedown="selectEntry(entry.uid)">🗑</button>
+                    <button class="btn mini utility-btn" type="button" @click="switchToEditorForEntry(entry.uid)">✏️ 完整编辑</button>
+                    <button class="btn mini" type="button" @click="toggleBrowseCard(entry.uid)">收起</button>
+                  </div>
+                </div>
+              </article>
+              <div v-if="!filteredEntries.length" class="browse-empty">
+                <div class="browse-empty-icon">📖</div>
+                <div class="browse-empty-text">{{ selectedWorldbookName ? '无条目' : '请选择世界书' }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Mobile browse bottom tabs -->
+        <div class="mobile-tab-bar" style="display:flex !important;flex-shrink:0;">
+          <button class="active">
+            <span class="tab-icon">📖</span><span class="tab-label">浏览</span>
+          </button>
+          <button @click="switchPanelMode('editor')">
+            <span class="tab-icon">✏️</span><span class="tab-label">编辑</span>
+          </button>
+        </div>
+      </template>
+
+      <!-- ═══ Mobile Editor Mode ═══ -->
+      <template v-if="panelMode === 'editor'">
       <div class="mobile-tab-view">
         <div class="mobile-tab-content">
 
@@ -736,6 +898,9 @@
 
       <!-- Tab Bar: bottom, direct child of wb-assistant-root via fragment -->
       <div class="mobile-tab-bar" style="display:flex !important;flex-shrink:0;">
+        <button @click="switchPanelMode('browse')">
+          <span class="tab-icon">📖</span><span class="tab-label">浏览</span>
+        </button>
         <button @click="mobileTab = 'list'" :class="{ active: mobileTab === 'list' }">
           <span class="tab-icon">📋</span><span class="tab-label">列表</span>
         </button>
@@ -755,10 +920,278 @@
           <span class="tab-icon">🏷️</span><span class="tab-label">标签</span>
         </button>
       </div>
+      </template><!-- end mobile editor mode -->
     </template>
 
     <!-- ═══ Desktop Layout ═══ -->
     <template v-if="!isMobile">
+
+    <!-- ═══ Desktop Browse Mode ═══ -->
+    <template v-if="panelMode === 'browse'">
+      <section class="wb-toolbar browse-toolbar">
+        <label class="toolbar-label">
+          <span>世界书</span>
+          <div ref="worldbookPickerRef" class="worldbook-picker">
+            <button class="worldbook-picker-trigger" type="button" @click="toggleWorldbookPicker">
+              <span class="worldbook-picker-trigger-text" :title="selectedWorldbookName || '请选择世界书'">
+                {{ selectedWorldbookName || '请选择世界书' }}
+              </span>
+              <span class="worldbook-picker-trigger-arrow">{{ worldbookPickerOpen ? '▴' : '▾' }}</span>
+            </button>
+            <div v-if="worldbookPickerOpen" class="worldbook-picker-dropdown">
+              <input
+                ref="worldbookPickerSearchInputRef"
+                v-model="worldbookPickerSearchText"
+                type="text"
+                class="text-input worldbook-picker-search"
+                placeholder="搜索世界书..."
+                @keydown.enter.prevent="filteredSelectableWorldbookNames[0] && selectWorldbookFromPicker(filteredSelectableWorldbookNames[0])"
+              />
+              <div class="worldbook-picker-list">
+                <button
+                  v-for="name in filteredSelectableWorldbookNames"
+                  :key="`browse-wb-${name}`"
+                  class="worldbook-picker-item"
+                  :class="{ active: name === selectedWorldbookName }"
+                  type="button"
+                  @click="selectWorldbookFromPicker(name)"
+                >
+                  {{ name }}
+                </button>
+                <div v-if="!filteredSelectableWorldbookNames.length" class="empty-note">没有匹配的世界书</div>
+              </div>
+            </div>
+          </div>
+        </label>
+        <input v-model="searchText" type="text" class="text-input browse-search" placeholder="🔍 搜索名称 / 内容 / 关键词" />
+        <button class="btn" type="button" @click="createNewWorldbook">新建</button>
+        <button class="btn" type="button" :disabled="!selectedWorldbookName" @click="duplicateWorldbook">另存为</button>
+        <button class="btn danger" type="button" :disabled="!selectedWorldbookName" @click="deleteCurrentWorldbook">删除</button>
+        <button class="btn" type="button" :disabled="!selectedWorldbookName" @click="exportCurrentWorldbook">导出</button>
+        <button class="btn" type="button" @click="triggerImport">导入</button>
+        <input
+          ref="importFileInput"
+          class="hidden-input"
+          type="file"
+          accept=".json,application/json"
+          @change="onImportChange"
+        />
+        <button class="btn" type="button" :class="{ 'glow-pulse': hasUnsavedChanges }" :disabled="!hasUnsavedChanges" @click="saveCurrentWorldbook">💾 保存</button>
+        <div class="browse-mode-switch">
+          <button class="btn browse-mode-btn active" type="button">📖 浏览</button>
+          <button class="btn browse-mode-btn" type="button" @click="switchPanelMode('editor')">✏️ 编辑</button>
+        </div>
+      </section>
+
+      <!-- Bindings row -->
+      <section class="wb-bindings browse-bindings">
+        <span v-if="bindings.global.length" class="binding-tag global">🟢 全局: {{ bindings.global.join(', ') }}</span>
+        <span v-if="bindings.charPrimary" class="binding-tag char">🔵 角色: {{ bindings.charPrimary }}</span>
+        <span v-if="bindings.chat" class="binding-tag chat">🟡 聊天: {{ bindings.chat }}</span>
+        <span class="browse-entry-count">条目 {{ filteredEntries.length }} / {{ draftEntries.length }}</span>
+        <button class="btn mini" type="button" :disabled="!selectedWorldbookName" @click="addEntry">+ 新条目</button>
+        <button class="btn mini utility-btn" :class="{ active: globalWorldbookMode }" type="button" @click="toggleGlobalMode">🌐 全局模式</button>
+      </section>
+
+      <!-- Global Mode Panel (reuse existing) -->
+      <section v-if="globalWorldbookMode" class="wb-bindings browse-global-mode">
+        <!-- Intentionally showing the same global mode panel -->
+        <div class="global-mode-panel">
+          <div class="global-mode-grid">
+            <div class="global-mode-column">
+              <label class="field">
+                <span>搜索并添加常驻世界书</span>
+                <input
+                  v-model="globalAddSearchText"
+                  type="text"
+                  class="text-input"
+                  placeholder="搜索并添加..."
+                  @keydown.enter.prevent="addFirstGlobalCandidate"
+                />
+              </label>
+              <TransitionGroup name="list" tag="div" class="global-mode-list">
+                <button
+                  v-for="name in globalAddCandidates"
+                  :key="`browse-add-${name}`"
+                  class="global-mode-item add"
+                  type="button"
+                  @click="addGlobalWorldbook(name)"
+                >
+                  <span class="global-mode-item-name">{{ name }}</span>
+                  <span class="global-mode-item-action">添加</span>
+                </button>
+                <div v-if="!globalAddCandidates.length" key="empty" class="empty-note">没有可添加的世界书</div>
+              </TransitionGroup>
+            </div>
+            <div class="global-mode-column">
+              <label class="field">
+                <span>筛选常驻世界书</span>
+                <input
+                  v-model="globalFilterText"
+                  type="text"
+                  class="text-input"
+                  placeholder="筛选..."
+                />
+              </label>
+              <TransitionGroup name="list" tag="div" class="global-mode-list">
+                <button
+                  v-for="name in filteredGlobalWorldbooks"
+                  :key="`browse-global-${name}`"
+                  class="global-mode-item active"
+                  type="button"
+                  @click="removeGlobalWorldbook(name)"
+                >
+                  <span class="global-mode-item-name">{{ name }}</span>
+                  <span class="global-mode-item-action">移除</span>
+                </button>
+                <div v-if="!filteredGlobalWorldbooks.length" key="empty" class="empty-note">暂无常驻世界书</div>
+              </TransitionGroup>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Card Grid -->
+      <div class="browse-scroll-area">
+        <div class="browse-grid">
+          <article
+            v-for="entry in filteredEntries"
+            :key="`browse-card-${entry.uid}`"
+            class="browse-card"
+            :class="{
+              expanded: expandedBrowseCardUids.has(entry.uid),
+              disabled: !entry.enabled,
+            }"
+            :data-status="getEntryVisualStatus(entry)"
+          >
+            <!-- Collapsed Header -->
+            <div class="browse-card-header" @click="toggleBrowseCard(entry.uid)">
+              <span class="entry-status-dot" :data-status="getEntryVisualStatus(entry)"></span>
+              <span class="browse-card-title">{{ entry.name || `条目 ${entry.uid}` }}</span>
+              <label class="browse-toggle-wrap" @click.stop>
+                <input type="checkbox" :checked="entry.enabled" @change="browseToggleEnabled(entry)" />
+                <span class="browse-toggle-label">{{ entry.enabled ? 'ON' : 'OFF' }}</span>
+              </label>
+            </div>
+
+            <!-- Keywords preview (collapsed) -->
+            <div v-if="!expandedBrowseCardUids.has(entry.uid) && entry.strategy.keys.length" class="browse-card-keys" @click="toggleBrowseCard(entry.uid)">
+              <span v-for="(k, ki) in entry.strategy.keys.slice(0, 6)" :key="`bk-${entry.uid}-${ki}`" class="browse-key-chip">{{ String(k) }}</span>
+              <span v-if="entry.strategy.keys.length > 6" class="browse-key-chip more">+{{ entry.strategy.keys.length - 6 }}</span>
+            </div>
+
+            <!-- Content preview (collapsed) -->
+            <div v-if="!expandedBrowseCardUids.has(entry.uid)" class="browse-card-preview" @click="toggleBrowseCard(entry.uid)">
+              {{ browseGetContentPreview(entry) }}
+            </div>
+
+            <!-- Meta row (collapsed) -->
+            <div v-if="!expandedBrowseCardUids.has(entry.uid)" class="browse-card-meta" @click="toggleBrowseCard(entry.uid)">
+              <span class="browse-meta-pill" :data-status="getEntryVisualStatus(entry)">{{ browseGetStrategyLabel(entry) }}</span>
+              <span class="browse-meta-pill">📍 {{ browseGetPositionLabel(entry) }}</span>
+              <span class="browse-meta-pill">⚖️ #{{ entry.position.order }}</span>
+            </div>
+
+            <!-- ═══ Expanded Inline Editor ═══ -->
+            <div v-if="expandedBrowseCardUids.has(entry.uid)" class="browse-card-expanded">
+              <label class="field">
+                <span>备注 (Comment)</span>
+                <input class="text-input" type="text" v-model="entry.name" placeholder="条目名称" />
+              </label>
+              <label class="field">
+                <span>主要关键词</span>
+                <textarea
+                  class="text-input browse-keys-input"
+                  :value="entry.strategy.keys.map(k => String(k)).join(', ')"
+                  @change="entry.strategy.keys = ($event.target as HTMLTextAreaElement).value.split(',').map(s => s.trim()).filter(Boolean) as any"
+                  placeholder="关键词, 用逗号分隔"
+                  rows="1"
+                ></textarea>
+              </label>
+              <label class="field">
+                <span>次要关键词</span>
+                <div class="browse-secondary-keys-row">
+                  <select class="text-input" v-model="entry.strategy.keys_secondary.logic">
+                    <option value="and_any">AND_ANY</option>
+                    <option value="and_all">AND_ALL</option>
+                    <option value="not_all">NOT_ALL</option>
+                    <option value="not_any">NOT_ANY</option>
+                  </select>
+                  <textarea
+                    class="text-input browse-keys-input"
+                    :value="entry.strategy.keys_secondary.keys.map(k => String(k)).join(', ')"
+                    @change="entry.strategy.keys_secondary.keys = ($event.target as HTMLTextAreaElement).value.split(',').map(s => s.trim()).filter(Boolean) as any"
+                    placeholder="次要关键词, 用逗号分隔"
+                    rows="1"
+                  ></textarea>
+                </div>
+              </label>
+              <label class="field">
+                <span>内容 (Content)</span>
+                <textarea
+                  class="text-input browse-content-input"
+                  v-model="entry.content"
+                  placeholder="世界书条目内容..."
+                ></textarea>
+              </label>
+              <div class="browse-config-grid">
+                <label class="field">
+                  <span>策略</span>
+                  <select class="text-input" v-model="entry.strategy.type">
+                    <option value="constant">🔵 常驻</option>
+                    <option value="selective">🟢 关键词</option>
+                    <option value="vectorized">🔗 向量化</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>位置</span>
+                  <select class="text-input" :value="(() => { const opt = positionSelectOptions.find(o => o.type === entry.position.type && (o.type !== 'at_depth' || o.role === entry.position.role)); return opt?.value ?? entry.position.type; })()" @change="(() => { const v = ($event.target as HTMLSelectElement).value as PositionSelectValue; const opt = positionSelectOptions.find(o => o.value === v); if (opt) { entry.position.type = opt.type; if (opt.role) entry.position.role = opt.role; } })()">
+                    <option v-for="opt in positionSelectOptions" :key="`browse-pos-${entry.uid}-${opt.value}`" :value="opt.value">{{ opt.label }}</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>权重 (Order)</span>
+                  <input class="text-input" type="number" v-model.number="entry.position.order" />
+                </label>
+                <label v-if="entry.position.type === 'at_depth'" class="field">
+                  <span>深度 (Depth)</span>
+                  <input class="text-input" type="number" v-model.number="entry.position.depth" min="0" />
+                </label>
+              </div>
+              <div class="browse-recursion-row">
+                <label class="checkbox-inline">
+                  <input type="checkbox" v-model="entry.recursion.prevent_incoming" />
+                  <span>🚫 不可递归命中</span>
+                </label>
+                <label class="checkbox-inline">
+                  <input type="checkbox" v-model="entry.recursion.prevent_outgoing" />
+                  <span>🚫 阻止后续递归</span>
+                </label>
+              </div>
+              <div class="browse-card-actions">
+                <button class="btn mini" type="button" @click="duplicateSelectedEntry" @mouseenter="selectEntry(entry.uid)">📋 复制</button>
+                <button class="btn mini danger" type="button" @click="removeSelectedEntry" @mouseenter="selectEntry(entry.uid)">🗑 删除</button>
+                <button class="btn mini utility-btn" type="button" @click="switchToEditorForEntry(entry.uid)">✏️ 完整编辑</button>
+                <button class="btn mini" type="button" @click="toggleBrowseCard(entry.uid)">收起</button>
+              </div>
+            </div>
+          </article>
+          <div v-if="!filteredEntries.length" class="browse-empty">
+            <div class="browse-empty-icon">📖</div>
+            <div class="browse-empty-text">{{ selectedWorldbookName ? '没有符合条件的条目' : '请选择一本世界书' }}</div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ═══ Desktop Editor Mode ═══ -->
+    <template v-if="panelMode === 'editor'">
+    <section class="wb-toolbar browse-toolbar" style="justify-content: flex-end; gap: 8px; padding: 6px 12px; min-height: 0;">
+      <div class="browse-mode-switch">
+        <button class="btn browse-mode-btn" type="button" @click="switchPanelMode('browse')">📖 浏览</button>
+        <button class="btn browse-mode-btn active" type="button">✏️ 编辑</button>
+      </div>
+    </section>
     <section v-if="!isDesktopFocusMode" class="wb-toolbar">
             <label class="toolbar-label">
               <span>世界书</span>
@@ -3051,6 +3484,7 @@
               </div>
             </div>
           </div>
+    </template><!-- end editor mode -->
   </div>
 </template>
 
@@ -3575,6 +4009,7 @@ interface PersistedState {
   cross_copy: CrossCopyPersistState;
   sort: { mode: 'mutate' | 'view'; reassign_uid: boolean };
   glass_mode: boolean;
+  panel_mode: 'browse' | 'editor';
 }
 
 interface ActivationLog {
@@ -3782,6 +4217,8 @@ const themePickerOpen = ref(false);
 const globalWorldbookMode = ref(false);
 const aiGeneratorMode = ref(false);
 const crossCopyMode = ref(false);
+const panelMode = ref<'browse' | 'editor'>('browse');
+const expandedBrowseCardUids = ref<Set<number>>(new Set());
 const isFocusEditing = ref(false);
 const focusWorldbookMenuOpen = ref(false);
 const focusToolsExpanded = ref(false);
@@ -6363,6 +6800,7 @@ function createDefaultPersistedState(): PersistedState {
     cross_copy: createDefaultCrossCopyPersistState(),
     sort: { mode: 'mutate', reassign_uid: true },
     glass_mode: true,
+    panel_mode: 'browse',
   };
 }
 
@@ -6581,6 +7019,7 @@ function normalizePersistedState(input: unknown): PersistedState {
       };
     })(),
     glass_mode: root.glass_mode === true,
+    panel_mode: root.panel_mode === 'editor' ? 'editor' : 'browse',
   };
 }
 
@@ -6661,6 +7100,64 @@ function persistCrossCopyState(): void {
       workspace_tools_expanded: crossCopyWorkspaceToolsExpanded.value,
     };
   });
+}
+
+// ═══ Browse Mode Helpers ═══
+
+function toggleBrowseCard(uid: number): void {
+  const set = expandedBrowseCardUids.value;
+  if (set.has(uid)) {
+    set.delete(uid);
+  } else {
+    set.add(uid);
+  }
+}
+
+function switchToEditorForEntry(uid: number): void {
+  panelMode.value = 'editor';
+  updatePersistedState(s => { s.panel_mode = 'editor'; });
+  selectEntry(uid);
+}
+
+function switchPanelMode(mode: 'browse' | 'editor'): void {
+  panelMode.value = mode;
+  updatePersistedState(s => { s.panel_mode = mode; });
+}
+
+function browseToggleEnabled(entry: WorldbookEntry): void {
+  entry.enabled = !entry.enabled;
+}
+
+function browseCycleStrategy(entry: WorldbookEntry): void {
+  const order: StrategyType[] = ['constant', 'selective', 'vectorized'];
+  const idx = order.indexOf(entry.strategy.type);
+  entry.strategy.type = order[(idx + 1) % order.length];
+}
+
+function browseGetPositionLabel(entry: WorldbookEntry): string {
+  const opt = positionSelectOptions.find(o => {
+    if (o.type !== entry.position.type) return false;
+    if (o.type === 'at_depth' && o.role && o.role !== entry.position.role) return false;
+    return true;
+  });
+  return opt?.label ?? entry.position.type;
+}
+
+function browseGetStrategyLabel(entry: WorldbookEntry): string {
+  switch (entry.strategy.type) {
+    case 'constant': return '🔵 常驻';
+    case 'selective': return '🟢 关键词';
+    case 'vectorized': return '🔗 向量化';
+    default: return entry.strategy.type;
+  }
+}
+
+function browseGetContentPreview(entry: WorldbookEntry): string {
+  return entry.content?.trim() || '(无内容)';
+}
+
+function applyPanelModeFromPersisted(): void {
+  panelMode.value = persistedState.value.panel_mode || 'browse';
 }
 
 function normalizeCrossCopyWorldbookSelection(): void {
@@ -12153,6 +12650,7 @@ onMounted(() => {
   syncSelectedGlobalPresetFromState();
   applyLayoutStateFromPersisted();
   applyCrossCopyStateFromPersisted();
+  applyPanelModeFromPersisted();
   if (isFocusEditing.value) {
     resetFocusPanels();
   }
@@ -12303,6 +12801,375 @@ watch(hasUnsavedChanges, (val) => {
 </script>
 
 <style scoped>
+
+/* ═══ Browse Mode Styles ═══ */
+
+.browse-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+}
+
+.browse-search {
+  flex: 1;
+  min-width: 120px;
+  max-width: 320px;
+}
+
+.browse-mode-switch {
+  display: flex;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--wb-border-main);
+  margin-left: auto;
+}
+
+.browse-mode-btn {
+  border-radius: 0 !important;
+  border: none !important;
+  font-size: 12px;
+  padding: 4px 12px;
+  background: transparent;
+  color: var(--wb-text-muted);
+  transition: all 0.2s ease;
+}
+
+.browse-mode-btn.active {
+  background: var(--wb-accent);
+  color: #fff;
+}
+
+.browse-bindings {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.binding-tag {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.binding-tag.global {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+
+.binding-tag.char {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+
+.binding-tag.chat {
+  background: rgba(234, 179, 8, 0.15);
+  color: #facc15;
+}
+
+.browse-entry-count {
+  color: var(--wb-text-muted);
+  font-size: 11px;
+  margin-left: auto;
+}
+
+.browse-scroll-area {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 12px 12px;
+}
+
+.browse-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.browse-card {
+  background: var(--wb-bg-card, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--wb-border-main);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.browse-card:hover {
+  border-color: var(--wb-accent);
+  box-shadow: 0 0 12px rgba(var(--wb-accent-rgb, 56, 189, 248), 0.15);
+}
+
+.browse-card.expanded {
+  cursor: default;
+  grid-column: 1 / -1;
+  border-color: var(--wb-accent);
+  box-shadow: 0 0 20px rgba(var(--wb-accent-rgb, 56, 189, 248), 0.1);
+}
+
+.browse-card.disabled {
+  opacity: 0.55;
+}
+
+.browse-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.browse-card-title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--wb-text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browse-toggle-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.browse-toggle-wrap input[type="checkbox"] {
+  accent-color: var(--wb-accent);
+}
+
+.browse-toggle-label {
+  color: var(--wb-text-muted);
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.browse-card-keys {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.browse-key-chip {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--wb-text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.browse-key-chip.more {
+  background: transparent;
+  color: var(--wb-accent);
+  border-color: var(--wb-accent);
+}
+
+.browse-card-preview {
+  font-size: 12px;
+  color: var(--wb-text-muted);
+  line-height: 1.5;
+  max-height: clamp(3em, 8vh, 8em);
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+}
+
+.browse-card-meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.browse-meta-pill {
+  padding: 1px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--wb-text-muted);
+}
+
+.browse-meta-pill[data-status="constant"] {
+  background: rgba(59, 130, 246, 0.12);
+  color: #60a5fa;
+}
+
+.browse-meta-pill[data-status="selective"] {
+  background: rgba(34, 197, 94, 0.12);
+  color: #4ade80;
+}
+
+/* Expanded card inline editor */
+
+.browse-card-expanded {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--wb-border-main);
+  margin-top: 4px;
+}
+
+.browse-keys-input {
+  resize: vertical;
+  min-height: 28px;
+  font-size: 12px;
+}
+
+.browse-secondary-keys-row {
+  display: flex;
+  gap: 6px;
+}
+
+.browse-secondary-keys-row select {
+  width: 110px;
+  flex-shrink: 0;
+}
+
+.browse-secondary-keys-row textarea {
+  flex: 1;
+}
+
+.browse-content-input {
+  resize: vertical;
+  min-height: 80px;
+  max-height: 50vh;
+  font-size: 12px;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+.browse-config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.browse-recursion-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.browse-card-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+  border-top: 1px solid var(--wb-border-main);
+}
+
+.browse-card-actions .btn:last-child {
+  margin-left: auto;
+}
+
+.browse-empty {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
+  color: var(--wb-text-muted);
+  gap: 8px;
+}
+
+.browse-empty-icon {
+  font-size: 40px;
+  opacity: 0.4;
+}
+
+.browse-empty-text {
+  font-size: 14px;
+}
+
+/* Glow pulse for unsaved changes */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(var(--wb-accent-rgb, 56, 189, 248), 0.3); }
+  50% { box-shadow: 0 0 12px rgba(var(--wb-accent-rgb, 56, 189, 248), 0.7); }
+}
+
+.glow-pulse {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* Mobile browse overrides */
+
+.mobile-browse-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.mobile-browse-toolbar {
+  padding: 6px 8px;
+  gap: 6px;
+}
+
+.mobile-browse-toolbar .worldbook-picker {
+  max-width: 160px;
+}
+
+.mobile-browse-toolbar .browse-search {
+  max-width: none;
+  min-width: 80px;
+}
+
+.mobile-browse-scroll {
+  padding: 0 8px 8px;
+}
+
+.mobile-browse-bindings {
+  padding: 4px 0;
+}
+
+.mobile-browse-grid {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.mobile-browse-grid .browse-card.expanded {
+  grid-column: auto;
+}
+
+.mobile-config-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+.browse-global-mode {
+  padding: 8px 12px;
+}
+
+.hidden-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* ═══ End Browse Mode Styles ═══ */
+
 .wb-assistant-root {
   position: relative;
   flex: 1;
