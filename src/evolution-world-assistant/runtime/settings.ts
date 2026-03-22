@@ -1,3 +1,4 @@
+import _ from 'lodash';
 import { createDefaultApiPreset, createDefaultFlow } from './factory';
 import { simpleHash } from './helpers';
 import { readSharedSettings, writeSharedSettings } from './shared-settings-storage';
@@ -96,6 +97,66 @@ function writeScriptStorage(updater: (storage: ScriptStorageShape) => ScriptStor
 
 function persistLocalSettings(settings: EwSettings) {
   writeScriptStorage(previous => ({ ...previous, settings }));
+}
+
+const VALID_BRIDGE_ROUTES = new Set([
+  '/api/backends/chat-completions/generate',
+  '/api/backends/chat-completions/generate (custom_api stream bridge)',
+  '/api/backends/chat-completions/generate (fallback)',
+  'generateRaw(custom_api)',
+]);
+
+const BRIDGE_OPTIONAL_FIELD_WHITELIST = ['flow_request', 'assembled_messages', 'transport_request'] as const;
+
+function normalizeDiagnosticsBridge(bridge: unknown): Record<string, unknown> | undefined {
+  if (!_.isPlainObject(bridge)) {
+    return undefined;
+  }
+
+  const candidate = bridge as Record<string, unknown>;
+  const route = typeof candidate.route === 'string' ? candidate.route.trim() : '';
+  const reason = typeof candidate.reason === 'string' ? candidate.reason.trim() : '';
+  if (!VALID_BRIDGE_ROUTES.has(route) || !reason) {
+    return undefined;
+  }
+
+  const normalized: Record<string, unknown> = {
+    route,
+    reason,
+  };
+
+  for (const key of BRIDGE_OPTIONAL_FIELD_WHITELIST) {
+    if (key in candidate) {
+      normalized[key] = candidate[key];
+    }
+  }
+
+  return normalized;
+}
+
+function normalizeRunSummary(summary: RunSummary): RunSummary {
+  const normalized = RunSummarySchema.parse(summary);
+  if (!_.isPlainObject(normalized.diagnostics)) {
+    return normalized;
+  }
+
+  const bridge = normalizeDiagnosticsBridge(normalized.diagnostics.bridge);
+  if (bridge) {
+    normalized.diagnostics = {
+      ...normalized.diagnostics,
+      bridge,
+    };
+    return normalized;
+  }
+
+  if (!('bridge' in normalized.diagnostics)) {
+    return normalized;
+  }
+
+  const { bridge: _bridge, ...restDiagnostics } = normalized.diagnostics;
+  void _bridge;
+  normalized.diagnostics = restDiagnostics;
+  return normalized;
 }
 
 function normalizeWorkflowRoundCounterEntry(
@@ -392,7 +453,7 @@ function normalizeRunRecordMap(storage: ScriptStorageShape): Record<string, RunS
   for (const [chatId, summary] of Object.entries(raw)) {
     const parsed = RunSummarySchema.safeParse(summary);
     if (parsed.success) {
-      next[chatId] = parsed.data;
+      next[chatId] = normalizeRunSummary(parsed.data);
     }
   }
   return next;
@@ -525,7 +586,7 @@ export function subscribeSettings(listener: SettingsListener): { stop: () => voi
 export function loadLastRun(): RunSummary | null {
   const storage = readScriptStorage();
   const parsed = RunSummarySchema.safeParse(storage.last_run);
-  cachedLastRun = parsed.success ? parsed.data : null;
+  cachedLastRun = parsed.success ? normalizeRunSummary(parsed.data) : null;
   return cachedLastRun ? klona(cachedLastRun) : null;
 }
 
@@ -537,7 +598,7 @@ export function getLastRun(): RunSummary | null {
 }
 
 export function setLastRun(summary: RunSummary) {
-  const normalized = RunSummarySchema.parse(summary);
+  const normalized = normalizeRunSummary(summary);
   cachedLastRun = normalized;
   writeScriptStorage(previous => {
     const byChat = normalizeRunRecordMap(previous);
@@ -610,8 +671,9 @@ export function loadLastRunForChat(chatId: string): RunSummary | null {
 
   const globalSummary = RunSummarySchema.safeParse(storage.last_run);
   if (globalSummary.success && globalSummary.data.chat_id.trim() === normalizedChatId) {
-    cachedLastRun = globalSummary.data;
-    return klona(globalSummary.data);
+    const normalized = normalizeRunSummary(globalSummary.data);
+    cachedLastRun = normalized;
+    return klona(normalized);
   }
 
   return null;

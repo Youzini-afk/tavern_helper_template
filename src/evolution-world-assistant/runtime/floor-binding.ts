@@ -1463,7 +1463,8 @@ export async function collectLatestSnapshots(): Promise<{
 
   for (let i = allMessages.length - 1; i >= 0; i--) {
     const msg = allMessages[i];
-    const snapshot = await readSnapshotForMessage(msg);
+    const readResult = await readSnapshotForMessageDetailed(msg, 'history');
+    const snapshot = readResult.snapshot;
     if (!snapshot) {
       continue;
     }
@@ -1499,6 +1500,17 @@ export async function purgeAndRestoreForChat(settings: EwSettings): Promise<void
   if (!target) {
     console.info('[Evolution World] purgeAndRestore: no worldbook available, skipping');
     return;
+  }
+
+  try {
+    const repaired = await repairCurrentChatSuspiciousEmptySnapshots();
+    if (repaired.repaired > 0 || repaired.warnings.length > 0) {
+      console.info(
+        `[Evolution World] purgeAndRestore: repaired suspicious empty snapshots=${repaired.repaired}, warnings=${repaired.warnings.length}`,
+      );
+    }
+  } catch (error) {
+    console.warn('[Evolution World] purgeAndRestore: suspicious empty snapshot repair failed:', error);
   }
 
   const lastId = getLastMessageId();
@@ -2017,6 +2029,17 @@ async function restoreWorldbookFromSnapshots(
   settings: EwSettings,
   predicate: (floor: FloorSnapshot) => boolean,
 ): Promise<void> {
+  try {
+    const repaired = await repairCurrentChatSuspiciousEmptySnapshots();
+    if (repaired.repaired > 0 || repaired.warnings.length > 0) {
+      console.info(
+        `[Evolution World] restoreWorldbookFromSnapshots: repaired suspicious empty snapshots=${repaired.repaired}, warnings=${repaired.warnings.length}`,
+      );
+    }
+  } catch (error) {
+    console.warn('[Evolution World] restoreWorldbookFromSnapshots: suspicious empty snapshot repair failed:', error);
+  }
+
   const allFloors = await collectAllFloorSnapshots();
   const dynMerged = new Map<string, DynSnapshot>();
   const controllers = new Map<string, ControllerEntrySnapshot>();
