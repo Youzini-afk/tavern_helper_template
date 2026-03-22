@@ -12890,7 +12890,7 @@ watch(hasUnsavedChanges, (val) => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .browse-card {
