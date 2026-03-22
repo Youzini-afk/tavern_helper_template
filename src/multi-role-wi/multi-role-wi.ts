@@ -162,8 +162,15 @@ function onChatCompletionPromptReady(eventData: { chat: SillyTavern.SendingMessa
   if (eventData.dryRun) return;
   if (positionGroups.length === 0) return;
 
+  // 将所有组的条目合成一个平面列表
+  const allEntries = positionGroups.flatMap(g => g.entries);
+  if (allEntries.length < 2) {
+    console.log(`${LOG_PREFIX} 总条目不足2个，无需拆分`);
+    return;
+  }
+
   const chat = eventData.chat;
-  console.log(`${LOG_PREFIX} 正在处理 ${chat.length} 条消息...`);
+  console.log(`${LOG_PREFIX} 正在处理 ${chat.length} 条消息（${allEntries.length} 个缓存条目）...`);
 
   const newChat: SillyTavern.SendingMessage[] = [];
   let totalSplit = 0;
@@ -172,59 +179,57 @@ function onChatCompletionPromptReady(eventData: { chat: SillyTavern.SendingMessa
     const msg = chat[i];
     const content = typeof msg.content === 'string' ? msg.content : '';
 
-    if (!content) {
+    if (!content || content.length < 20) {
       newChat.push(msg);
       continue;
     }
 
-    // 尝试匹配各位置组的合并串
-    let matched = false;
-
-    for (const group of positionGroups) {
-      if (group.entries.length <= 1) continue; // 只有一个条目不需要拆分
-      if (group.mergedContent.length === 0) continue;
-
-      // 检查该消息是否包含该组的合并串
-      if (content.includes(group.mergedContent)) {
-        // 匹配成功！拆分为独立消息
-        const splitMessages: SillyTavern.SendingMessage[] = [];
-
-        // 如果合并串之前有 formatWorldInfo 的包裹文本，保留它
-        const mergedIdx = content.indexOf(group.mergedContent);
-        if (mergedIdx > 0) {
-          const prefix = content.slice(0, mergedIdx).trim();
-          if (prefix.length > 0) {
-            splitMessages.push({ role: msg.role, content: prefix });
-          }
-        }
-
-        // 每个条目一条消息
-        for (const entry of group.entries) {
-          splitMessages.push({ role: entry.role, content: entry.substitutedContent });
-        }
-
-        // 如果合并串之后有包裹文本，保留它
-        const afterIdx = mergedIdx + group.mergedContent.length;
-        if (afterIdx < content.length) {
-          const suffix = content.slice(afterIdx).trim();
-          if (suffix.length > 0) {
-            splitMessages.push({ role: msg.role, content: suffix });
-          }
-        }
-
-        newChat.push(...splitMessages);
-        totalSplit += splitMessages.length - 1;
-        matched = true;
-
-        console.log(
-          `${LOG_PREFIX} ✅ 拆分 ${group.label}: 1条 → ${splitMessages.length}条`,
-          splitMessages.map(s => `[${s.role}] ${(typeof s.content === 'string' ? s.content : '').slice(0, 40)}...`),
-        );
-        break;
+    // 查找该消息中包含了哪些缓存条目
+    const found: { entry: CachedEntry; startIndex: number; endIndex: number }[] = [];
+    for (const entry of allEntries) {
+      const idx = content.indexOf(entry.substitutedContent);
+      if (idx !== -1) {
+        found.push({ entry, startIndex: idx, endIndex: idx + entry.substitutedContent.length });
       }
     }
 
-    if (!matched) {
+    // 如果包含 ≥2 个条目，说明是合并的 WI 消息，需要拆分
+    if (found.length >= 2) {
+      // 按出现位置排序
+      found.sort((a, b) => a.startIndex - b.startIndex);
+
+      const splitMessages: SillyTavern.SendingMessage[] = [];
+      let lastEnd = 0;
+
+      for (const { entry, startIndex, endIndex } of found) {
+        // 条目之前的间隔文本（可能是 formatWorldInfo 包裹或分隔符）
+        if (startIndex > lastEnd) {
+          const gap = content.slice(lastEnd, startIndex).trim();
+          if (gap.length > 0) {
+            splitMessages.push({ role: msg.role, content: gap });
+          }
+        }
+        // 条目本身，用其指定的 role
+        splitMessages.push({ role: entry.role, content: entry.substitutedContent });
+        lastEnd = endIndex;
+      }
+
+      // 最后的尾部文本
+      if (lastEnd < content.length) {
+        const suffix = content.slice(lastEnd).trim();
+        if (suffix.length > 0) {
+          splitMessages.push({ role: msg.role, content: suffix });
+        }
+      }
+
+      newChat.push(...splitMessages);
+      totalSplit += splitMessages.length - 1;
+
+      console.log(
+        `${LOG_PREFIX} ✅ 拆分消息[${i}]: 匹配到 ${found.length} 个条目 → ${splitMessages.length} 条消息`,
+        splitMessages.map(s => `[${s.role}] ${(typeof s.content === 'string' ? s.content : '').slice(0, 40)}...`),
+      );
+    } else {
       newChat.push(msg);
     }
   }
@@ -236,18 +241,13 @@ function onChatCompletionPromptReady(eventData: { chat: SillyTavern.SendingMessa
     console.log(`${LOG_PREFIX} 拆分完成：新增 ${totalSplit} 条消息（总计 ${chat.length} 条）`);
   } else {
     console.log(`${LOG_PREFIX} 未匹配到需要拆分的消息`);
-    // 调试：输出各组期望内容的前100字符
-    for (const group of positionGroups) {
-      if (group.entries.length <= 1) continue;
-      console.log(`  ${group.label} 期望合并串(前100): "${group.mergedContent.slice(0, 100)}"`);
-    }
-    // 输出 chat 中所有 system 消息的前100字符
-    for (let i = 0; i < chat.length; i++) {
-      const c = typeof chat[i].content === 'string' ? chat[i].content : '';
-      if (chat[i].role === 'system' && c.length > 50) {
-        console.log(`  chat[${i}] [${chat[i].role}] (len=${c.length}): "${c.slice(0, 100)}..."`);
-      }
-    }
+    // 调试日志
+    console.log(`${LOG_PREFIX} === 调试信息 ===`);
+    console.log(`${LOG_PREFIX} 缓存条目示例(前3):`,
+      allEntries.slice(0, 3).map(e => `[${e.comment}] "${e.substitutedContent.slice(0, 60)}..."`));
+    const longSysMsgs = chat.filter(m => m.role === 'system' && typeof m.content === 'string' && m.content.length > 100);
+    console.log(`${LOG_PREFIX} 长system消息(${longSysMsgs.length}条):`,
+      longSysMsgs.slice(0, 3).map(m => `(len=${(m.content as string).length}) "${(m.content as string).slice(0, 80)}..."`));
   }
 }
 
