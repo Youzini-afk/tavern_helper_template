@@ -111,13 +111,15 @@ async function onWorldInfoActivated(entries: ({ world: string } & SillyTavern.Fl
   }
 
   // 对每个条目做宏替换
+  // 注意: d.ts 中 substituteParams 返回类型标注为 Promise<void>，实际返回 string
   const cachedEntries: CachedEntry[] = [];
   for (const e of nonDepthEntries) {
     let substituted: string;
     try {
-      substituted = await SillyTavern.substituteParams(e.content);
+      const result = await (SillyTavern as any).substituteParams(e.content);
+      // 如果返回有效字符串就用，否则回退到原始内容
+      substituted = (typeof result === 'string' && result.length > 0) ? result : e.content;
     } catch {
-      // 如果替换失败，用原始内容
       substituted = e.content;
     }
     cachedEntries.push({
