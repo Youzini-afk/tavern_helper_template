@@ -292,19 +292,27 @@ function onChatCompletionPromptReady(eventData: { chat: SillyTavern.SendingMessa
 // Lifecycle
 // ============================================================================
 
+// Use SillyTavern.eventSource directly (not the iframe-bridged eventOn)
+// so that mutations to event data (like the chat array) propagate back
+// to SillyTavern's actual objects, not serialized copies.
+const stEvents = SillyTavern.eventSource;
+
 $(() => {
   console.log(`${LOG_PREFIX} 🚀 Multi-Role World Info script loaded`);
 
   // Phase 1: cache activated WI entries
-  eventOn(tavern_events.WORLD_INFO_ACTIVATED, onWorldInfoActivated);
+  stEvents.on(tavern_events.WORLD_INFO_ACTIVATED, onWorldInfoActivated);
 
   // Phase 2: split merged messages (run last to not interfere with other listeners)
-  eventMakeLast(tavern_events.CHAT_COMPLETION_PROMPT_READY, onChatCompletionPromptReady);
+  stEvents.makeLast(tavern_events.CHAT_COMPLETION_PROMPT_READY, onChatCompletionPromptReady);
 
   toastr.success('世界书多Role脚本已加载', 'Multi-Role WI');
 });
 
 $(window).on('pagehide', () => {
+  // Clean up listeners on the parent page's event source
+  stEvents.removeListener(tavern_events.WORLD_INFO_ACTIVATED, onWorldInfoActivated);
+  stEvents.removeListener(tavern_events.CHAT_COMPLETION_PROMPT_READY, onChatCompletionPromptReady);
   activatedEntries = [];
   console.log(`${LOG_PREFIX} 🛑 Multi-Role World Info script unloaded`);
 });
