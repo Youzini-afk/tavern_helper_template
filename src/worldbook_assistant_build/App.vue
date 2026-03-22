@@ -55,7 +55,7 @@
             </section>
             <div class="browse-grid mobile-browse-grid">
               <article
-                v-for="entry in filteredEntries"
+                v-for="entry in browseVisibleEntries"
                 :key="`mbrowse-card-${entry.uid}`"
                 class="browse-card"
                 :class="{
@@ -145,6 +145,9 @@
                   </div>
                 </div>
               </article>
+              <div v-if="browseHasMoreEntries" ref="browseLoadMoreSentinelRef" class="browse-load-more-sentinel">
+                <span class="browse-load-more-text">已加载 {{ browseVisibleEntries.length }} / {{ filteredEntries.length }} …</span>
+              </div>
               <div v-if="!filteredEntries.length" class="browse-empty">
                 <div class="browse-empty-icon">📖</div>
                 <div class="browse-empty-text">{{ selectedWorldbookName ? '无条目' : '请选择世界书' }}</div>
@@ -1056,7 +1059,7 @@
       <div class="browse-scroll-area">
         <div class="browse-grid">
           <article
-            v-for="entry in filteredEntries"
+            v-for="entry in browseVisibleEntries"
             :key="`browse-card-${entry.uid}`"
             class="browse-card"
             :class="{
@@ -1177,6 +1180,9 @@
               </div>
             </div>
           </article>
+          <div v-if="browseHasMoreEntries" ref="browseLoadMoreSentinelRef" class="browse-load-more-sentinel">
+            <span class="browse-load-more-text">已加载 {{ browseVisibleEntries.length }} / {{ filteredEntries.length }} …</span>
+          </div>
           <div v-if="!filteredEntries.length" class="browse-empty">
             <div class="browse-empty-icon">📖</div>
             <div class="browse-empty-text">{{ selectedWorldbookName ? '没有符合条件的条目' : '请选择一本世界书' }}</div>
@@ -4220,6 +4226,10 @@ const aiGeneratorMode = ref(false);
 const crossCopyMode = ref(false);
 const panelMode = ref<'browse' | 'editor'>('browse');
 const expandedBrowseCardUids = ref<Set<number>>(new Set());
+const BROWSE_RENDER_BATCH = 30;
+const browseRenderLimit = ref(BROWSE_RENDER_BATCH);
+const browseLoadMoreSentinelRef = ref<HTMLElement | null>(null);
+let _browseIntersectionObserver: IntersectionObserver | null = null;
 const isFocusEditing = ref(false);
 const focusWorldbookMenuOpen = ref(false);
 const focusToolsExpanded = ref(false);
@@ -7160,6 +7170,43 @@ function browseGetContentPreview(entry: WorldbookEntry): string {
 function applyPanelModeFromPersisted(): void {
   panelMode.value = persistedState.value.panel_mode || 'browse';
 }
+
+const browseVisibleEntries = computed(() => filteredEntries.value.slice(0, browseRenderLimit.value));
+const browseHasMoreEntries = computed(() => browseRenderLimit.value < filteredEntries.value.length);
+
+function browseLoadMore(): void {
+  browseRenderLimit.value = Math.min(browseRenderLimit.value + BROWSE_RENDER_BATCH, filteredEntries.value.length);
+}
+
+function setupBrowseIntersectionObserver(): void {
+  teardownBrowseIntersectionObserver();
+  const sentinel = browseLoadMoreSentinelRef.value;
+  if (!sentinel) return;
+  _browseIntersectionObserver = new IntersectionObserver(
+    (entries) => {
+      if (entries[0]?.isIntersecting && browseHasMoreEntries.value) {
+        browseLoadMore();
+      }
+    },
+    { rootMargin: '200px' },
+  );
+  _browseIntersectionObserver.observe(sentinel);
+}
+
+function teardownBrowseIntersectionObserver(): void {
+  _browseIntersectionObserver?.disconnect();
+  _browseIntersectionObserver = null;
+}
+
+watch(
+  () => filteredEntries.value.length,
+  () => { browseRenderLimit.value = BROWSE_RENDER_BATCH; },
+);
+
+watch(browseLoadMoreSentinelRef, (el) => {
+  if (el) setupBrowseIntersectionObserver();
+  else teardownBrowseIntersectionObserver();
+});
 
 function normalizeCrossCopyWorldbookSelection(): void {
   const names = worldbookNames.value;
@@ -13179,6 +13226,21 @@ watch(hasUnsavedChanges, (val) => {
   height: 0;
   overflow: hidden;
   pointer-events: none;
+}
+
+/* Load more sentinel */
+
+.browse-load-more-sentinel {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+}
+
+.browse-load-more-text {
+  font-size: 12px;
+  color: var(--wb-text-muted);
+  opacity: 0.6;
 }
 
 /* ═══ End Browse Mode Styles ═══ */
