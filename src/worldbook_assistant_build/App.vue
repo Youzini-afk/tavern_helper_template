@@ -966,7 +966,6 @@
             </div>
           </div>
         </label>
-        <input v-model="searchText" type="text" class="text-input browse-search" placeholder="🔍 搜索名称 / 内容 / 关键词" />
         <button class="btn" type="button" @click="createNewWorldbook">新建</button>
         <button class="btn" type="button" :disabled="!selectedWorldbookName" @click="duplicateWorldbook">另存为</button>
         <button class="btn danger" type="button" :disabled="!selectedWorldbookName" @click="deleteCurrentWorldbook">删除</button>
@@ -988,6 +987,7 @@
 
       <!-- Action bar: search + bindings + new entry + global mode -->
       <section class="browse-action-bar">
+        <input v-model="searchText" type="text" class="text-input browse-search" placeholder="🔍 搜索名称 / 内容 / 关键词" />
         <span v-if="bindings.global.length" class="binding-tag global">🟢 全局: {{ bindings.global.join(', ') }}</span>
         <span v-if="bindings.charPrimary" class="binding-tag char">🔵 角色: {{ bindings.charPrimary }}</span>
         <span v-if="bindings.chat" class="binding-tag chat">🟡 聊天: {{ bindings.chat }}</span>
@@ -13082,7 +13082,7 @@ watch(hasUnsavedChanges, (val) => {
 .browse-card-expanded {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   padding-top: 8px;
   border-top: 1px solid var(--wb-border-main);
   margin-top: 4px;
@@ -13090,7 +13090,7 @@ watch(hasUnsavedChanges, (val) => {
 
 .browse-keys-input {
   resize: vertical;
-  min-height: 28px;
+  min-height: 24px;
   font-size: 12px;
 }
 
@@ -13110,8 +13110,8 @@ watch(hasUnsavedChanges, (val) => {
 
 .browse-content-input {
   resize: vertical;
-  min-height: 80px;
-  max-height: 50vh;
+  min-height: 280px;
+  max-height: 70vh;
   font-size: 12px;
   font-family: inherit;
   line-height: 1.5;
