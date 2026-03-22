@@ -4,43 +4,36 @@
  * 将被合并为单 role 的世界书条目拆分为多条独立 role 的消息。
  *
  * 工作流程:
- * 1. 监听 WORLD_INFO_ACTIVATED 事件, 缓存所有激活条目的原始元数据
- * 2. 监听 CHAT_COMPLETION_PROMPT_READY 事件, 在最终消息数组中找到包含 WI 内容的消息
- * 3. 将合并的 WI 消息拆分为多条不同 role 的消息
+ * 1. 监听 WORLD_INFO_ACTIVATED 事件，缓存所有激活条目的原始元数据
+ * 2. 监听 CHAT_COMPLETION_PROMPT_READY 事件，在最终消息数组中找到包含世界书内容的消息
+ * 3. 将合并的世界书消息拆分为多条不同 role 的消息
  */
 
-const LOG_PREFIX = '[MultiRoleWI]';
+const LOG_PREFIX = '[多Role世界书]';
 
 // ============================================================================
-// Types
+// 类型定义
 // ============================================================================
 
-/** WI position enum matching SillyTavern's world_info_position */
+/** 世界书位置枚举，对应 SillyTavern 的 world_info_position */
 const WI_POSITION = {
-  before: 0,
-  after: 1,
-  ANTop: 2,
-  ANBottom: 3,
-  atDepth: 4,
-  EMTop: 5,
-  EMBottom: 6,
+  before: 0,   // 角色定义之前
+  after: 1,    // 角色定义之后
+  ANTop: 2,    // 作者注释之上
+  ANBottom: 3, // 作者注释之下
+  atDepth: 4,  // 按深度插入
+  EMTop: 5,    // 示例消息之上
+  EMBottom: 6, // 示例消息之下
 } as const;
 
-/** Role number to string mapping (matching SillyTavern's extension_prompt_roles) */
+/** Role 数字到字符串的映射（对应 SillyTavern 的 extension_prompt_roles） */
 const ROLE_MAP: Record<number, 'system' | 'user' | 'assistant'> = {
   0: 'system',
   1: 'user',
   2: 'assistant',
 };
 
-/** Role string to number mapping */
-const ROLE_NUM: Record<string, number> = {
-  system: 0,
-  user: 1,
-  assistant: 2,
-};
-
-/** Cached entry info for matching and splitting */
+/** 缓存的条目信息，用于匹配和拆分 */
 interface CachedEntry {
   content: string;
   role: 'system' | 'user' | 'assistant';
@@ -52,46 +45,46 @@ interface CachedEntry {
 }
 
 // ============================================================================
-// State
+// 状态
 // ============================================================================
 
-/** Cached activated entries from WORLD_INFO_ACTIVATED */
+/** 从 WORLD_INFO_ACTIVATED 事件中缓存的激活条目 */
 let activatedEntries: CachedEntry[] = [];
 
 // ============================================================================
-// Role parsing from entry comment (name)
+// 从条目名称（comment）中解析 Role
 // ============================================================================
 
-/** Role prefix regex pattern: matches [user], [assistant], [system] at start of comment */
+/** Role 前缀正则：匹配条目名开头的 [user]、[assistant]、[system] */
 const ROLE_PREFIX_RE = /^\[(user|assistant|system)\]/i;
 
 /**
- * Parse role from entry comment prefix or fall back to entry's native role.
+ * 解析条目的 role。
  *
- * Priority:
- * 1. Comment prefix like `[user]条目名` → 'user'
- * 2. For atDepth entries: use the entry's native `role` field
- * 3. Default: 'system'
+ * 优先级：
+ * 1. 条目名前缀，如 `[user]条目名` → 'user'
+ * 2. atDepth 类型条目：使用条目自带的 `role` 字段
+ * 3. 默认：'system'
  */
 function resolveRole(entry: { world: string } & SillyTavern.FlattenedWorldInfoEntry): 'system' | 'user' | 'assistant' {
-  // Check comment prefix first
+  // 优先检查条目名前缀
   const comment = entry.comment ?? '';
   const match = comment.match(ROLE_PREFIX_RE);
   if (match) {
     return match[1].toLowerCase() as 'system' | 'user' | 'assistant';
   }
 
-  // For atDepth entries, use native role
+  // atDepth 条目使用自带的 role
   if (entry.position === WI_POSITION.atDepth && entry.role != null) {
     return ROLE_MAP[entry.role] ?? 'system';
   }
 
-  // Default
+  // 默认
   return 'system';
 }
 
 // ============================================================================
-// Phase 1: Cache activated entries
+// 第一阶段：缓存激活的条目
 // ============================================================================
 
 function onWorldInfoActivated(entries: ({ world: string } & SillyTavern.FlattenedWorldInfoEntry)[]) {
@@ -107,26 +100,24 @@ function onWorldInfoActivated(entries: ({ world: string } & SillyTavern.Flattene
       world: e.world,
     }));
 
-  console.log(`${LOG_PREFIX} Cached ${activatedEntries.length} activated entries`);
+  console.log(`${LOG_PREFIX} 已缓存 ${activatedEntries.length} 个激活条目`);
   if (activatedEntries.length > 0) {
     const roleCounts = { system: 0, user: 0, assistant: 0 };
     for (const e of activatedEntries) {
       roleCounts[e.role]++;
     }
-    console.log(`${LOG_PREFIX} Role distribution:`, roleCounts);
+    console.log(`${LOG_PREFIX} Role 分布:`, roleCounts);
   }
 }
 
 // ============================================================================
-// Phase 2: Split merged WI messages
+// 第二阶段：拆分合并的世界书消息
 // ============================================================================
 
 /**
- * Given a merged message content string and a list of entries that were merged into it,
- * split the content back into individual entries and return them as separate messages.
+ * 将合并后的消息内容按条目边界拆分为多条独立消息。
  *
- * Strategy: try to match each entry's content within the merged string.
- * Entries are matched in the order they appear in the merged string.
+ * 策略：在合并字符串中精确匹配每个条目的原始内容，按出现顺序拆分。
  */
 function splitMergedMessage(
   mergedContent: string,
@@ -137,7 +128,7 @@ function splitMergedMessage(
     return [{ role: originalRole, content: mergedContent }];
   }
 
-  // Find which entries are present in the merged content and their positions
+  // 查找每个条目在合并字符串中的位置
   const found: { entry: CachedEntry; startIndex: number; endIndex: number }[] = [];
   for (const entry of entries) {
     const idx = mergedContent.indexOf(entry.content);
@@ -147,19 +138,19 @@ function splitMergedMessage(
   }
 
   if (found.length === 0) {
-    // No entries matched, return original message unchanged
-    console.log(`${LOG_PREFIX} No entries matched in merged content, keeping original`);
+    // 没有匹配到任何条目，保持原样
+    console.log(`${LOG_PREFIX} 合并内容中未匹配到任何条目，保持原样`);
     return [{ role: originalRole, content: mergedContent }];
   }
 
-  // Sort by position in the merged string
+  // 按在合并字符串中的位置排序
   found.sort((a, b) => a.startIndex - b.startIndex);
 
   const result: SillyTavern.SendingMessage[] = [];
   let lastEnd = 0;
 
   for (const { entry, startIndex, endIndex } of found) {
-    // If there's text between last match and current match, keep it as original role
+    // 如果上一个匹配和当前匹配之间有间隔文本，保留为原始 role
     if (startIndex > lastEnd) {
       const gap = mergedContent.slice(lastEnd, startIndex).trim();
       if (gap.length > 0) {
@@ -167,12 +158,12 @@ function splitMergedMessage(
       }
     }
 
-    // Add the entry with its own role
+    // 添加该条目，使用其自身的 role
     result.push({ role: entry.role, content: entry.content });
     lastEnd = endIndex;
   }
 
-  // If there's remaining text after the last match
+  // 如果最后一个匹配之后还有剩余文本
   if (lastEnd < mergedContent.length) {
     const remaining = mergedContent.slice(lastEnd).trim();
     if (remaining.length > 0) {
@@ -184,15 +175,14 @@ function splitMergedMessage(
 }
 
 /**
- * Get entries matching a specific WI position type
+ * 获取指定位置类型的条目
  */
 function getEntriesByPosition(...positions: number[]): CachedEntry[] {
   return activatedEntries.filter(e => positions.includes(e.position));
 }
 
 /**
- * Check if any cached entries have a non-system role
- * (if all are system, no splitting is needed)
+ * 检查是否有非 system role 的条目（如果全是 system 则无需拆分）
  */
 function hasNonSystemEntries(): boolean {
   return activatedEntries.some(e => e.role !== 'system');
@@ -202,30 +192,23 @@ function onChatCompletionPromptReady(eventData: { chat: SillyTavern.SendingMessa
   if (eventData.dryRun) return;
   if (activatedEntries.length === 0) return;
   if (!hasNonSystemEntries()) {
-    console.log(`${LOG_PREFIX} All entries are system role, no splitting needed`);
+    console.log(`${LOG_PREFIX} 所有条目均为 system role，无需拆分`);
     return;
   }
 
   const chat = eventData.chat;
-  console.log(`${LOG_PREFIX} Processing ${chat.length} messages in chat array`);
+  console.log(`${LOG_PREFIX} 正在处理 ${chat.length} 条消息`);
 
-  // Entries for before/after positions (these get merged into worldInfoBefore/worldInfoAfter)
+  // 按位置类型分组条目
   const beforeEntries = getEntriesByPosition(WI_POSITION.before);
   const afterEntries = getEntriesByPosition(WI_POSITION.after);
-
-  // Entries for AN positions
   const anTopEntries = getEntriesByPosition(WI_POSITION.ANTop);
   const anBottomEntries = getEntriesByPosition(WI_POSITION.ANBottom);
-
-  // Entries for EM positions
   const emTopEntries = getEntriesByPosition(WI_POSITION.EMTop);
   const emBottomEntries = getEntriesByPosition(WI_POSITION.EMBottom);
-
-  // atDepth entries are handled differently — they're already injected at specific depths
-  // but still merged by same depth+role. We handle those too.
   const depthEntries = getEntriesByPosition(WI_POSITION.atDepth);
 
-  // Process the chat array — find and split WI messages
+  // 遍历消息数组，查找并拆分包含世界书内容的消息
   const newChat: SillyTavern.SendingMessage[] = [];
   let splitCount = 0;
 
@@ -236,36 +219,34 @@ function onChatCompletionPromptReady(eventData: { chat: SillyTavern.SendingMessa
       continue;
     }
 
-    // Try to match this message against known entry groups
+    // 尝试将该消息与各位置组的条目进行匹配
     let matched = false;
 
-    // Check against each position group
     const groups = [
-      { entries: beforeEntries, label: 'worldInfoBefore' },
-      { entries: afterEntries, label: 'worldInfoAfter' },
-      { entries: anTopEntries, label: 'ANTop' },
-      { entries: anBottomEntries, label: 'ANBottom' },
-      { entries: emTopEntries, label: 'EMTop' },
-      { entries: emBottomEntries, label: 'EMBottom' },
-      { entries: depthEntries, label: 'atDepth' },
+      { entries: beforeEntries, label: '角色定义前(worldInfoBefore)' },
+      { entries: afterEntries, label: '角色定义后(worldInfoAfter)' },
+      { entries: anTopEntries, label: '作者注释上(ANTop)' },
+      { entries: anBottomEntries, label: '作者注释下(ANBottom)' },
+      { entries: emTopEntries, label: '示例消息上(EMTop)' },
+      { entries: emBottomEntries, label: '示例消息下(EMBottom)' },
+      { entries: depthEntries, label: '按深度插入(atDepth)' },
     ];
 
     for (const group of groups) {
       if (group.entries.length === 0) continue;
 
-      // Check if this message contains ALL entries from this group
-      // (or at least a significant number of them)
+      // 检查该消息是否包含了该组中的条目内容
       const matchedEntries = group.entries.filter(e => content.includes(e.content));
 
       if (matchedEntries.length > 0 && matchedEntries.some(e => e.role !== msg.role)) {
-        // This message contains WI entries that need role changes
+        // 该消息包含需要更改 role 的世界书条目
         const split = splitMergedMessage(content, matchedEntries, msg.role);
         if (split.length > 1 || (split.length === 1 && split[0].role !== msg.role)) {
           newChat.push(...split);
           splitCount += split.length - 1;
           matched = true;
           console.log(
-            `${LOG_PREFIX} Split ${group.label} message into ${split.length} messages:`,
+            `${LOG_PREFIX} 已拆分 ${group.label} 消息为 ${split.length} 条:`,
             split.map(s => `[${s.role}] ${(typeof s.content === 'string' ? s.content : '').slice(0, 50)}...`),
           );
           break;
@@ -279,40 +260,39 @@ function onChatCompletionPromptReady(eventData: { chat: SillyTavern.SendingMessa
   }
 
   if (splitCount > 0) {
-    // Replace the chat array contents in-place
+    // 原地替换 chat 数组内容
     chat.length = 0;
     chat.push(...newChat);
-    console.log(`${LOG_PREFIX} ✅ Split complete: ${splitCount} additional messages created (total: ${chat.length})`);
+    console.log(`${LOG_PREFIX} ✅ 拆分完成：新增 ${splitCount} 条消息（总计 ${chat.length} 条）`);
   } else {
-    console.log(`${LOG_PREFIX} No messages needed splitting`);
+    console.log(`${LOG_PREFIX} 无需拆分任何消息`);
   }
 }
 
 // ============================================================================
-// Lifecycle
+// 生命周期
 // ============================================================================
 
-// Use SillyTavern.eventSource directly (not the iframe-bridged eventOn)
-// so that mutations to event data (like the chat array) propagate back
-// to SillyTavern's actual objects, not serialized copies.
+// 使用 SillyTavern.eventSource 直接注册事件（而非 iframe 桥接的 eventOn），
+// 确保对 event data（如 chat 数组）的修改能直接反映到 SillyTavern 的原始对象上。
 const stEvents = SillyTavern.eventSource;
 
 $(() => {
-  console.log(`${LOG_PREFIX} 🚀 Multi-Role World Info script loaded`);
+  console.log(`${LOG_PREFIX} 🚀 世界书多Role脚本已加载`);
 
-  // Phase 1: cache activated WI entries
+  // 第一阶段：缓存激活的世界书条目
   stEvents.on(tavern_events.WORLD_INFO_ACTIVATED, onWorldInfoActivated);
 
-  // Phase 2: split merged messages (run last to not interfere with other listeners)
+  // 第二阶段：拆分合并的消息（放在最后执行，避免干扰其他监听器）
   stEvents.makeLast(tavern_events.CHAT_COMPLETION_PROMPT_READY, onChatCompletionPromptReady);
 
-  toastr.success('世界书多Role脚本已加载', 'Multi-Role WI');
+  toastr.success('世界书多Role脚本已加载', '多Role世界书');
 });
 
 $(window).on('pagehide', () => {
-  // Clean up listeners on the parent page's event source
+  // 在父页面的事件源上清理监听器
   stEvents.removeListener(tavern_events.WORLD_INFO_ACTIVATED, onWorldInfoActivated);
   stEvents.removeListener(tavern_events.CHAT_COMPLETION_PROMPT_READY, onChatCompletionPromptReady);
   activatedEntries = [];
-  console.log(`${LOG_PREFIX} 🛑 Multi-Role World Info script unloaded`);
+  console.log(`${LOG_PREFIX} 🛑 世界书多Role脚本已卸载`);
 });
