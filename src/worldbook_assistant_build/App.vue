@@ -983,11 +983,12 @@
         </div>
       </section>
 
-      <!-- Bindings row -->
-      <section class="wb-bindings browse-bindings">
+      <!-- Action bar: search + bindings + new entry + global mode -->
+      <section class="browse-action-bar">
         <span v-if="bindings.global.length" class="binding-tag global">🟢 全局: {{ bindings.global.join(', ') }}</span>
         <span v-if="bindings.charPrimary" class="binding-tag char">🔵 角色: {{ bindings.charPrimary }}</span>
         <span v-if="bindings.chat" class="binding-tag chat">🟡 聊天: {{ bindings.chat }}</span>
+        <span class="browse-action-spacer"></span>
         <span class="browse-entry-count">条目 {{ filteredEntries.length }} / {{ draftEntries.length }}</span>
         <button class="btn mini" type="button" :disabled="!selectedWorldbookName" @click="addEntry">+ 新条目</button>
         <button class="btn mini utility-btn" :class="{ active: globalWorldbookMode }" type="button" @click="toggleGlobalMode">🌐 全局模式</button>
@@ -12875,7 +12876,19 @@ watch(hasUnsavedChanges, (val) => {
 .browse-entry-count {
   color: var(--wb-text-muted);
   font-size: 11px;
-  margin-left: auto;
+}
+
+.browse-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.browse-action-spacer {
+  flex: 1;
 }
 
 .browse-scroll-area {
